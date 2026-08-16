@@ -7,7 +7,9 @@ Proves renpysound_host video_ready + read_video feed stock get_movie_texture:
   1. set_video + play with main_menu.webm name
   2. video_ready True
   3. read_video returns Surface-like with get_size + _pixels
-  4. AC-M5: layout Surface get_size() == (1920, 1080) exactly
+  4. AC-M5: in default present 1b, read_video returns the decode-size Surface;
+     the 1920×1080 layout size is produced by Movie.render scaling the texture
+     to the offered box. The gate asserts both halves of that contract.
   5. non-black mean over sampled pixels
   6. optional AC-M2b: frame change after clock advance (if ≥2 frames)
 
@@ -18,6 +20,7 @@ import os
 import time
 from pathlib import Path
 
+import renpy
 import renpy_host  # type: ignore
 
 from renpy.audio import renpysound_host as rps
@@ -98,13 +101,19 @@ try:
     else:
         log("media=%s name=%s" % (path, name))
         # Prefer smaller decode for gate speed; product layout remains 1920×1080
-        # after host upscale (AC-M5). Decode env is A/B only, not layout size.
+        # after Movie.render upscale (AC-M5). Decode env is A/B only, not layout size.
+        # Force present 1b so the gate tests the default product path deterministically.
+        os.environ["RENPY_HOST_MOVIE_PRESENT"] = "1b"
         os.environ.setdefault("RENPY_HOST_MOVIE_MAX_FRAMES", "8")
         os.environ.setdefault("RENPY_HOST_MOVIE_W", "320")
         os.environ.setdefault("RENPY_HOST_MOVIE_H", "180")
         os.environ.setdefault("RENPY_HOST_MOVIE_FPS", "10")
         os.environ["RENPY_HOST_MOVIE_PATH"] = path
         # Do not set RENPY_HOST_MOVIE_LAYOUT_*; product default must be 1920×1080.
+        decode_w = int(os.environ["RENPY_HOST_MOVIE_W"])
+        decode_h = int(os.environ["RENPY_HOST_MOVIE_H"])
+        layout_w = int(os.environ.get("RENPY_HOST_MOVIE_LAYOUT_W", "1920"))
+        layout_h = int(os.environ.get("RENPY_HOST_MOVIE_LAYOUT_H", "1080"))
 
         rps.stop(CH)
         rps.set_video(CH, rps.DROP_VIDEO, loop=True)
@@ -124,20 +133,26 @@ try:
         else:
             size = surf.get_size()
             log("surf_size=%s has_pixels=%s" % (size, hasattr(surf, "_pixels")))
-            # AC-M5 hard size gate: layout Surface must be exactly product canvas.
-            if size != (1920, 1080):
+            # AC-M5 part 1: under present 1b read_video must expose the decode
+            # Surface; the layout 1920×1080 render is verified via Movie.render.
+            if size != (decode_w, decode_h):
                 ok = False
-                log("FAIL AC-M5 layout size %s != (1920, 1080)" % (size,))
+                log(
+                    "FAIL AC-M5 decode surface %s != expected decode %sx%s"
+                    % (size, decode_w, decode_h)
+                )
             else:
-                log("PASS AC-M5 layout size (1920, 1080)")
+                log("PASS AC-M5 decode surface %sx%s" % (size[0], size[1]))
                 ch_meta = rps._channels.get(CH, {})
                 log(
-                    "decode_size=%sx%s layout_size=%sx%s"
+                    "decode_size=%sx%s frame_w/h=%sx%s layout_target=%sx%s"
                     % (
                         ch_meta.get("decode_w"),
                         ch_meta.get("decode_h"),
                         ch_meta.get("frame_w"),
                         ch_meta.get("frame_h"),
+                        layout_w,
+                        layout_h,
                     )
                 )
 
@@ -178,6 +193,53 @@ try:
             else:
                 ok = False
                 log("FAIL second read_video None")
+
+        # AC-M5 part 2: Movie.render must produce the offered 1920×1080 layout
+        # even though read_video returned the 320×180 decode Surface (present 1b).
+        try:
+            import types as _types
+            import renpy.object as _object  # noqa: F401
+            import renpy.style as _style  # noqa: F401
+            import renpy.config as _config  # noqa: F401
+            import renpy.loader as _loader  # noqa: F401
+            import renpy.game as _game  # noqa: F401
+            import renpy.easy as _easy  # noqa: F401
+            import renpy.revertable as _revertable  # noqa: F401
+            import renpy.audio.music as _music  # noqa: F401
+            import renpy.display.render as _render  # noqa: F401
+            import renpy.display.matrix as _matrix  # noqa: F401
+            import renpy.display.displayable as _displayable  # noqa: F401
+            from renpy.display.video import resize_movie
+
+            # Minimal product-like preferences for loader calls.
+            if getattr(renpy.game, "preferences", None) is None:
+                renpy.game.preferences = _types.SimpleNamespace(
+                    language=None,
+                    video_image_fallback=False,
+                )
+
+            # Mirror Movie.render's present-1b scaling path: read_video gives
+            # the decode-size Surface; resize_movie produces the offered
+            # layout-size Render.
+            rv = renpy.display.render.Render(size[0], size[1])
+            rv.blit(surf, (0, 0))
+            rv = resize_movie(rv, layout_w, layout_h)
+            rv_size = rv.get_size()
+            log("movie_render_size=%s" % (rv_size,))
+            if rv_size != (layout_w, layout_h):
+                ok = False
+                log(
+                    "FAIL AC-M5 layout render %s != (%s, %s)"
+                    % (rv_size, layout_w, layout_h)
+                )
+            else:
+                log("PASS AC-M5 layout render %sx%s" % rv_size)
+        except Exception as e:
+            ok = False
+            log("FAIL AC-M5 layout render exception: %s: %s" % (type(e).__name__, e))
+            import traceback
+
+            log(traceback.format_exc())
 
         rps.stop(CH)
 

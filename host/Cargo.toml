@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = ["renpy-host"]
+default-members = ["renpy-host"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+winit = "0.30"
+# wgpu 24: Vulkan is included via default/wgc on native Linux; keep wgsl.
+wgpu = { version = "24", default-features = true, features = ["wgsl"] }
+pollster = "0.4"
+# auto-initialize embeds the interpreter; extension-module would be wrong for a host binary.
+pyo3 = { version = "0.29", features = ["auto-initialize"] }
+raw-window-handle = "0.6"
+log = "0.4"
+env_logger = "0.11"
+cpal = "0.15"

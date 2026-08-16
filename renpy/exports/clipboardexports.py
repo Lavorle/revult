@@ -90,7 +90,16 @@ def put_clipboard_data(data_dict: dict[str | bytes, str | bytes]) -> None:
         or bytes. String values are encoded as UTF-8.
     """
 
-    renpy.pygame.scrap.put_data(data_dict)
+    try:
+        pygame_mod = getattr(renpy, "pygame", None)
+        scrap = getattr(pygame_mod, "scrap", None) if pygame_mod is not None else None
+        put = getattr(scrap, "put_data", None) if scrap is not None else None
+        if put is None:
+            return
+        put(data_dict)
+    except Exception:
+        # host_build / incomplete scrap: disk screenshot still works.
+        return
 
 
 def put_clipboard_image_file(filename: str, absolute_path: bool = False) -> None:

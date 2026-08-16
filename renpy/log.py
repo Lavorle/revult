@@ -245,11 +245,15 @@ class StdioRedirector(object):
         if not isinstance(s, str):
             s = str(s, "utf-8", "replace")
 
-        if not renpy.config.log_to_stdout:
+        # Host embed may import renpy.display (and thus this module) before
+        # renpy.import_all() binds renpy.config. Fall back to real stdio until
+        # config exists so early product/bootstrap prints do not AttributeError.
+        config = getattr(renpy, "config", None)
+        if config is None or not config.log_to_stdout:
             self.real_file.write(s)
             self.real_file.flush()
 
-        if renpy.ios:
+        if getattr(renpy, "ios", False):
             return
 
         s = self.buffer + s
@@ -301,7 +305,10 @@ if not "RENPY_NO_REDIRECT_STDIO" in os.environ:
         real_file = real_stdout
 
         def get_callbacks(self):
-            return renpy.config.stdout_callbacks
+            config = getattr(renpy, "config", None)
+            if config is None:
+                return []
+            return config.stdout_callbacks
 
     sys.stdout = sys_stdout = StdoutRedirector()
 
@@ -309,7 +316,10 @@ if not "RENPY_NO_REDIRECT_STDIO" in os.environ:
         real_file = real_stderr
 
         def get_callbacks(self):
-            return renpy.config.stderr_callbacks
+            config = getattr(renpy, "config", None)
+            if config is None:
+                return []
+            return config.stderr_callbacks
 
     sys.stderr = sys_stderr = StderrRedirector()
 

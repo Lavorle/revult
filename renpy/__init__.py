@@ -140,6 +140,12 @@ android: bool = False
 ios: bool = False
 emscripten: bool = False
 
+# True when running under renpy-host (winit/wgpu; no SDL). Set by host embed
+# (sys.renpy_host_build) or RENPY_HOST_BUILD=1. Dual-tree: SDL path stays default.
+host_build: bool = bool(getattr(sys, "renpy_host_build", False)) or (
+    os.environ.get("RENPY_HOST_BUILD", "") in ("1", "true", "yes")
+)
+
 # Should we enable experimental features and debugging?
 experimental = "RENPY_EXPERIMENTAL" in os.environ
 
@@ -535,14 +541,44 @@ def import_all():
     import renpy.add_from
     import renpy.dump
 
-    import renpy.gl2.gl2draw
     import renpy.gl2.gl2mesh
-    import renpy.gl2.gl2model
     import renpy.gl2.gl2polygon
-    import renpy.gl2.gl2shader
-    import renpy.gl2.gl2texture
-    import renpy.gl2.live2d
-    import renpy.gl2.assimp
+    if not host_build:
+        # SDL/GL tree: full GL2 stack.
+        import renpy.gl2.gl2draw
+        import renpy.gl2.gl2model
+        import renpy.gl2.gl2shader
+        import renpy.gl2.gl2texture
+        import renpy.gl2.live2d
+        import renpy.gl2.assimp
+    else:
+        # Host/wgpu: keep mesh/polygon for scene-graph math; skip SDL-linked GL
+        # modules. WgpuDraw + renpy.wgpu cover product rendering.
+        # Assimp stub is pre-seeded in sys.modules by renpy-host embed; bind it
+        # onto the package so defaultstore can use renpy.gl2.assimp.GLTFModel.
+        try:
+            import sys as _sys
+            import renpy.gl2 as _gl2
+
+            _assimp = _sys.modules.get("renpy.gl2.assimp")
+            if _assimp is not None:
+                setattr(_gl2, "assimp", _assimp)
+            else:
+                import renpy.gl2.assimp as _assimp  # noqa: F401
+
+                setattr(_gl2, "assimp", _assimp)
+        except Exception:
+            pass
+        try:
+            import renpy.gl2.live2d  # pure-Python parts may still load
+        except Exception:
+            pass
+        # Install register_wgsl_shader + builtin core pipelines before any
+        # product initcode (including common/_shaders.rpym) can run.
+        try:
+            import renpy.wgpu.shaders  # noqa: F401
+        except Exception:
+            pass
 
     import renpy.minstore
     import renpy.defaultstore

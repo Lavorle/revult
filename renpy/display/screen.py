@@ -645,6 +645,16 @@ class ScreenDisplayable(renpy.display.layout.Container):
         if self in updated_screens:
             return
 
+        # Serialize screen tree mutation against host concurrent render_screen.
+        # Non-host (stock single-threaded interact) still benefits; RLock is cheap.
+        lock = _screen_tree_rlock()
+        with lock:
+            return self._update_locked()
+
+    def _update_locked(self):
+        if self in updated_screens:
+            return
+
         updated_screens.add(self)
 
         if self.screen is None:
@@ -760,13 +770,18 @@ class ScreenDisplayable(renpy.display.layout.Container):
         return self.widgets
 
     def render(self, w, h, st, at):
-        if not self.child:
-            self.update()
-        try:
-            push_current_screen(self)
-            child = renpy.display.render.render(self.child, w, h, st, at)
-        finally:
-            pop_current_screen()
+        # Hold the tree lock across update + child render so concurrent host
+        # force-redraw cannot `_clear` MultiBox children mid-walk (dc1 panel
+        # background drop). Nested update acquires the same reentrant RLock.
+        lock = _screen_tree_rlock()
+        with lock:
+            if not self.child:
+                self.update()
+            try:
+                push_current_screen(self)
+                child = renpy.display.render.render(self.child, w, h, st, at)
+            finally:
+                pop_current_screen()
 
         rv = renpy.display.render.Render(w, h)
         rv.focus_screen = self
@@ -857,6 +872,23 @@ screens_by_name = collections.defaultdict(dict)
 
 # The screens that were updated during the current interaction.
 updated_screens = set()
+
+# Host (wgpu-native) force-redraw / gate threads can run ScreenDisplayable.update
+# while MultiBox.render is mid-walk on another thread. SL reuse does
+# ``main._clear()`` then re-add; without a lock the live children list shrinks
+# mid-render and preferences_layout drops background.png + early columns
+# (HuangmeiC 确认设置1/2 black panel). Reentrant RLock: update may nest.
+_screen_tree_lock = None  # type: ignore[var-annotated]
+
+
+def _screen_tree_rlock():
+    """Lazy RLock so import/pickle does not require threading at module load."""
+    global _screen_tree_lock
+    if _screen_tree_lock is None:
+        import threading
+
+        _screen_tree_lock = threading.RLock()
+    return _screen_tree_lock
 
 
 def get_screen_variant(name, candidates=None):

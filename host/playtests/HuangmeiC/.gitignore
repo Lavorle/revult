@@ -1,0 +1,7 @@
+# Runtime multi-symlink overlay (recreated by run_huangmeic_playtest.sh).
+game/
+log.txt
+traceback.txt
+errors.txt
+saves/
+cache/

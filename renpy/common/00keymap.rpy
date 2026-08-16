@@ -333,7 +333,11 @@ init -1600 python:
         if config.screenshot_callback is not None:
             config.screenshot_callback(fn)
 
-        renpy.put_clipboard_image_file(fn, absolute_path=True)
+        # Clipboard is best-effort (host_build may lack SDL scrap).
+        try:
+            renpy.put_clipboard_image_file(fn, absolute_path=True)
+        except Exception:
+            pass
 
     config.pre_screenshot_actions = [ ]
 

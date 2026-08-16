@@ -1091,6 +1091,12 @@ class Interface:
                 pygame.display.set_icon(im)
             except renpy.webloader.DownloadNeeded:
                 pass
+            except Exception:
+                # Host/searchpath races or missing icon must not abort Interface.start.
+                if getattr(renpy, "host_build", False):
+                    pass
+                else:
+                    raise
 
     def set_window_caption(self, force=False):
         window_title = renpy.config.window_title
@@ -1123,7 +1129,12 @@ class Interface:
 
         renpy.config.renderer = renderer
 
-        if renpy.android or renpy.ios or renpy.emscripten:
+        # Host MVP: only WgpuDraw (plan dual-tree / no GL coexistence on host).
+        if getattr(renpy, "host_build", False):
+            renderers = ["wgpu"]
+            renderer = "wgpu"
+            renpy.config.renderer = "wgpu"
+        elif renpy.android or renpy.ios or renpy.emscripten:
             renderers = ["gles2"]
         elif renpy.windows:
             renderers = ["gl2", "angle2", "gles2"]
@@ -1138,16 +1149,19 @@ class Interface:
             renderer = "auto"
 
         # Software renderer is the last hope for PC .
-        if not (renpy.android or renpy.ios or renpy.emscripten):
+        if not (renpy.android or renpy.ios or renpy.emscripten or getattr(renpy, "host_build", False)):
             renderers = renderers + ["sw"]
 
         if renderer in renderers:
-            renderers = [renderer, "sw"]
+            if getattr(renpy, "host_build", False):
+                renderers = [renderer]
+            else:
+                renderers = [renderer, "sw"]
 
         if renderer == "sw":
             renderers = ["sw"]
 
-        if self.safe_mode:
+        if self.safe_mode and not getattr(renpy, "host_build", False):
             renderers = ["sw"]
 
         draw_objects = {}
@@ -1169,11 +1183,14 @@ class Interface:
 
                 return False
 
-        make_draw("gl2", "renpy.gl2.gl2draw", "GL2Draw", "gl2")
-        make_draw("angle2", "renpy.gl2.gl2draw", "GL2Draw", "angle2")
-        make_draw("gles2", "renpy.gl2.gl2draw", "GL2Draw", "gles2")
+        if getattr(renpy, "host_build", False):
+            make_draw("wgpu", "renpy.wgpu.draw", "WgpuDraw")
+        else:
+            make_draw("gl2", "renpy.gl2.gl2draw", "GL2Draw", "gl2")
+            make_draw("angle2", "renpy.gl2.gl2draw", "GL2Draw", "angle2")
+            make_draw("gles2", "renpy.gl2.gl2draw", "GL2Draw", "gles2")
 
-        make_draw("sw", "renpy.display.swdraw", "SWDraw")
+            make_draw("sw", "renpy.display.swdraw", "SWDraw")
 
         rv = []
 
@@ -1224,7 +1241,15 @@ class Interface:
         This is called when the window has been resized.
         """
 
-        self.kill_textures(keep_const_size=not self.display_reset)
+        # host_build: WgpuDraw.kill_textures destroys GpuArena handles. Image
+        # cache entries marked const_size (PNG overlays like main_menu.png)
+        # would keep dead HostTexture handles if keep_const_size=True, so after
+        # maximize the left overlay draws with invalid IDs and "disappears".
+        # Always fully clear im.cache on host resize so textures re-upload.
+        if getattr(renpy, "host_build", False):
+            self.kill_textures(keep_const_size=False)
+        else:
+            self.kill_textures(keep_const_size=not self.display_reset)
 
         if not renpy.mobile:
             pygame.key.stop_text_input()
@@ -1290,12 +1315,282 @@ class Interface:
             android.init()
             pygame.event.get()
 
+
+    def _host_non_movie_redraw_pending(self):
+        """True if redraw queue has a non-Movie displayable due now."""
+        try:
+            from renpy.display.video import Movie
+            rq = renpy.display.render.redraw_queue
+            now = get_time()
+            for when, d in rq:
+                if when > now:
+                    continue
+                try:
+                    if id(d) not in renpy.display.render.render_cache:
+                        continue
+                except Exception:
+                    continue
+                if isinstance(d, Movie):
+                    continue
+                # Finished transitions (events=True) may linger in the queue after
+                # Movie kill_cache parent walks; they no longer need full rebuild.
+                try:
+                    from renpy.display.transition import Transition
+                    if isinstance(d, Transition) and bool(getattr(d, "events", False)):
+                        continue
+                except Exception:
+                    pass
+                # Diagnostics: sample blocking types occasionally.
+                try:
+                    import os as _os
+                    if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                        n = int(getattr(self, "_host_re_present_blocked_ui", 0))
+                        if n < 8 or (n % 200) == 0:
+                            delay = getattr(d, "delay", getattr(d, "time", None))
+                            print(
+                                f"PHASE0_SIGNAL re_present_block type={type(d).__name__} "
+                                f"events={getattr(d,'events',None)} delay={delay} "
+                                f"mod={getattr(type(d),'__module__','?')} n={n}",
+                                flush=True,
+                            )
+                except Exception:
+                    pass
+                return True
+        except Exception as e:
+            try:
+                import os as _os
+                if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                    print(f"PHASE0_SIGNAL re_present_block_exc {e!r}", flush=True)
+            except Exception:
+                pass
+            return True
+        return False
+
+    def _try_host_re_present_fast(self):
+        """Movie/static re-present without full render_screen (WP3 residual)."""
+        if not getattr(renpy, "host_build", False):
+            return False
+        try:
+            import os as _os
+            if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                self._host_re_present_attempts = int(getattr(self, "_host_re_present_attempts", 0)) + 1
+        except Exception:
+            pass
+        try:
+            import renpy_host  # type: ignore
+        except Exception:
+            return False
+        re_present = getattr(renpy_host, "re_present_last_product", None)
+        has_cmds = getattr(renpy_host, "has_last_product_cmds", None)
+        if re_present is None or has_cmds is None:
+            return False
+        try:
+            if not bool(has_cmds()):
+                return False
+        except Exception:
+            return False
+
+        # Active Interface transition → must full-render for Dissolve/Fade.
+        try:
+            if self.get_ongoing_transition(None):
+                try:
+                    import os as _os
+                    if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                        n = int(getattr(self, "_host_re_present_attempts", 0))
+                        if n < 8 or (n % 300) == 0:
+                            tt = self.transition_time.get(None)
+                            it = self.interact_time
+                            ft = self.frame_time
+                            tr = self.instantiated_transition.get(None)
+                            delay = getattr(tr, "delay", None) if tr else None
+                            print(
+                                f"PHASE0_SIGNAL re_present_block active_root "
+                                f"tt={tt} it={it} ft={ft} delay={delay} n={n}",
+                                flush=True,
+                            )
+                except Exception:
+                    pass
+                return False
+            for _layer in list(getattr(self, "ongoing_transition", {}) or {}):
+                if _layer is None:
+                    continue
+                if self.get_ongoing_transition(_layer):
+                    try:
+                        import os as _os
+                        if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                            n = int(getattr(self, "_host_re_present_attempts", 0))
+                            if n < 8 or (n % 300) == 0:
+                                print(
+                                    f"PHASE0_SIGNAL re_present_block active_layer={_layer!r} n={n}",
+                                    flush=True,
+                                )
+                    except Exception:
+                        pass
+                    return False
+        except Exception as e:
+            try:
+                import os as _os
+                if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                    print(f"PHASE0_SIGNAL re_present_block trans_exc {e!r}", flush=True)
+            except Exception:
+                pass
+            return False
+
+        # Due non-Movie with live cache → full path. Drop finished Transitions.
+        # Container-only residual (MultiBox/Fixed parents after child ATL/Movie)
+        # must not permanently block Movie re-present on dense prefs idle.
+        try:
+            from renpy.display.video import Movie as _Movie
+            from renpy.display.transition import Transition as _Trans
+            from renpy.display.layout import MultiBox as _MultiBox, Container as _Container
+            from renpy.display.behavior import SayBehavior as _SayBehavior
+            import time as _time
+
+            movies_playing = False
+            try:
+                movies_playing = bool(renpy.display.video.playing())
+            except Exception:
+                movies_playing = False
+
+            now = get_time()
+            now_m = _time.monotonic()
+            kept = []
+            ui_due = False
+            ui_due_type = "?"
+            for when, d in renpy.display.render.redraw_queue:
+                if isinstance(d, _Trans):
+                    if bool(getattr(d, "events", False)):
+                        continue
+                    delay = float(getattr(d, "time", getattr(d, "delay", 0.0)) or 0.0)
+                    t0 = getattr(d, "_host_t0", None)
+                    if t0 is None:
+                        try:
+                            d._host_t0 = now_m  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
+                        t0 = now_m
+                    if (now_m - float(t0)) >= (delay + 0.016):
+                        try:
+                            d.events = True
+                        except Exception:
+                            pass
+                        continue
+                    # Stale transition residue while Interface has no ongoing.
+                    continue
+                if isinstance(d, _Movie):
+                    kept.append((when, d))
+                    continue
+                # Sticky pause/say behaviors after transitions: drop when not modal.
+                if isinstance(d, _SayBehavior):
+                    continue
+                if when <= now:
+                    try:
+                        in_cache = id(d) in renpy.display.render.render_cache
+                    except Exception:
+                        in_cache = True
+                    if in_cache:
+                        # Container-only with movies: parent marks after Movie/ATL;
+                        # chrome sample handles are unchanged — re-present is safe.
+                        if movies_playing and isinstance(d, (_MultiBox, _Container)):
+                            # Drop so process_redraws on a later full frame can reclaim.
+                            continue
+                        ui_due = True
+                        ui_due_type = type(d).__name__
+                kept.append((when, d))
+            renpy.display.render.redraw_queue = kept
+            if ui_due:
+                try:
+                    import os as _os
+                    if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                        self._host_re_present_blocked_ui = int(
+                            getattr(self, "_host_re_present_blocked_ui", 0)
+                        ) + 1
+                        n = int(getattr(self, "_host_re_present_blocked_ui", 0))
+                        if n < 8 or (n % 200) == 0:
+                            print(
+                                f"PHASE0_SIGNAL re_present_block ui_due type={ui_due_type} n={n}",
+                                flush=True,
+                            )
+                except Exception:
+                    pass
+                return False
+        except Exception:
+            return False
+
+        # Movie texture rewrite in place.
+        try:
+            from renpy.display import video as _video
+            for (channel, mask_channel), movies in list(_video.displayable_channels.items()):
+                if not movies:
+                    continue
+                m0 = movies[0]
+                try:
+                    _video.get_movie_texture(
+                        channel,
+                        mask_channel,
+                        getattr(m0, "side_mask", False),
+                        getattr(getattr(m0, "style", None), "mipmap", None),
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        try:
+            from renpy.display.video import Movie as _Movie
+            now = get_time()
+            renpy.display.render.redraw_queue = [
+                (when, d)
+                for (when, d) in renpy.display.render.redraw_queue
+                if not (when <= now and isinstance(d, _Movie))
+            ]
+        except Exception:
+            pass
+
+        try:
+            ok = bool(re_present())
+        except Exception:
+            return False
+        if ok:
+            try:
+                import os as _os
+                if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                    self._host_re_present_ok = int(getattr(self, "_host_re_present_ok", 0)) + 1
+                    n = int(getattr(self, "_host_re_present_ok", 0))
+                    if n == 1 or (n % 120) == 0:
+                        print(
+                            f"PHASE0_SIGNAL re_present_ok n={n} "
+                            f"attempts={getattr(self,'_host_re_present_attempts',0)} "
+                            f"blocked_ui={getattr(self,'_host_re_present_blocked_ui',0)}",
+                            flush=True,
+                        )
+            except Exception:
+                pass
+            try:
+                now = time.time()
+                self.frame_times.append(now)
+                while self.frame_times and (now - self.frame_times[0]) > renpy.config.performance_window:
+                    self.frame_times.pop(0)
+            except Exception:
+                pass
+        return ok
+
     def draw_screen(self, root_widget, fullscreen_video, draw):
         try:
             renpy.display.render.per_frame = True
             renpy.display.screen.per_frame()
         finally:
             renpy.display.render.per_frame = False
+
+        # host_build: force-redraw / gate paths often call Interface.draw_screen
+        # without the interact_core process_redraws step. Without it, MultiBox
+        # that SL reused via _clear()+re-add still hits a cache-killed or stale
+        # Render and drops preferences_layout children (确认设置1/2 black panel).
+        if getattr(renpy, "host_build", False):
+            try:
+                renpy.display.render.process_redraws()
+            except Exception:
+                pass
 
         surftree = renpy.display.render.render_screen(
             root_widget,
@@ -1573,7 +1868,14 @@ class Interface:
         if transition is None:
             return None
 
-        start = self.transition_time.get(layer, self.frame_time) or self.frame_time
+        # transition_time[layer] may still be None until first_pass stamps
+        # interact_time. Using ``or frame_time`` made (frame-start) always 0 so
+        # the transition never expired (host prefs p99 residual / re_present block).
+        start = self.transition_time.get(layer, None)
+        if start is None:
+            start = self.interact_time
+        if start is None:
+            start = self.frame_time
         delay = getattr(transition, "delay", 0) or 0
 
         if (self.frame_time - start) < delay:
@@ -1660,6 +1962,29 @@ class Interface:
                     break
 
                 emscripten.sleep(1)
+
+        elif getattr(renpy, "host_build", False):
+            # Mechanism 1 (plan §4.1.1): never block on pygame.event.wait.
+            # Nested host.wait_until pumps winit and returns to this frame.
+            # Watchdog/request_quit may set should_exit while PERIODIC events keep
+            # the queue non-empty — check should_exit each poll so we still exit.
+            import renpy_host  # type: ignore
+
+            while True:
+                try:
+                    if renpy_host.should_exit():
+                        # Hard unwind: do not go through quit_action confirm UI.
+                        raise renpy.game.QuitException(relaunch=False, status=0)
+                except renpy.game.QuitException:
+                    raise
+                except Exception:
+                    pass
+                ev = pygame.event.poll()
+                if getattr(ev, "type", pygame.NOEVENT) != pygame.NOEVENT:
+                    break
+                # Next timer / input deadline: short slice; host injects PERIODIC.
+                deadline = renpy_host.get_ticks_ms() + 16
+                renpy_host.wait_until(deadline)
 
         else:
             ev = pygame.event.wait()
@@ -2842,28 +3167,66 @@ class Interface:
                         needs_redraw = True
 
                     # Redraw the screen.
-                    if self.force_redraw or (
-                        (first_pass or not pygame.event.peek(ALL_EVENTS))
-                        and renpy.display.draw.should_redraw(needs_redraw, first_pass, can_block)
-                    ):
+                    # Host residual H3/feel: PERIODIC keeps the host queue non-empty,
+                    # so stock peek(ALL_EVENTS) starves product presents during prefs
+                    # page switches (400ms+ first_interactive with no draw STALL).
+                    if getattr(renpy, 'host_build', False):
+                        _do_draw = self.force_redraw or renpy.display.draw.should_redraw(
+                            needs_redraw, first_pass, can_block
+                        )
+                    else:
+                        _do_draw = self.force_redraw or (
+                            (first_pass or not pygame.event.peek(ALL_EVENTS))
+                            and renpy.display.draw.should_redraw(
+                                needs_redraw, first_pass, can_block
+                            )
+                        )
+                    if _do_draw:
+                        # Snapshot force_redraw before clear: page switch / gates
+                        # force full render_screen even when redraw queue is empty.
+                        _force = bool(self.force_redraw)
                         self.force_redraw = False
 
-                        renpy.display.render.process_redraws()
+                        # Host WP3 residual: Movie/static re-present when chrome
+                        # is stable. Avoids full render_screen on dense prefs
+                        # while Movie keeps needs_redraw hot for present cadence.
+                        _fast = False
+                        if (
+                            getattr(renpy, "host_build", False)
+                            and (not first_pass)
+                            and (not _force)
+                        ):
+                            try:
+                                _fast = bool(self._try_host_re_present_fast())
+                            except Exception:
+                                _fast = False
 
-                        # If we have a movie, start showing it.
-                        fullscreen_video = renpy.display.video.interact()
+                        if not _fast:
+                            renpy.display.render.process_redraws()
 
-                        # Clean out the redraws, if we have to.
-                        # renpy.display.render.kill_redraws()
+                            # If we have a movie, start showing it.
+                            fullscreen_video = renpy.display.video.interact()
 
-                        self.text_rect = None
+                            # Clean out the redraws, if we have to.
+                            # renpy.display.render.kill_redraws()
 
-                        # Draw the screen.
-                        self.frame_time = get_time()
+                            self.text_rect = None
 
-                        renpy.audio.audio.advance_time()  # Sets the time of all video frames.
+                            # Draw the screen.
+                            self.frame_time = get_time()
 
-                        self.draw_screen(root_widget, fullscreen_video, (not fullscreen_video) or video_frame_drawn)
+                            renpy.audio.audio.advance_time()  # Sets the time of all video frames.
+
+                            self.draw_screen(root_widget, fullscreen_video, (not fullscreen_video) or video_frame_drawn)
+                        else:
+                            # Fast path already presented; keep interact bookkeeping.
+                            fullscreen_video = renpy.display.video.interact()
+                            self.text_rect = None
+                            self.frame_time = get_time()
+                            try:
+                                renpy.audio.audio.advance_time()
+                            except Exception:
+                                pass
 
                         if first_pass:
                             if not self.interact_time:
@@ -2934,6 +3297,16 @@ class Interface:
                 if renpy.loadsave.did_autosave:
                     renpy.loadsave.did_autosave = False
                     renpy.exports.run(renpy.config.autosave_callback)
+
+                # host_build: stamp any still-None transition_time once interact_time
+                # is known (first_pass may have missed mid-interact set_transition).
+                if getattr(renpy, "host_build", False) and self.interact_time is not None:
+                    try:
+                        for k, v in list(self.transition_time.items()):
+                            if v is None:
+                                self.transition_time[k] = self.interact_time
+                    except Exception:
+                        pass
 
                 # End an obsolete ongoing transition.
                 if (
@@ -3030,6 +3403,21 @@ class Interface:
                         can_block = True
 
                     self.idle_frame(expensive)
+
+                # Host: smoke/max/window-X set renpy_host.should_exit while the
+                # interact loop is often on the busy event_poll path (needs_redraw).
+                # event_wait already checks should_exit; poll must too or the
+                # product freezes on the last frame until the outer process is killed.
+                if getattr(renpy, "host_build", False):
+                    try:
+                        import renpy_host  # type: ignore
+
+                        if renpy_host.should_exit():
+                            raise renpy.game.QuitException(relaunch=False, status=0)
+                    except renpy.game.QuitException:
+                        raise
+                    except Exception:
+                        pass
 
                 if needs_redraw or (not can_block) or self.mouse_move or renpy.display.video.playing():
                     renpy.plog(1, "pre peek")

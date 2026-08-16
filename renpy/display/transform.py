@@ -1325,7 +1325,23 @@ def add_uniform(name, uniform_type):
     if not name.startswith("u_"):
         return
 
-    if name in renpy.gl2.gl2draw.standard_uniforms:
+    # renpy-host may not ship Cython gl2draw; fall back to the known standard set
+    # so game register_shader still wires ATL properties (u_transition, etc.).
+    try:
+        standard = renpy.gl2.gl2draw.standard_uniforms
+    except Exception:
+        standard = {
+            "u_transform",
+            "u_projection",
+            "u_view",
+            "u_projectionview",
+            "u_model",
+            "u_time",
+            "u_random",
+            "u_drawable_size",
+        }
+
+    if name in standard:
         return
 
     add_property(name, diff=2)

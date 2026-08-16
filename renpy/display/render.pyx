@@ -437,6 +437,9 @@ def take_focuses(focuses):
     Adds a list of rectangular focus regions to the focuses list.
     """
 
+    if screen_render is None:
+        return
+
     screen_render.take_focuses(
         0, 0,
         screen_render.width, screen_render.height,

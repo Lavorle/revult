@@ -209,14 +209,51 @@ class Container(renpy.display.displayable.Displayable):
         if child._duplicatable:
             self._duplicatable = True
 
-        renpy.display.render.invalidate(self)
+        # host_build: invalidate() outside a render pass only queues redraw.
+        # Force-redraw / gate paths may render_screen before process_redraws,
+        # so a Render cached while this Fixed still had fewer children (e.g.
+        # mid SL _clear+re-add, or after a partial predict) would stick and
+        # drop preferences_layout's background.png. Kill cache entries now.
+        if getattr(renpy, "host_build", False):
+            try:
+                cache = renpy.display.render.render_cache.get(id(self))
+                if cache:
+                    for v in list(cache.values()):
+                        try:
+                            v.kill_cache()
+                        except Exception:
+                            pass
+            except Exception:
+                renpy.display.render.invalidate(self)
+            renpy.display.render.redraw(self, 0)
+        else:
+            renpy.display.render.invalidate(self)
 
     def _clear(self):
         self.child = None
         self.children = self._list_type()
         self.offsets = self._list_type()
 
-        renpy.display.render.redraw(self, 0)
+        # Stock: schedule redraw only. Host force-redraw / gate paths often
+        # render_screen without process_redraws, so a cache entry for this
+        # MultiBox can survive across SL reuse (_clear + re-add children) and
+        # return a Render missing the new kids (preferences panel bg drop).
+        # ``invalidate`` outside a render pass only schedules redraw — force
+        # kill_cache on host so the next render rebuilds immediately.
+        if getattr(renpy, "host_build", False):
+            try:
+                cache = renpy.display.render.render_cache.get(id(self))
+                if cache:
+                    for v in list(cache.values()):
+                        try:
+                            v.kill_cache()
+                        except Exception:
+                            pass
+            except Exception:
+                renpy.display.render.invalidate(self)
+            renpy.display.render.redraw(self, 0)
+        else:
+            renpy.display.render.redraw(self, 0)
 
     def remove(self, d):
         """
@@ -835,6 +872,16 @@ class MultiBox(Container):
 
         if self.first and adjust_times:
             self.update_times()
+        elif adjust_times and getattr(renpy, "host_build", False):
+            # Host residual: first render often runs before interact_time is set,
+            # leaving start_times as None forever (update_times early-return).
+            # Re-resolve None entries once interact_time exists so Dissolve st advances.
+            try:
+                it = renpy.game.interface.interact_time if renpy.game.interface else None
+                if it is not None and (None in self.start_times or None in self.anim_times):
+                    self.update_times()
+            except Exception:
+                pass
 
         layout = self.style.box_layout
 
@@ -849,16 +896,33 @@ class MultiBox(Container):
             else:
                 return frame_time - t
 
+        # Snapshot children + times before layout. Screen update on a concurrent
+        # host force-redraw / predict thread can replace MultiBox.children mid
+        # render (SL `_clear` + re-add). Iterating the live list then drops the
+        # preferences_layout panel background (1849×846) and earlier columns —
+        # HuangmeiC 确认设置1/2 black-panel residual. Box layout already used
+        # list(self.children); fixed path historically did not.
+        children = list(self.children)
+        start_times = list(self.start_times)
+        anim_times = list(self.anim_times)
+
         # Handle time adjustment, store the results in csts and cats.
         if adjust_times:
             frame_time = renpy.game.interface.frame_time
 
-            csts = [adjust(start, frame_time, st) for start in self.start_times]
-            cats = [adjust(anim, frame_time, at) for anim in self.anim_times]
+            csts = [adjust(start, frame_time, st) for start in start_times]
+            cats = [adjust(anim, frame_time, at) for anim in anim_times]
 
         else:
-            csts = [st] * len(self.children)
-            cats = [at] * len(self.children)
+            csts = [st] * len(children)
+            cats = [at] * len(children)
+
+        # If times and children raced mid-update, pad/truncate to a common length.
+        n = min(len(children), len(csts), len(cats))
+        if n != len(children) or n != len(csts) or n != len(cats):
+            children = children[:n]
+            csts = csts[:n]
+            cats = cats[:n]
 
         offsets = []
 
@@ -866,9 +930,9 @@ class MultiBox(Container):
             rv = None
 
             if self.style.order_reverse:
-                iterator = zip(reversed(self.children), reversed(csts), reversed(cats))
+                iterator = zip(reversed(children), reversed(csts), reversed(cats))
             else:
-                iterator = zip(self.children, csts, cats)
+                iterator = zip(children, csts, cats)
 
             rv = renpy.display.render.Render(width, height, layer_name=self.layer_name)
 
@@ -955,7 +1019,7 @@ class MultiBox(Container):
         if first_spacing is None:
             first_spacing = spacing
 
-        spacings = [first_spacing] + [spacing] * (len(self.children) - 1)
+        spacings = [first_spacing] + [spacing] * (max(0, len(children) - 1))
 
         box_wrap = self.style.box_wrap
         box_wrap_spacing = self.style.box_wrap_spacing
@@ -979,10 +1043,11 @@ class MultiBox(Container):
         line_width = 0
         line_height = 0
 
-        # The children to layout.
-        children = list(self.children)
+        # Reuse the children snapshot taken above (before fixed layout).
+        # Re-reading self.children here would reintroduce the concurrent
+        # screen-update race that drops mid-render Fixed/VBox kids.
         if self.style.box_reverse and renpy.config.simple_box_reverse:
-            children.reverse()
+            children = list(reversed(children))
             spacings.reverse()
         elif self.style.box_reverse and not renpy.config.box_reverse_align:
             box_align = 1.0 - box_align

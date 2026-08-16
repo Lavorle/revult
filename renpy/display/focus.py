@@ -300,6 +300,13 @@ def take_focuses():
     global focus_list
     focus_list = []
 
+    # Defensive: render.take_focuses assumes screen_render is live. Between
+    # screen hide and the next full draw, screen_render can be None (prefs
+    # return / main_menu restart). Mirror focus_at_point None guard so this
+    # path cannot AttributeError-crash the interact loop.
+    if renpy.display.render.screen_render is None:
+        return
+
     renpy.display.render.take_focuses(focus_list)
 
     global global_focus
@@ -511,6 +518,35 @@ def before_interact(roots):
         set_focused(max_default_focus, None, max_default_screen)
 
     old_max_default_focus_name = max_default_focus_name
+
+    # Host residual (post-pump #2): main-menu Start/Preferences often have no
+    # default_focus (the_question screens.rpy). Stock before_interact then leaves
+    # focused=None, so Button.event rejects button_select (Enter/Space/click) and
+    # the menu looks total-dead even when KEY/MOUSE events reach interact_core.
+    # On host_build only, seed the first activatable Button (has .clicked). Note:
+    # textbuttons inherit focus_name from the screen Fixed (`_screen_main_menu`)
+    # — that name is NOT a reason to skip; the type+clicked check is the filter.
+    # SDL path unchanged (renpy.host_build is False there).
+    if current is None and getattr(renpy, "host_build", False):
+        for f, n, screen, gen in fwn:
+            if gen != modal_generation:
+                continue
+            if f is None:
+                continue
+            try:
+                if not f.style.keyboard_focus:
+                    continue
+            except Exception:
+                continue
+            # Only real Buttons that can fire button_select.
+            if not isinstance(f, renpy.display.behavior.Button):
+                continue
+            if getattr(f, "clicked", None) is None and not getattr(f, "keymap", None):
+                continue
+            current = f
+            set_focused(f, None, screen)
+            explicit = True
+            break
 
     if current is None:
         set_focused(None, None, None)
@@ -893,6 +929,45 @@ def focus_ordered(delta):
     return change_focus(new_focus)
 
 
+def _host_first_keyboard_focus():
+    """Pick the first keyboard-focusable Button from the current focus_list.
+
+    Prefers real Buttons with geometry (menu Start/Prefs) over placeless slots
+    and over screen-shell Fixed focusables (`_screen_main_menu`).
+    """
+
+    placeless = None
+
+    for f in focus_list:
+        if f is None or f.widget is None:
+            continue
+
+        if f.x is False:
+            continue
+
+        w = f.widget
+        try:
+            if not w.style.keyboard_focus:
+                continue
+        except Exception:
+            continue
+
+        # Real Buttons only. Focus name may be inherited `_screen_main_menu`.
+        if not isinstance(w, renpy.display.behavior.Button):
+            continue
+        if getattr(w, "clicked", None) is None and not getattr(w, "keymap", None):
+            continue
+
+        if f.x is None:
+            if placeless is None:
+                placeless = f
+            continue
+
+        return f
+
+    return placeless
+
+
 def key_handler(ev):
     map_event = renpy.display.behavior.map_event
 
@@ -975,3 +1050,28 @@ def key_handler(ev):
                 0,
                 0,
             )
+
+    # Host residual (post-pump #2): bare keyboard button_select (Enter/Space/KP_Enter)
+    # with no focused Button is a stock no-op (Button.event requires is_focused).
+    # Games without default_focus (the_question main menu) therefore look total-dead
+    # even after KEY events reach interact_core. On host_build only, seed the first
+    # keyboard-focusable widget and re-dispatch the KEY event so Start activates
+    # without game content edits. Mouse button_select is intentionally excluded —
+    # empty-area clicks must not auto-activate Start. SDL path unchanged.
+    if (
+        getattr(renpy, "host_build", False)
+        and getattr(ev, "type", None) == pygame.KEYDOWN
+        and map_event(ev, "button_select")
+        and get_focused() is None
+    ):
+        target = _host_first_keyboard_focus()
+        if target is not None:
+            change_focus(target, default=True)
+            widget = get_focused()
+            if widget is not None:
+                try:
+                    return widget.event(ev, 0, 0, 0)
+                except renpy.display.core.IgnoreEvent:
+                    raise
+                except Exception:
+                    return None

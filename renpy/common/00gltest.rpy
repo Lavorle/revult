@@ -273,6 +273,11 @@ init -1500 python:
         if not config.gl_enable:
             return
 
+        # renpy-host (wgpu): skip GL performance interact — no GL2 to probe,
+        # and ui.pausebehavior/ui.interact here hangs automated HostStop gates.
+        if getattr(renpy, "host_build", False):
+            return
+
         if renpy.display.interface.safe_mode:
             renpy.call_in_new_context("_choose_renderer")
 

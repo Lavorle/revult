@@ -32,9 +32,72 @@ SCRIPTS = os.path.join(BASE, "scripts")
 sys.path.insert(0, SCRIPTS)
 
 import setuplib
-from setuplib import windows, cython, find_unnecessary_gen, generate_all_cython, env
+from setuplib import windows, cython as _cython, find_unnecessary_gen, generate_all_cython, env
 
 import generate_styles
+
+# Dual-tree host build (RENPY_HOST_BUILD=1): only SDL-free Class A modules.
+# See .omc/research/host-cython-inventory.md. Never packages=sdl* on this path.
+HOST_BUILD = os.environ.get("RENPY_HOST_BUILD", "") in ("1", "true", "yes")
+
+# Exact allowlist for host (plus renpy.styledata.style_*functions via prefix match).
+HOST_ALLOW = {
+    "renpy.astsupport",
+    "renpy.cslots",
+    "renpy.lexersupport",
+    "renpy.pydict",
+    "renpy.style",
+    "renpy.encryption",
+    "renpy.tfd",
+    "renpy.ecsign",
+    "renpy.audio.filter",
+    "renpy.styledata.styleclass",
+    "renpy.styledata.stylesets",
+    "renpy.display.matrix",
+    "renpy.display.render",
+    "renpy.display.quaternion",
+    "renpy.gl2.gl2mesh",
+    "renpy.gl2.gl2mesh2",
+    "renpy.gl2.gl2mesh3",
+    "renpy.gl2.gl2polygon",
+    "renpy.text.textsupport",
+    "renpy.text.texwrap",
+    "renpy.text.bidi",
+}
+
+
+def _host_allowed(name: str) -> bool:
+    if name in HOST_ALLOW:
+        return True
+    # Generated style function modules: renpy.styledata.style_<prefix>functions
+    if name.startswith("renpy.styledata.style_") and name.endswith("functions"):
+        return True
+    return False
+
+
+def cython(name, source=[], pyx=None, language="c", compile_args=[], define_macros=[], packages=""):
+    """
+    Wrapper around setuplib.cython. On RENPY_HOST_BUILD=1, only Class A modules
+    are registered, and any packages=*sdl* is a hard error (must not dlopen libSDL).
+    """
+    if HOST_BUILD:
+        if not _host_allowed(name):
+            print("host build: skip", name)
+            return
+        for pkg in packages.split():
+            if "sdl" in pkg.lower():
+                raise SystemExit(
+                    "host build refused packages containing sdl for {}: {!r}".format(name, packages)
+                )
+    _cython(
+        name,
+        source=source,
+        pyx=pyx,
+        language=language,
+        compile_args=compile_args,
+        define_macros=define_macros,
+        packages=packages,
+    )
 
 
 def main():
@@ -51,6 +114,9 @@ def main():
     cubism = os.environ.get("CUBISM", None)
     if cubism:
         setuplib.include_dirs.append("{}/Core/include".format(cubism))
+
+    if HOST_BUILD:
+        print("RENPY_HOST_BUILD=1: building SDL-free Class A Cython subset only")
 
     # src/ directory.
     cython("_renpy", ["src/IMG_savepng.c", "src/core.c"], packages="sdl3 libpng")

@@ -646,7 +646,14 @@ def load_face(fn, shaper):
     try:
         font_file = renpy.loader.load(fn, directory="fonts")
     except IOError:
-        if (not renpy.config.developer) or renpy.config.allow_sysfonts:
+        # Common fonts live at searchpath roots (e.g. renpy/common/*.woff2),
+        # not under fonts/. Retry bare name before sysfont / failure.
+        try:
+            font_file = renpy.loader.load(fn)
+        except IOError:
+            font_file = None
+
+        if font_file is None and ((not renpy.config.developer) or renpy.config.allow_sysfonts):
             # Let's try to find the font on our own.
             fonts = [i.strip().lower() for i in fn.split(",")]
 
@@ -665,6 +672,49 @@ def load_face(fn, shaper):
 
                 if font_file:
                     break
+
+        # Host: absolute searchpath + basedir join can miss common fonts; try
+        # renpy/common and searchpath roots directly. Also honor
+        # config.renamed_files (DejaVuSans.ttf → dejavusans.woff2) and bare
+        # .woff2 siblings when only woff2 ships in common/.
+        if font_file is None and getattr(renpy, "host_build", False):
+            import os
+
+            names = [fn]
+            try:
+                renamed = renpy.config.renamed_files.get(fn.lower())
+                if renamed:
+                    names.append(renamed)
+            except Exception:
+                pass
+            if fn.lower().endswith(".ttf"):
+                names.append(fn[:-4] + ".woff2")
+                names.append(fn[:-4] + ".woff")
+
+            candidates = []
+            common = getattr(renpy.config, "commondir", None)
+            for name in names:
+                if common:
+                    candidates.append(os.path.join(common, name))
+                for d in getattr(renpy.config, "searchpath", []) or []:
+                    root = d if os.path.isabs(d) else os.path.join(renpy.config.basedir, d)
+                    candidates.append(os.path.join(root, name))
+                    candidates.append(os.path.join(root, "fonts", name))
+                # Also try loader with bare renamed name (uses searchpath + lower_map).
+                try:
+                    font_file = renpy.loader.load(name)
+                    if font_file is not None:
+                        break
+                except Exception:
+                    pass
+            if font_file is None:
+                for path in candidates:
+                    try:
+                        if path and os.path.isfile(path):
+                            font_file = open(path, "rb")
+                            break
+                    except Exception:
+                        pass
 
     if font_file is None:
         raise Exception("Could not find font {0!r}.".format(orig_fn))

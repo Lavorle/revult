@@ -362,6 +362,18 @@ class Dissolve(Transition):
         if renpy.game.less_updates:
             return null_render(self, width, height, st, at)
 
+        # host_build: if wall-clock since first render exceeds time, force complete.
+        # Prevents a stuck st (0) Dissolve from permanently blocking Movie re-present
+        # and keeping full render_screen on every frame (prefs p99 residual).
+        if getattr(renpy, "host_build", False):
+            import time as _time
+            t0 = getattr(self, "_host_t0", None)
+            if t0 is None:
+                self._host_t0 = _time.monotonic()  # type: ignore[attr-defined]
+                t0 = self._host_t0
+            if (_time.monotonic() - float(t0)) >= float(self.time):
+                st = max(st, float(self.time))
+
         if st >= self.time:
             self.events = True
             return render(self.new_widget, width, height, st, at)

@@ -27,6 +27,16 @@ import renpy
 # A map from shader part name to ShaderPart
 shader_part = {}
 
+# Game GLSL parts that renpy-host can soft-alias onto an existing WGSL host
+# pipeline. Unknown game/mod GLSL still hard-fails (AC8 / shader_break gate).
+# Key = register_shader name used by product scripts; value = host pipeline kind
+# (must match renpy.wgpu.shaders host_pipeline_key / PART_TO_PIPELINE).
+_HOST_GLSL_ALIASES = {
+    # HuangmeiC dissolve_transform: custom 3-tex rule dissolve ≈ renpy.imagedissolve.
+    # Texture order differs (see draw.py); uniforms remapped there.
+    "image_dissolve": "imagedissolve",
+}
+
 
 def register_shader(name, **kwargs):
     """
@@ -62,9 +72,163 @@ def register_shader(name, **kwargs):
     and end with an integer priority. So "fragment_200" or "vertex_300". These
     give text that's placed in the appropriate shader at the given priority,
     with lower priority numbers inserted before higher priority numbers.
+
+    On renpy-host (wgpu) builds:
+
+    * **Engine builtins** (``renpy.*``, ``live2d.*``, ``textshader.*``,
+      and names starting with ``_``) soft-stub so common initcode
+      (``_shaders.rpym`` / styles) can complete. Known names are mirrored
+      into :func:`renpy.register_wgsl_shader`.
+    * **Known game aliases** in ``_HOST_GLSL_ALIASES`` soft-stub onto an
+      existing host WGSL pipeline (e.g. ``image_dissolve`` → imagedissolve).
+    * **Unknown game/mod GLSL** registrations hard-fail (AC8 / ``shader_break``).
+
+    See ``doc/wgsl_shader_migration.md``.
     """
 
+    if getattr(renpy, "host_build", False):
+        # Soft-accept engine builtins (common/_shaders.rpym, live2d, textshader.*
+        # parts from 00textshader_ren.py) so initcode completes and Style
+        # 'default' is created. Known product aliases map onto host pipelines.
+        # Hard-fail unknown game/mod GLSL for AC8.
+        engine = (
+            name.startswith("renpy.")
+            or name.startswith("live2d.")
+            or name.startswith("textshader.")
+            or name.startswith("_")
+        )
+        alias_kind = _HOST_GLSL_ALIASES.get(name)
+        if not engine and alias_kind is None:
+            raise Exception(
+                "register_shader(%r) is not supported on renpy-host (wgpu/Vulkan). "
+                "GLSL shader parts must be re-authored as WGSL via "
+                "renpy.register_wgsl_shader(...). "
+                "Migration guide: doc/wgsl_shader_migration.md "
+                "(textshader.* registrations included)." % (name,)
+            )
+        # Soft host path for engine / aliased parts: do NOT raise. Raising aborts
+        # _errorhandling → _shaders mid-boot, leaves initcode empty, and
+        # Style 'default' never gets created from 00style.rpy.
+        try:
+            import renpy.wgpu.shaders as wgsl
+
+            meta = dict(kwargs)
+            meta.setdefault("host_glsl_stub", True)
+            if alias_kind is not None:
+                # Register under both the product name and the host kind so
+                # host_pipeline_key / draw detection can resolve either.
+                meta.setdefault("kind", alias_kind)
+                meta.setdefault("priority", 400)
+                meta.setdefault("tex_count", 3 if alias_kind == "imagedissolve" else 0)
+                meta.setdefault("atomic", True)
+                wgsl.register_wgsl_shader(name, **meta)
+                # Also ensure the stock host pipeline name is present.
+                if alias_kind == "imagedissolve":
+                    wgsl.register_wgsl_shader(
+                        "renpy.imagedissolve",
+                        priority=400,
+                        kind="imagedissolve",
+                        tex_count=3,
+                        atomic=True,
+                        host_glsl_stub=True,
+                    )
+            else:
+                wgsl.register_wgsl_shader(name, **meta)
+        except Exception:
+            pass
+        return HostShaderPart(name, **kwargs)
+
     return ShaderPart(name, **kwargs)
+
+
+class HostShaderPart(object):
+    """
+    Lightweight shader-part stub for renpy-host.
+
+    Product init (``_shaders.rpym``, ``register_textshader``) needs expand_name /
+    substitute_name / uniforms / variable_types. GLSL is not parsed or compiled;
+    host rendering uses WGSL pipelines via renpy.wgpu.
+    """
+
+    def __init__(
+        self, name, variables="", vertex_functions="", fragment_functions="", private_uniforms=False, **kwargs
+    ):
+        if not re.match(r"^[\w\.]+$", name):
+            raise Exception(
+                "The shader name {!r} contains an invalid character. Shader names are limited to ASCII alphanumeric characters, _, and .".format(
+                    name
+                )
+            )
+
+        self.name = name
+        # Keep the global map so lookups that check shader_part[name] still work.
+        shader_part[name] = self
+
+        self.vertex_functions = vertex_functions or ""
+        self.fragment_functions = fragment_functions or ""
+        self.vertex_parts = []
+        self.fragment_parts = []
+        self.vertex_variables = set()
+        self.fragment_variables = set()
+        self.variable_types = {}
+        self.uniforms = []
+        self.raw_variables = variables or ""
+
+        # Best-effort parse of "uniform type name;" lines for textshader metadata
+        # AND for Transform/ATL property registration (parity with ShaderPart).
+        # Without add_uniform, product ATL like `u_animation 0.0` / `u_transition 0.2`
+        # raises "ATL Property u_* is unknown at runtime" (HuangmeiC dissolve_transform).
+        for line in (variables or "").split("\n"):
+            line = line.partition("//")[0].strip()
+            if not line or line.endswith("{"):
+                continue
+            parts = line.replace(";", " ").split()
+            if len(parts) >= 3 and parts[0] in ("uniform", "attribute", "varying"):
+                storage, typ, uname = parts[0], parts[1], parts[2]
+                # Strip array suffix if present: name[N]
+                uname = uname.split("[", 1)[0]
+                uname = self.expand_name(uname)
+                self.variable_types[uname] = typ
+                if storage == "uniform":
+                    self.uniforms.append(uname)
+                    if not private_uniforms:
+                        # Must register ATL/Transform properties. Swallow only
+                        # truly unexpected errors after a best-effort path —
+                        # silent total failure leaves u_* unknown at runtime.
+                        try:
+                            renpy.display.transform.add_uniform(uname, typ)
+                        except Exception:
+                            try:
+                                renpy.display.transform.add_property(uname, diff=2)
+                                renpy.display.transform.uniforms.add(uname)
+                            except Exception:
+                                pass
+
+    def expand_name(self, s):
+        name = self.name.replace(".", "_")
+        if s.startswith("u__"):
+            return "u_" + name + "_" + s[3:]
+        elif s.startswith("a__"):
+            return "a_" + name + "_" + s[3:]
+        elif s.startswith("v__"):
+            return "v_" + name + "_" + s[3:]
+        elif s.startswith("l__"):
+            return "l_" + name + "_" + s[3:]
+        else:
+            return s
+
+    def expand_match(self, m):
+        return self.expand_name(m.group(0))
+
+    def expand_operation(self, m):
+        return "u_{}_OP_{}".format(m.group(1), m.group(2))
+
+    def substitute_name(self, s):
+        if not s:
+            return s
+        rv = re.sub(r"\b[uavl]__\w+", self.expand_match, s)
+        rv = re.sub(r"\bu_(\w+)__(\w+)", self.expand_operation, rv)
+        return rv
 
 
 class ShaderPart(object):

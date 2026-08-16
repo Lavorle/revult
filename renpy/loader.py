@@ -783,10 +783,20 @@ def transpath(path: str) -> str | None:
     path = lower_map.get(unicodedata.normalize("NFC", path.lower()), path)
 
     for d in renpy.config.searchpath:
-        fn = os.path.join(renpy.config.basedir, d, path)
+        # Host/predefined_searchpath may already return absolute dirs
+        # (e.g. .../renpy/common). Do not re-join basedir in that case —
+        # os.path.join(basedir, "/abs/path") discards basedir but is fine on
+        # POSIX; joining basedir + absolute d is still correct only when d is
+        # used alone. Prefer absolute d as-is.
+        if os.path.isabs(d):
+            fn = os.path.join(d, path)
+        else:
+            fn = os.path.join(renpy.config.basedir, d, path)
 
         if os.path.isfile(fn):
             return fn
+
+    return None
 
 
 def transfn(name: bytes | str) -> str:

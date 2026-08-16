@@ -184,7 +184,11 @@ Matrix = renpy.display.matrix.Matrix
 Live2D = renpy.gl2.live2d.Live2D
 
 Model = renpy.display.model.Model
-GLTFModel = renpy.gl2.assimp.GLTFModel
+# Host builds may only have a stub assimp module (no Cython/SDL).
+try:
+    GLTFModel = renpy.gl2.assimp.GLTFModel
+except Exception:
+    GLTFModel = None  # type: ignore
 
 # Currying things.
 Alpha = renpy.curry.curry(renpy.display.layout.Alpha)

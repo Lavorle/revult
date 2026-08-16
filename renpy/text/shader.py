@@ -394,6 +394,11 @@ def register_textshader(
 
     This creates a textshader and registers it with the name `name`.
 
+    On renpy-host (wgpu) builds GLSL is not compiled; registration soft-stubs
+    via register_shader → HostShaderPart so initcode can complete. Builtin host
+    text currently uses bitmap upload via renpy.wgpu.text (see
+    doc/wgsl_shader_migration.md).
+
     This function takes the following arguments:
 
     `name`
@@ -472,6 +477,8 @@ def register_textshader(
 
     shaders = tuple(shaders) + ("textshader." + name,)
 
+    # Host: register_shader soft-stubs (HostShaderPart); no GLSL compile.
+    # Phase 3 host text uses renpy.wgpu.text bitmap upload for actual glyphs.
     part = renpy.exports.register_shader("textshader." + name, private_uniforms=True, **part_kwargs)
 
     if doc is not None:
@@ -484,7 +491,11 @@ def register_textshader(
 
     for k in part.uniforms:
         if k in textshader_kwargs:
-            uniforms[k] = to_uniform_value(name, k, part.variable_types, textshader_kwargs[k])
+            try:
+                uniforms[k] = to_uniform_value(name, k, part.variable_types, textshader_kwargs[k])
+            except Exception:
+                # Host stub may lack full type info; keep raw value.
+                uniforms[k] = textshader_kwargs[k]
 
     uniforms = tuple((k, uniforms[k]) for k in uniforms)
 

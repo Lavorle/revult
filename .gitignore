@@ -207,3 +207,14 @@ renpy/text/texwrap.pyi
 renpy/tfd.pyi
 renpy/uguu/gl.pyi
 renpy/uguu/uguu.pyi
+
+# Ren'Py host build artifacts / local agent scratch dirs (not product source).
+/target/
+/host/target/
+/host/.omc/
+/host/renpy-host/.omc/
+/.omc/
+/.omx/
+/.commandcode/
+/omx_wiki/
+/,

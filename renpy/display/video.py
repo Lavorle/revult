@@ -25,6 +25,7 @@ from renpy.compat import PY2, basestring, bchr, bord, chr, open, pystr, range, r
 import math
 import collections
 import re
+import os
 
 import renpy
 
@@ -297,6 +298,16 @@ def find_oversampled_filename(filename):
     When automatic oversampling is enabled, this function will search the filename for an
     oversampled movie.
     """
+
+    # host_build: stock auto-oversampling rewrites main_menu.webm → main_menu@2.webm
+    # when draw_per_virt > 1 (fullscreen / HiDPI). The host product path warms and
+    # decodes the base file at layout-native 1920×1080; following @2 forces a cold
+    # second decode of the 4K source after end_splash and is the post-logo stall
+    # class. Opt back in with RENPY_HOST_MOVIE_PREFER_AT2=1 (warm+play both use @2).
+    if getattr(renpy, "host_build", False):
+        prefer = os.environ.get("RENPY_HOST_MOVIE_PREFER_AT2", "").strip().lower()
+        if prefer not in ("1", "true", "yes", "on"):
+            return filename
 
     if (
         "@" not in filename
@@ -711,6 +722,9 @@ class Movie(renpy.display.displayable.Displayable):
 
     def render(self, width, height, st, at):
         self.ensure_channels()
+        # Preserve offered box before tex.get_size() shadows width/height.
+        offer_w = int(width) if width else 0
+        offer_h = int(height) if height else 0
 
         if self._play and not (renpy.game.preferences.video_image_fallback is True):
             if channel_movie.get(self.channel, None) is not self:
@@ -736,6 +750,62 @@ class Movie(renpy.display.displayable.Displayable):
 
         tex, _ = get_movie_texture(self.channel, self.mask_channel, self.side_mask, self.style.mipmap)
 
+        # host_build only: path-keyed frame0 hold for AC1 / end_splash dual-slot.
+        # First Movie.render often runs before update_playing → Movie.play, so
+        # get_movie_texture returns None (channel not playing) and stock code
+        # falls through to Render(0, 0). When the host path cache already has ≥1
+        # frame for self._play, present frame0 as a start_image substitute even
+        # though the channel has not started yet. Path cache survives movie
+        # channel stop (00start main_menu_stop_channels) so end_splash Dissolve
+        # NEW can bake a non-empty Movie texture for dual-draw slots.
+        # SDL/GL2 is unchanged (renpy.host_build is False there).
+        if tex is None and getattr(renpy, "host_build", False) and self._play:
+            try:
+                from renpy.audio import renpysound_host as _rps
+
+                hold = getattr(_rps, "path_cache_frame0_surface", None) or getattr(
+                    _rps, "peek_path_frame0", None
+                )
+                if hold is not None:
+                    surf = hold(self._play)
+                    if surf is not None:
+                        renpy.display.render.mutated_surface(surf)
+                        tex = renpy.display.draw.load_texture(
+                            surf, True, {"mipmap": self.style.mipmap}
+                        )
+                        # Override empty path when channel has not started yet.
+                        not_playing = False
+                        # Phase 0: once-log hold hit so dual-slot readiness is
+                        # attributable to frame0 (not dual-draw policy).
+                        try:
+                            log = getattr(_rps, "_phase0_log", None)
+                            if log is not None and not getattr(self, "_frame0_hold_logged", False):
+                                self._frame0_hold_logged = True  # type: ignore[attr-defined]
+                                sw, sh = surf.get_size() if hasattr(surf, "get_size") else (0, 0)
+                                log(
+                                    f"frame0_hold_hit play={self._play!r} "
+                                    f"size={sw}x{sh} channel={self.channel!r}"
+                                )
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            log = getattr(_rps, "_phase0_log", None)
+                            if log is not None and not getattr(self, "_frame0_hold_miss_logged", False):
+                                self._frame0_hold_miss_logged = True  # type: ignore[attr-defined]
+                                has = getattr(_rps, "path_cache_has_frames", None)
+                                n = getattr(_rps, "path_cache_frame_count", None)
+                                has_v = bool(has(self._play)) if callable(has) else False
+                                n_v = int(n(self._play)) if callable(n) else -1
+                                log(
+                                    f"frame0_hold_miss play={self._play!r} "
+                                    f"has_frames={has_v} n={n_v} channel={self.channel!r}"
+                                )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
         if self.group is not None:
             if tex is None:
                 tex = group_texture.get(self.group, None)
@@ -743,12 +813,28 @@ class Movie(renpy.display.displayable.Displayable):
                 group_texture[self.group] = tex
 
         if (not not_playing) and (tex is not None):
-            width, height = tex.get_size()
+            tex_w, tex_h = tex.get_size()
 
-            if self.playing_oversample != 1:
-                rv = resize_movie(tex, int(width / self.playing_oversample), int(height / self.playing_oversample))
+            # host_build present 1b: decode-size texture mesh-scaled to the
+            # offered layout box (zero CPU S1). Product decode defaults to
+            # layout-native 1920×1080 (1:1 sharp); staged warm keeps splash
+            # light. Skip stock oversample shrink — host decode is not GL2
+            # @N oversampled native.
+            if getattr(renpy, "host_build", False) and self.size is None:
+                rv = renpy.display.render.Render(tex_w, tex_h)
+                rv.blit(tex, (0, 0))
+                lw = offer_w if offer_w > 0 else 1920
+                lh = offer_h if offer_h > 0 else 1080
+                if tex_w > 0 and tex_h > 0 and (tex_w != lw or tex_h != lh):
+                    rv = resize_movie(rv, lw, lh)
+            elif self.playing_oversample != 1:
+                rv = resize_movie(
+                    tex,
+                    int(tex_w / self.playing_oversample),
+                    int(tex_h / self.playing_oversample),
+                )
             else:
-                rv = renpy.display.render.Render(width, height)
+                rv = renpy.display.render.Render(tex_w, tex_h)
                 rv.blit(tex, (0, 0))
 
         elif (not not_playing) and (self.start_image is not None):
@@ -922,6 +1008,15 @@ def frequent():
                     break
 
         if update:
+            # host_build WP3 residual: Movie textures rewrite in place on the
+            # existing HostTexture handle. Stock redraw(Movie) → process_redraws
+            # kill_cache walks parents and forces a full surftree rebuild every
+            # video-ready tick (~always on host video_ready). That permanently
+            # dirties chrome/Dissolve and blocks re-present. On host: do not
+            # queue Movie redraws; return True so needs_redraw stays hot for
+            # re-present / present cadence only.
+            if getattr(renpy, "host_build", False):
+                return True
             for v in displayable_channels.values():
                 for j in v:
                     renpy.display.render.redraw(j, 0.0)

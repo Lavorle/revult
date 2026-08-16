@@ -1044,10 +1044,10 @@ class WgpuDraw:
             # Patch texture_cache entries that still point at the dead handle so
             # next load_texture hit returns the live id without re-upload thrash.
             try:
-                for k, (fp, h) in list(self.texture_cache.items()):
+                for k, (fp, h, tw, th) in list(self.texture_cache.items()):
                     try:
                         if int(h) in (old, cur):
-                            self.texture_cache[k] = (fp, int(new_h))
+                            self.texture_cache[k] = (fp, int(new_h), tw, th)
                     except Exception:
                         continue
             except Exception:
@@ -1489,7 +1489,7 @@ class WgpuDraw:
             self._load_empty_pad_input = False
 
             if key in self.texture_cache:
-                old_fp, handle = self.texture_cache[key]
+                old_fp, handle, old_w, old_h = self.texture_cache[key]
                 # FIFO thrash may have destroyed the GPU handle while this map
                 # still points at it. Treat dead handles as cache miss so the
                 # next prepare re-uploads (otherwise HostTexture leaves stay
@@ -1501,15 +1501,22 @@ class WgpuDraw:
                     # that still hold this dead handle (class b). load_texture
                     # will re-create below for callers that re-enter.
                     self.texture_cache.pop(key, None)
-                elif old_fp is not None and old_fp == fp:
+                elif old_fp is not None and old_fp == fp and (old_w, old_h) == (w, h):
                     _touch(handle)
                     return HostTexture(handle, w, h)
                 else:
                     # Fingerprint changed / dirty (None after mutated_surface):
-                    # rewrite in place when possible (avoids destroy thrash).
+                    # rewrite in place only when the GPU handle has the same
+                    # dimensions. A different size must re-create; writing a
+                    # new-sized buffer into an old-sized handle corrupts the
+                    # texture and causes id-reuse chrome panels to read as BG.
                     wrote = False
                     wt_ms = 0.0
-                    if handle and hasattr(renpy_host, "write_texture_rgba"):
+                    if (
+                        handle
+                        and (old_w, old_h) == (w, h)
+                        and hasattr(renpy_host, "write_texture_rgba")
+                    ):
                         try:
                             _wt0 = _time.monotonic() if _phase0_signals_enabled() else None
                             renpy_host.write_texture_rgba(int(handle), pixels)
@@ -1524,7 +1531,7 @@ class WgpuDraw:
                                 f"write_texture_ms={wt_ms:.3f} size={w}x{h} "
                                 f"path=cache_rewrite handle={int(handle)}"
                             )
-                        self.texture_cache[key] = (fp, handle)
+                        self.texture_cache[key] = (fp, handle, w, h)
                         self._stash_handle_pixels(
                             handle, w, h, pixels, transient=False
                         )
@@ -1541,7 +1548,7 @@ class WgpuDraw:
             # content-backed surface is not stuck as transparent forever. Movie
             # / legitimate transparent placeholders use transient or real zeros.
             if not empty_input:
-                self.texture_cache[key] = (fp, handle)
+                self.texture_cache[key] = (fp, handle, w, h)
                 self._stash_handle_pixels(handle, w, h, pixels, transient=False)
             else:
                 # Still stash nothing useful (all zero); return HT for this frame.
@@ -5126,7 +5133,7 @@ class WgpuDraw:
         try:
             import renpy_host  # type: ignore
 
-            for _fp, handle in list(self.texture_cache.values()):
+            for _fp, handle, _tw, _th in list(self.texture_cache.values()):
                 try:
                     renpy_host.destroy_texture(handle)
                 except Exception:

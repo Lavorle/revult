@@ -15,8 +15,6 @@ mod timer;
 use std::cell::Cell;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::fs::File;
-use std::io::Write;
 
 use log::{error, info};
 use winit::application::ApplicationHandler;
@@ -234,7 +232,7 @@ fn run_product_pump(python: PythonRuntime) -> Result<(), String> {
     // Write benchmark JSON if enabled
     if app.benchmark_frames.is_some() {
         let avg = if app.benchmark_count > 0 {
-            app.benchmark_total / app.benchmark_count
+            app.benchmark_total.checked_div(app.benchmark_count as u32).unwrap_or(Duration::from_secs(0))
         } else {
             Duration::from_secs(0)
         };

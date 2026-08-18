@@ -10,7 +10,7 @@ use pyo3::types::{PyDict, PyModule};
 use pyo3::Bound;
 
 use crate::event_queue::{types, EventValue, HostEvent, EVENT_QUEUE};
-use crate::pump::{get_ticks_ms, log_wait, timeout_until};
+use crate::pump::{get_ticks_ms, log_wait};
 use crate::state::host_state;
 use crate::timer::TimerKind;
 
@@ -1612,7 +1612,7 @@ fn inject_text(text: String) {
 #[pyfunction]
 fn create_texture_rgba(width: u32, height: u32, rgba: Vec<u8>) -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1630,7 +1630,7 @@ fn create_texture_rgba(width: u32, height: u32, rgba: Vec<u8>) -> PyResult<u64> 
 #[pyfunction]
 fn write_texture_rgba(id: u64, rgba: Vec<u8>) -> PyResult<()> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1692,7 +1692,7 @@ fn texture_order_len() -> u32 {
 #[pyfunction]
 fn create_mesh(vertices: Vec<f32>, indices: Option<Vec<u32>>) -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1748,7 +1748,7 @@ fn mesh_order_len() -> u32 {
 #[pyfunction]
 fn solid_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1763,7 +1763,7 @@ fn solid_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn textured_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1779,7 +1779,7 @@ fn textured_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn dissolve_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1794,7 +1794,7 @@ fn dissolve_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn imagedissolve_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1809,7 +1809,7 @@ fn imagedissolve_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn blur_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1824,7 +1824,7 @@ fn blur_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn matrixcolor_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1846,7 +1846,7 @@ fn create_pipeline_wgsl(
     has_uniforms: bool,
 ) -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1861,7 +1861,7 @@ fn create_pipeline_wgsl(
 #[pyfunction]
 fn alpha_mask_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1876,7 +1876,7 @@ fn alpha_mask_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn mask_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1891,7 +1891,7 @@ fn mask_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn live2d_mask_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1906,7 +1906,7 @@ fn live2d_mask_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn live2d_inverted_mask_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1921,7 +1921,7 @@ fn live2d_inverted_mask_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn live2d_colors_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -1936,7 +1936,7 @@ fn live2d_colors_pipeline() -> PyResult<u64> {
 #[pyfunction]
 fn live2d_flip_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -2190,7 +2190,7 @@ fn inter_present_gaps_ms() -> Vec<f32> {
 #[pyfunction]
 fn create_render_texture(width: u32, height: u32) -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -2218,7 +2218,7 @@ fn end_target() {
 #[pyfunction]
 fn read_game_rt_rgba() -> PyResult<(u32, u32, Vec<u8>)> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
@@ -2230,7 +2230,7 @@ fn read_game_rt_rgba() -> PyResult<(u32, u32, Vec<u8>)> {
 #[pyfunction]
 fn read_texture_rgba(handle: u64) -> PyResult<(u32, u32, Vec<u8>)> {
     let mut st = host_state().lock().unwrap();
-    let mut gpu = st
+    let gpu = st
         .gpu
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;

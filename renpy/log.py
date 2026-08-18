@@ -74,7 +74,12 @@ class LogFile(object):
             self.file = real_stdout
 
     def open(self):
-        if renpy.config.log_to_stdout:
+        config = getattr(renpy, 'config', None)
+        if config is None:
+            self.file = real_stdout
+            return True
+
+        if getattr(config, 'log_to_stdout', False):
             self.file = real_stdout
             return True
 
@@ -87,17 +92,17 @@ class LogFile(object):
         if renpy.macapp:
             return False
 
-        if self.developer and not renpy.config.developer:
+        if self.developer and not getattr(config, 'developer', True):
             return False
 
-        if not renpy.config.log_enable:
+        if not getattr(config, 'log_enable', True):
             return False
 
-        if renpy.config.logdir is None:
+        if getattr(config, 'logdir', None) is None:
             return
 
         try:
-            base = os.environ.get("RENPY_LOG_BASE", renpy.config.logdir)
+            base = os.environ.get("RENPY_LOG_BASE", config.logdir)
 
             if base is None:
                 return False

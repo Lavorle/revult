@@ -128,8 +128,8 @@ flowchart TD
 | L1 Host Build | `executor` | `host/renpy-host/src/main.rs`, warnings cleanup, `lib.rs`, `tests/`, `phase1_gates.sh`, Cargo manifests as needed | golden baselines; Python composer logic |
 | L2 Shader/FFI | `executor` | `shader.rs`, `python.rs` FFI tuple, `state.rs` composer ownership, `renpy/wgpu/composer.py`, `draw.py` | baseline writes; runner envelope ownership |
 | L3 Golden | `test-engineer` + `executor` | `host/python/gates/golden_mae.py`, `tests/test_golden_mae.py`; default **revert** `**/actual.*` | broad render refactors |
-| L4 Runner | `executor` | `host/scripts/runner/parent_runner.py`, `run_golden_tests.sh`, G01–G08 reproduction path | bulk gate deletion |
-| L5 Evidence perimeter | `executor` / `writer` | gate inventory completeness, HuangmeiC playtest read-only guards, `benchmark_bc160.sh` runnability; confirm 7900XT historical archive | re-promoting 7900XT as admission bar |
+| L4 Runner | `executor` | `host/scripts/runner/parent_runner.py` (authority), `run_golden_tests.sh` only if it invokes parent runner, G01–G08 declared runs | bulk gate deletion; shell-only G0x loops that bypass parent envelope |
+| L5 Evidence perimeter | `executor` / `writer` | `.omx/gates-inventory.json` completeness (`total_gates: 134` + tier metadata), HuangmeiC playtest read-only guards, `benchmark_bc160.sh` runnability; confirm `.omx/context/historical-7900xt/` archive | re-promoting 7900XT as admission bar |
 
 **Shared-file ownership:** `python.rs`, `composer.py`, `draw.py` belong to L2. Other lanes request changes via coordination; they do not edit those files ad hoc.
 
@@ -158,21 +158,27 @@ flowchart TD
 
 ## 10. Verification Commands (Minimum)
 
+Wave0 must seed **first-class subclaims** (not only parent AC rows) for at least:
+- AC-2: Naga-or-approved-equivalent validation with line-accurate errors; rich FFI `ComposedPipelineInfo` 6-tuple; composer gates
+- AC-4: Parent Runner exclusive envelope/final verdict **and** G01–G08 pass
+
+Path note: consensus text may still say `testcases/golden_mae.py`; authoritative implementation path is `host/python/gates/golden_mae.py`.
+
 | AC | Minimum proof commands |
 |---|---|
 | AC-1 Host Build Contract | `cd host && cargo fmt --check && cargo check --all-targets && cargo test --workspace`; `./host/scripts/phase1_gates.sh` including zero-SDL check |
-| AC-2 Native Shader Composer | `cargo test -p renpy-host shader::`; composer gates: `composer_get_basic`, `composer_combo_matrixcolor`, `composer_combo_alpha`, `named_pipeline_honesty` |
-| AC-3 Strict Golden | `pytest tests/test_golden_mae.py -q`; missing baseline must exit non-zero; compare path must not write baseline |
-| AC-4 Runner + G01–G08 | `host/scripts/run_golden_tests.sh` or parent runner declared run for G01–G08; parent owns final envelope |
-| AC-5 Inventory + HuangmeiC | Inventory lists 134 gates with tier metadata; HuangmeiC smoke without writing recovered tree; production-path ruff blocking issues addressed or residualed |
-| AC-6 BC-160 + Release SSOT | `historical-7900xt` archived; benchmark script executable; full product/release acceptance with single `evidence_revision` or explicit residual |
+| AC-2 Native Shader Composer | **All** of: (1) `cargo test -p renpy-host shader::`; (2) proof that composition prevalidation is **Naga** with line-accurate errors, **or** Wave0/Wave2 marks this subclaim residual/red if only custom `validate_wgsl_syntax` exists without approved equivalence; (3) FFI returns rich 6-tuple `(pipeline_handle, key, tex_count, uniform_layout_id, has_uniforms, wgsl_source)` / `ComposedPipelineInfo`; (4) composer gates `composer_get_basic`, `composer_combo_matrixcolor`, `composer_combo_alpha`, `named_pipeline_honesty` exit 0. Gates alone never check off AC-2. |
+| AC-3 Strict Golden | `pytest tests/test_golden_mae.py -q` against `host/python/gates/golden_mae.py`; missing baseline must exit non-zero; compare path must not write baseline |
+| AC-4 Runner + G01–G08 | **Both** required: (1) G01–G08 visual/MAE pass via **Parent Runner** declared input manifest + exclusive process envelope/final verdict (`host/scripts/runner/parent_runner.py`); (2) no AC-4 green from `run_golden_tests.sh` alone unless that script is proven to invoke the parent runner and does not mint final verdicts itself. |
+| AC-5 Inventory + HuangmeiC | `.omx/gates-inventory.json` lists 134 gates with tier metadata; HuangmeiC smoke without writing recovered tree; production-path ruff blocking issues addressed or residualed |
+| AC-6 BC-160 + Release SSOT | `.omx/context/historical-7900xt/` archived; benchmark script executable; full product/release acceptance with single `evidence_revision` or explicit residual |
 
 ### Known WIP signal at design time (non-authoritative)
 
 Observed before closeout execution; Wave0 must re-verify:
 
 - `cargo check -p renpy-host` and `cargo test -p renpy-host --lib` were green (14 tests).
-- `shader.rs`, FFI exports, `composer.py` native path, strict `golden_mae.py`, `parent_runner.py`, `gates-inventory.json` (134), `historical-7900xt/`, `benchmark_bc160.sh` exist in dirty tree.
+- `shader.rs`, FFI exports, `composer.py` native path, strict `host/python/gates/golden_mae.py`, `parent_runner.py`, `.omx/gates-inventory.json` (134), `.omx/context/historical-7900xt/`, `benchmark_bc160.sh` exist in dirty tree. AC-2 Naga-vs-custom-validator and AC-4 parent-envelope wiring are known high-risk audit rows.
 - Consensus AC boxes still unchecked; Ralplan `consensus_complete: false`.
 - Dirty golden `actual.*` / some `baseline.*` present — treat as audit suspects.
 

@@ -1,0 +1,63 @@
+{
+  "schema": "product_acceptance.v1",
+  "evidence_revision": "06ce113b89916b9972a7f901ac4d70317cd71f9f",
+  "timestamp_utc": "2026-08-25T11:32:28.286812+00:00",
+  "verdict": "PASS",
+  "tier1_host": {
+    "cargo_fmt": 0,
+    "cargo_check_warnings": 0,
+    "cargo_test_34": "34",
+    "phase1_ldd_0": true,
+    "backend_Vulkan": "RADV NAVI12 3054fps"
+  },
+  "tier2_golden": {
+    "passed": "8/8",
+    "evidence_revision": "06ce113b89916b9972a7f901ac4d70317cd71f9f",
+    "envelopes": "10 envelopes f49->06ce 8/8",
+    "notes": "G02/G06 single-point, exit_code 1, corruption/missing PASS"
+  },
+  "tier2_composer": {
+    "combo_2_2": "PASS",
+    "naga_direct": "24.0.0 line:col",
+    "composer_4_4": true
+  },
+  "tier3_inventory": {
+    "total_134": true,
+    "T1_11_T2_13_T3_110": true
+  },
+  "tier3_ruff": {
+    "renpy_wgpu": "0 All checks passed!",
+    "host_python_gates": "0 All checks passed! (4994->0 bulk)",
+    "overall_production": "0 narrow"
+  },
+  "tier3_hmc": {
+    "smoke_30s": "EXIT 0 (3 runs, Vulkan, RO probe)",
+    "recovered_ro": true
+  },
+  "bc160": {
+    "schema": "bc160_perf_metrics.v1",
+    "gpu_target": "AMD BC-160 (Navi 12 / Radeon Pro 5600M)",
+    "vulkan_driver": "radv / Mesa (declared, not probed)",
+    "timestamp_utc": "2026-08-25T11:31:45Z",
+    "measurement_status": "MEASURED",
+    "release_evidence_eligible": true,
+    "average_fps": 3054.97,
+    "one_percent_low_fps": null,
+    "frame_presentation_time_ns": 327335,
+    "render_pass_duration_ns": null,
+    "pass_status": "PERFORMANCE_TARGET_MET",
+    "notes": [
+      "Measured via cargo run --benchmark (host native).",
+      "Frames=1800 source=/tmp/bench_1800.json"
+    ],
+    "optional_gate": {
+      "ran": false,
+      "name": null,
+      "exit_code": null,
+      "command": null
+    },
+    "benchmark_source": "/tmp/bench_1800.json"
+  },
+  "release_ready": true,
+  "notes": "AC-1/2/3/4 green, AC-5 narrow green (production core 0), AC-6 MEASURED true (3054fps) -> release_eligible true"
+}

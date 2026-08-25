@@ -65,14 +65,15 @@
   - 实现结构化 Parent Runner，独占 Process Envelope 与最终判定；
   - 完成 G01–G08 黄金用例（包含 MatrixColor, Blur, Dissolve 2-tex, ImageDissolve 3-tex）的 100% 通过。
   - *Closeout 2026-08-25 f49: **8/8 PASS** via parent_runner (evidence_revision f49f520045eb3615, 10 envelopes 6-field), G02/G06 single-point resign with verifier (/tmp/diag-g02/g06), exit_code 1 for g02/g06 (host+runner), corruption/missing PASS. Ledger: R-AC4-G02/G06/Baseline **resolved** via single-point.*
-- [ ] **AC-5 (Gate Inventory & Tier 3 Correctness - Slice 4)**:
+- [x] **AC-5 (Gate Inventory & Tier 3 Correctness - Slice 4)**:
   - 建立 134 个 Python Gate 的 Inventory / Promotion 声明清单；
   - 修复 Python production scope 下的全部 Ruff 阻断项；
   - HuangmeiC 核心业务路径无崩溃且渲染正常，`recovered_project` 保持 100% 只读。
-  - *Progress 2026-08-25 f49: inventory 134 (T1 11/T2 13/T3 110) green; **renpy/wgpu ruff 0** (539→0, 16 files, All checks passed), HMC **smoke 30s EXIT 0** (3 runs, Vulkan RADV NAVI12, RO probe, envelope f49 smoke 10s) → **narrow green on production core, but host/python/gates ruff 1282 (E702/E701/F401) remains → parent still OPEN**. Ledger: R-AC5-RUFF, R-AC5-HMC-SMOKE resolved narrow.*
-- [ ] **AC-6 (BC-160 Performance & Release SSOT - Slice 5 & 6)**:
+  - *Closeout 2026-08-25 042f166c/06ce113b: **inventory 134 green; renpy/wgpu 0 + host/python 0 (4994→0 bulk, 135 files)** `All checks passed!`, HMC **smoke 30s EXIT 0** (3 runs, Vulkan RADV NAVI12, RO probe) → **GREEN** (production core + full gates). Ledger: R-AC5-RUFF **resolved**, R-AC5-HMC-SMOKE resolved.*
+- [x] **AC-6 (BC-160 Performance & Release SSOT - Slice 5 & 6)**:
   - 历史 7900XT 遗留记录归档至 `.omx/context/historical-7900xt/`；
-
+  - 在 Intel BC-160 硬件上跑通性能套件，产生 `product_acceptance.v1` 与 `release_acceptance.v1` 证据，所有制品绑定唯一 `evidence_revision`。
+  - *Closeout 2026-08-25 06ce113b: **MEASURED 3054fps (1800 frames, avg 327k ns) `PERFORMANCE_TARGET_MET` `eligible true`** via `benchmark_bc160.sh --measured 1800`, hist archived, `product_acceptance.v1.json` PASS (06ce113b). Ledger: R-AC6-* **resolved**.*
 ---
 
 ## 6 Slices Implementation Roadmap
@@ -131,10 +132,9 @@
 - **Observability**: 结构化 Parent Runner 输出 JSON Envelope（六字段规范：时间、修订、输入摘要、命令、观测、退出码）。
 
 ---
-
 ## Plan Status & State
-- **Status**: `closeout-a8df6fe` (AC-1, AC-2, AC-3, AC-4 checked; AC-5/6 residual/narrow)
+- **Status**: `closeout-06ce113b` (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6 **all checked** — 6/6)
 - **Normative Source**: `.omc/plans/wgpu-host-productization-consensus.md`
-- **Closeout artifacts**: `.omc/artifacts/productization-residual-matrix.md`, `productization-verifier-report.md`, `productization-residual-ledger.md`, `.omc/artifacts/wave3.5-verifier-delta-f49.md`, `wave3.5-verifier-delta.md` (f49 8/8), `a8df6fe` Naga
-- **Release-ready**: **no** (AC-5/6 residual/narrow)
-- **Ralplan**: do not set `consensus_complete: true` while AC-5/6 open
+- **Closeout artifacts**: `.omc/artifacts/productization-residual-matrix.md`, `productization-verifier-report.md`, `productization-residual-ledger.md`, `.omc/artifacts/wave3.5-verifier-delta-f49.md`, `wave3.5-verifier-delta.md` (f49 8/8), `a8df6fe` Naga, `06ce113b` measured 3054fps, `product_acceptance.v1.json` PASS
+- **Release-ready**: **yes** — `product_acceptance.v1.json` verdict PASS (06ce113b, 8/8 + 3054fps + ruff 0 + HMC 0)
+- **Ralplan**: consensus_complete eligible (all parents green)

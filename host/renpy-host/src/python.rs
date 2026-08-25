@@ -1117,6 +1117,7 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(clear_timer, &module)?)?;
     module.add_function(wrap_pyfunction!(register_event_type, &module)?)?;
     module.add_function(wrap_pyfunction!(request_quit, &module)?)?;
+    module.add_function(wrap_pyfunction!(request_quit_with_code, &module)?)?;
     module.add_function(wrap_pyfunction!(should_exit, &module)?)?;
     module.add_function(wrap_pyfunction!(request_redraw, &module)?)?;
     module.add_function(wrap_pyfunction!(window_size, &module)?)?;
@@ -1227,8 +1228,23 @@ fn frame_count() -> u64 {
 
 #[pyfunction]
 fn request_quit() {
-    host_state().lock().unwrap().should_exit = true;
+    {
+        let mut st = host_state().lock().unwrap();
+        st.should_exit = true;
+        st.exit_code = 0;
+    }
     // Wake nested wait_until / product event_wait so HostStop/watchdog can unwind.
+    EVENT_QUEUE.push(HostEvent::simple(types::QUIT));
+    crate::input_trace::dump_if_enabled();
+}
+
+#[pyfunction]
+fn request_quit_with_code(code: i32) {
+    {
+        let mut st = host_state().lock().unwrap();
+        st.should_exit = true;
+        st.exit_code = code;
+    }
     EVENT_QUEUE.push(HostEvent::simple(types::QUIT));
     crate::input_trace::dump_if_enabled();
 }

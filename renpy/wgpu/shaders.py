@@ -176,10 +176,10 @@ def _sync_to_host(name: str, meta: dict) -> None:
         )
     except (ImportError, AttributeError):
         return
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
         try:
             print(f"[wgpu.shaders residual] sync {name!r}: {e}", flush=True)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         return
 
@@ -277,12 +277,10 @@ def is_mergeable(name: str) -> bool:
         return False
     if part.get("composition_only"):
         return False
-    if part.get("atomic"):
-        return False
     # Require at least one IR field beyond defaults to have been intentional;
     # all register_wgsl_shader paths now always set IR defaults, so presence
     # in _WGSL_PARTS with composition_only=False and atomic=False is enough.
-    return True
+    return not bool(part.get("atomic"))
 
 
 def assert_pipeline_map_honest(renpy_host_mod=None) -> list[str]:

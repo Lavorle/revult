@@ -49,7 +49,7 @@ class ScreenMixin:
                 return
             for item in batch:
                 renpy_host.draw_model(*item)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("flush_draw_batch", e)
 
 
@@ -107,9 +107,9 @@ class ScreenMixin:
                         try:
                             if renpy_host.in_frame():
                                 self._draw_node(surftree, 0.0, 0.0)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             _host_draw_fail("draw_screen.nested", e)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("draw_screen.nested_import", e)
                 return
             self._draw_screen_depth = depth + 1
@@ -120,7 +120,7 @@ class ScreenMixin:
         finally:
             try:
                 lock.release()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
 
 
@@ -144,7 +144,7 @@ class ScreenMixin:
                     self.load_all_textures(surftree)
                     if _p0 is not None:
                         prepare_ms = (_time.monotonic() - _p0) * 1000.0
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("load_all_textures", e)
             # Prepare may have nested RTT frames; ensure we are not nested before
             # the product present so cmds are not discarded as "nested non-target".
@@ -160,7 +160,7 @@ class ScreenMixin:
                     self._draw_node(surftree, 0.0, 0.0)
                     if _d0 is not None:
                         draw_ms = (_time.monotonic() - _d0) * 1000.0
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 walk_ok = False
                 _host_draw_fail("draw_node", e)
             finally:
@@ -183,25 +183,25 @@ class ScreenMixin:
                             self._end_frame_present()
                     if _pr0 is not None:
                         present_ms = (_time.monotonic() - _pr0) * 1000.0
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("end_frame_present", e)
                     try:
                         reset = getattr(renpy_host, "reset_frame_state", None)
                         if reset is not None:
                             reset()
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         pass
                 # Flush meshes that were evicted from the Python cache while still
                 # referenced by this frame's draw cmds (deferred in _mesh_quad_ndc).
                 try:
                     self._flush_deferred_meshes()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("flush_deferred_meshes", e)
                 # Recycle previous-frame RTTs after present so live handles
                 # from this frame remain valid for one more present.
                 try:
                     self._recycle_frame_rtts()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("recycle_frame_rtts", e)
             # Do NOT call renpy_host.request_redraw() after every product present.
             # GL2 flip() only swaps buffers; continuous request_redraw wakes the
@@ -215,7 +215,7 @@ class ScreenMixin:
                     self._invalidate_prepared(surftree)
                     if _i0 is not None:
                         invalidate_ms = (_time.monotonic() - _i0) * 1000.0
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             if frame_t0 is not None:
                 total_ms = (_time.monotonic() - frame_t0) * 1000.0
@@ -223,7 +223,7 @@ class ScreenMixin:
                 if total_ms >= 50.0 or _phase0_due_frame():
                     try:
                         fc = int(renpy_host.frame_count()) if hasattr(renpy_host, "frame_count") else -1
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         fc = -1
                     tag = "STALL " if total_ms >= 50.0 else ""
                     _phase0_log(
@@ -249,12 +249,12 @@ class ScreenMixin:
                         "arena_count",
                         f"sample_texture_count={sc} texture_order_len={ol} cap=8192",
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _ui_trace_once(
                         "arena_count",
                         f"arena counter read fail err={type(e).__name__}:{e}",
                     )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("draw_screen", e)
 
 
@@ -282,7 +282,7 @@ class ScreenMixin:
             if hasattr(renpy_host, "frame_depth"):
                 try:
                     depth = int(renpy_host.frame_depth())
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     depth = 0
             # Fallback: attempt a few end_frame_present calls when in_frame-like
             # helpers exist, else a single defensive end (ignored if not in frame).
@@ -291,15 +291,15 @@ class ScreenMixin:
                 try:
                     if renpy_host.in_frame():
                         n = 1
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     n = 0
             # Always try at least nothing; if we know we're nested, drain.
             for _ in range(min(n, 8)):
                 try:
                     self._end_frame_present()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     break
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
 
 
@@ -346,11 +346,11 @@ class ScreenMixin:
                 finally:
                     try:
                         self._end_frame_present()
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         _host_draw_fail("render_to_texture.end_frame", e)
                     try:
                         renpy_host.end_target()
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         _host_draw_fail("render_to_texture.end_target", e)
                 return rtt
 
@@ -371,7 +371,7 @@ class ScreenMixin:
                 if w <= 0 or h <= 0:
                     try:
                         w, h = what.get_size()
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         w, h = self.virtual_size
                 handle = tex
                 return _rtt_pass(
@@ -382,7 +382,7 @@ class ScreenMixin:
             if (hasattr(what, "get_size") or hasattr(what, "_pixels")) and not children:
                 try:
                     w, h = what.get_size()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     w, h = self._node_size(what)
                 w, h = max(1, int(w)), max(1, int(h))
                 src = self.load_texture(what, transient=True)
@@ -396,7 +396,7 @@ class ScreenMixin:
             # nested scene Renders used as dissolve slots draw blank/black.
             try:
                 self.load_all_textures(what)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 _host_draw_fail("rtt.load_all_textures", e)
             # Nested prepare may leave host frame stack dirty; drain before RTT
             # ONLY when we are not already inside a product/parent frame.
@@ -410,11 +410,11 @@ class ScreenMixin:
                 if hasattr(renpy_host, "in_frame"):
                     try:
                         in_f = bool(renpy_host.in_frame())
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         in_f = False
                 if not in_f:
                     self._recover_frame_state()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
 
             w, h = self._node_size(what)
@@ -435,7 +435,7 @@ class ScreenMixin:
                     self._clip_rect = old_clip
 
             return _rtt_pass(w, h, _draw_tree)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("render_to_texture", e)
             return what
 

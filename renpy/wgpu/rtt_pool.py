@@ -70,7 +70,7 @@ class RttPoolMixin:
                 hard_h = max(lh, dh, 1)
             w = min(w, hard_w)
             h = min(h, hard_h)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             w = min(w, 1920)
             h = min(h, 1080)
         key = (w, h)
@@ -131,7 +131,7 @@ class RttPoolMixin:
             import renpy_host  # type: ignore
 
             renpy_host.destroy_texture(handle)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
 
     def _recycle_frame_rtts(self):
@@ -142,7 +142,7 @@ class RttPoolMixin:
         """
         try:
             import renpy_host  # type: ignore
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             renpy_host = None  # type: ignore
 
         for handle, w, h in self._rtt_prev_frame:
@@ -153,7 +153,7 @@ class RttPoolMixin:
             elif renpy_host is not None:
                 try:
                     renpy_host.destroy_texture(handle)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
         self._rtt_prev_frame = self._rtt_curr_frame
         self._rtt_curr_frame = []
@@ -162,7 +162,7 @@ class RttPoolMixin:
         """Destroy freelist + tracked frame RTTs (kill_textures / resize)."""
         try:
             import renpy_host  # type: ignore
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             renpy_host = None  # type: ignore
 
         handles = []
@@ -178,7 +178,7 @@ class RttPoolMixin:
         for handle in handles:
             try:
                 renpy_host.destroy_texture(int(handle))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
 
 

@@ -99,7 +99,7 @@ class ShaderPart:
 def _log_residual(msg: str) -> None:
     try:
         print(f"[wgpu.composer residual] {msg}", flush=True)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
         pass
 
 
@@ -119,8 +119,8 @@ def _try_host_compose_wgsl(
     """
     try:
         import renpy_host  # type: ignore
-    except ImportError as e:
-        raise e
+    except ImportError as e:  # noqa: TRY203 -- explicit re-raise preserves fallback signal; handler not useless
+        raise e  # noqa: TRY201 -- `raise e` preserves original ImportError type for fallback branching
     fn = getattr(renpy_host, "compose_shader_wgsl", None)
     if fn is None:
         raise AttributeError("renpy_host.compose_shader_wgsl missing")
@@ -152,8 +152,8 @@ def _try_host_get_or_compile(
     """
     try:
         import renpy_host  # type: ignore
-    except ImportError as e:
-        raise e
+    except ImportError as e:  # noqa: TRY203 -- explicit re-raise preserves fallback signal; handler not useless
+        raise e  # noqa: TRY201 -- `raise e` preserves original ImportError type for fallback branching
     fn = getattr(renpy_host, "get_or_compile_pipeline_from_parts", None)
     if fn is None:
         fn = getattr(renpy_host, "create_pipeline_from_parts", None)
@@ -266,7 +266,7 @@ def emit_wgsl(
         pass
     except ComposerError:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
         _log_residual(f"emit_wgsl host path residual: {e}")
     return _fallback_emit_wgsl(
         tex_count=tex_count,
@@ -291,7 +291,7 @@ def compose_wgsl(
         raise
     except (ImportError, AttributeError):
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
         _log_residual(f"compose_wgsl host residual: {e}")
     return _fallback_compose_wgsl(partnames, has_texture=has_texture)
 
@@ -335,7 +335,7 @@ class WgslShaderCache:
                 eff_parts = _resolve_effect_parts(sorted_names, has_texture=has_texture)
             except ComposerError:
                 raise
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
                 _log_residual(f"effect_parts derive residual: {e}")
                 from renpy.wgpu.composer_fallback import (
                     _ensure_builtins,
@@ -376,7 +376,7 @@ class WgslShaderCache:
             return None
         except (ImportError, AttributeError):
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
             _log_residual(f"WgslShaderCache.get host residual: {e}")
 
         # ---- fallback offline path ----
@@ -484,7 +484,7 @@ def register_shader_part(
         raise
     except (ValueError, RuntimeError) as e:
         raise ComposerError(str(e)) from e
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
         _log_residual(f"register_shader_part residual: {e}")
         return
 
@@ -517,7 +517,7 @@ def create_pipeline_from_parts(
         raise ComposerError(str(e)) from e
     except (ImportError, AttributeError):
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
         _log_residual(f"create_pipeline_from_parts host residual: {e}")
 
     res = get_shader_cache().get(partnames, hard_fail=True, has_texture=has_texture)

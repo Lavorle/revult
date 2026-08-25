@@ -38,6 +38,7 @@ pub struct HostState {
     pub timers: TimerWheel,
     pub frames: u64,
     pub should_exit: bool,
+    pub exit_code: i32,
     pub text_input_active: bool,
     pub custom_types: HashMap<String, u32>,
     pub next_custom_type: u32,
@@ -81,7 +82,6 @@ pub struct HostState {
 // Future wiring: `crate::config::HostConfig::from_env()` is the single
 // `RENPY_HOST_*` read site. `HostState` stays env-free this pass to avoid
 // wide init churn; later `host_state()` / `PythonRuntime::bootstrap()` can
-// be seeded from `HostConfig` instead of ad-hoc `std::env::var` calls.
 impl HostState {
     pub fn new() -> Self {
         Self {
@@ -90,6 +90,7 @@ impl HostState {
             timers: TimerWheel::new(),
             frames: 0,
             should_exit: false,
+            exit_code: 0,
             text_input_active: false,
             custom_types: HashMap::new(),
             next_custom_type: 0x8000,
@@ -108,6 +109,18 @@ impl HostState {
             forced_drawable: None,
             forced_from_chrome: None,
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn request_quit(&mut self) {
+        self.should_exit = true;
+        self.exit_code = 0;
+    }
+
+    #[allow(dead_code)]
+    pub fn request_quit_with_code(&mut self, code: i32) {
+        self.should_exit = true;
+        self.exit_code = code;
     }
 }
 

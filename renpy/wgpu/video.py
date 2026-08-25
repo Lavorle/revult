@@ -56,7 +56,7 @@ def _as_frame_bag(frames) -> FrameBag:
         return frames
     try:
         abs_total = int(getattr(frames, "_abs_total", 0) or 0)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
         abs_total = 0
     bag = FrameBag(frames or (), abs_total=abs_total if abs_total > 0 else len(frames or ()))
     return bag
@@ -67,18 +67,18 @@ def _set_abs_total(frames, n: int) -> None:
     try:
         frames._abs_total = n  # type: ignore[attr-defined]
         return
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
         pass
     try:
         frames._abs_total = n
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
         pass
 
 
 def _get_abs_total(frames) -> int:
     try:
         n = int(getattr(frames, "_abs_total", 0) or 0)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
         n = 0
     if n > 0:
         return n
@@ -215,7 +215,7 @@ def _media_is_native_size(path: str, width: int, height: int) -> bool:
             sw = int(streams[0].get("width") or 0)
             sh = int(streams[0].get("height") or 0)
             ok = sw == int(width) and sh == int(height)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
         ok = False
     cache[key] = ok
     return ok
@@ -277,7 +277,7 @@ def _decode_ffmpeg_chunk(
         if need_scale:
             cmd += [
                 "-vf",
-                "scale=%d:%d:flags=fast_bilinear" % (width, height),
+                f"scale={width}:{height}:flags=fast_bilinear",
             ]
         cmd += [
             "-frames:v",
@@ -316,11 +316,10 @@ def _decode_ffmpeg_chunk(
             cmd,
             check=True,
             timeout=timeout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
         data = proc.stdout or b""
-    except Exception:
+    except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
         return []
     return _split_raw_rgba(data, width, height, n_frames)
 
@@ -400,11 +399,11 @@ def _stream_ffmpeg_remaining(
         ring_list = list(live)
         try:
             all_frames[:] = ring_list
-        except Exception:
+        except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
             try:
                 all_frames.clear()
                 all_frames.extend(ring_list)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                 pass
         _set_abs_total(all_frames, decoded)
         if on_chunk is None:
@@ -414,7 +413,7 @@ def _stream_ffmpeg_remaining(
         snap = FrameBag(ring_list, abs_total=decoded)
         try:
             on_chunk(snap)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
             pass
         last_published_n = decoded
         since_publish = 0
@@ -440,7 +439,7 @@ def _stream_ffmpeg_remaining(
                 need = int(raw_size) * int(remaining) + (32 << 20)
                 if free >= need:
                     tmp_dir = "/dev/shm"
-            except Exception:
+            except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
                 tmp_dir = "/dev/shm"
         tmp_path = None
         proc = None
@@ -502,7 +501,7 @@ def _stream_ffmpeg_remaining(
                     if (_time.monotonic() - t0) > timeout:
                         try:
                             proc.kill()
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                             pass
                         break
                     # Free GIL for product present thread.
@@ -512,23 +511,23 @@ def _stream_ffmpeg_remaining(
             else:
                 try:
                     all_frames[:] = list(live)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                     pass
                 _set_abs_total(all_frames, decoded)
         finally:
             if proc is not None and proc.poll() is None:
                 try:
                     proc.kill()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                     pass
                 try:
                     proc.wait(timeout=2)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                     pass
             if tmp_path:
                 try:
                     os.unlink(tmp_path)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                     pass
         return all_frames
 
@@ -562,7 +561,7 @@ def _stream_ffmpeg_remaining(
             stderr=subprocess.DEVNULL,
             bufsize=0,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
         return all_frames
     assert proc.stdout is not None
     try:
@@ -586,16 +585,16 @@ def _stream_ffmpeg_remaining(
                     frame = bytes(buf[:raw_size])
                     del buf[:raw_size]
                     frame_q.put(frame)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
             pass
         finally:
             try:
                 frame_q.put(sentinel)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                 pass
             try:
                 proc.stdout.close()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                 pass
 
     reader = _threading.Thread(
@@ -620,22 +619,22 @@ def _stream_ffmpeg_remaining(
         else:
             try:
                 all_frames[:] = list(live)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                 pass
             _set_abs_total(all_frames, decoded)
     finally:
         try:
             if proc.poll() is None:
                 proc.kill()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
             pass
         try:
             proc.wait(timeout=3)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
             pass
         try:
             reader.join(timeout=2)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
             pass
     return all_frames
 
@@ -679,7 +678,7 @@ def decode_frames_ffmpeg(
             all_frames.extend(first)
             try:
                 on_chunk(all_frames)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
                 pass
 
         if len(all_frames) < max_frames:
@@ -879,7 +878,7 @@ def play_movie_smoke(  # type: ignore - shim retained (gate smoke)
     try:
         renpy_host.audio_start()
         renpy_host.audio_beep(660.0, 80, 0.1)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
         pass
 
     # After multi-frame play with wait_until, clock must be > 0.

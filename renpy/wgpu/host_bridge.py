@@ -19,7 +19,7 @@ import os
 
 try:
     import renpy_host  # type: ignore
-except Exception:  # ImportError or extension load error
+except Exception:  # ImportError or extension load error  # noqa: BLE001 -- host import probe — Extension load may fail; fallback is imported host absent
     renpy_host = None  # type: ignore
 
 

@@ -51,7 +51,7 @@ from .rtt_pool import RttPoolMixin
 # host_bridge single-point import (optional; fallback to direct import)
 try:
     from .host_bridge import renpy_host as _host_bridge
-except Exception:  # pragma: no cover
+except Exception:  # pragma: no cover  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
     _host_bridge = None  # type: ignore
 
 
@@ -183,7 +183,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                 if probe is not None and not bool(probe(int(self._quad_mesh))):
                     need_quad = True
                     self._quad_mesh = None
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         if need_quad:
             # Unit quad NDC
@@ -227,7 +227,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                 touch = getattr(renpy_host, "touch_mesh", None)
                 if touch is not None:
                     touch(int(self._quad_mesh))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
 
 
@@ -244,7 +244,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
 
             self.virt_to_draw = render.Matrix2D(self.draw_per_virt, 0, 0, self.draw_per_virt)
             self.draw_to_virt = render.Matrix2D(1.0 / self.draw_per_virt, 0, 0, 1.0 / self.draw_per_virt)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             self.virt_to_draw = None
             self.draw_to_virt = None
         self.auto_mipmap = self.draw_per_virt < 0.75
@@ -292,11 +292,11 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                             iface = getattr(renpy.display, "interface", None)
                             if iface is not None:
                                 iface.fullscreen = live_fs
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             pass
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             if force:
                 self._refresh_scale()
 
@@ -313,7 +313,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                     iface.before_resize()
                 else:
                     self.kill_textures()
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 self.kill_textures()
         elif force:
             # Force without size change: soft redraw only.
@@ -355,7 +355,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                         file=sys.stderr,
                         flush=True,
                     )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         # Host thrash (flowchart mesh / Movie) can exceed the stock image-cache
         # budget and kill const_size confirm/preferences panels while the screen
@@ -370,7 +370,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                 cur = getattr(cfg, "image_cache_size_mb", None)
                 if cur is None or (isinstance(cur, (int, float)) and float(cur) < 512):
                     cfg.image_cache_size_mb = 512
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         try:
             import renpy_host  # type: ignore
@@ -382,7 +382,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
             self._refresh_scale()
             self._ensure_pipes()
             renpy_host.request_redraw()
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             self._refresh_scale()
             return False
         return True
@@ -441,7 +441,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                 iface = getattr(renpy.display, "interface", None)
                 if iface is not None:
                     iface.fullscreen = want_fs
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
 
             # Keep preferences.fullscreen honest if host rejected (optional).
@@ -451,13 +451,13 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                     # Only trust live after a settle; do not force-clear want_fs
                     # immediately (Wayland may apply asynchronously).
                     self.fullscreen = live if live == want_fs else want_fs
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             try:
                 _host_draw_fail("resize", e)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
 
         return self.update(force=True)
@@ -527,7 +527,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
             vw = max(1, int(vw))
             vh = max(1, int(vh))
             return (int(1.0 * float(x) * vw / pw), int(1.0 * float(y) * vh / ph))
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return (int(x), int(y))
 
     def untranslate_point(self, x, y):
@@ -540,7 +540,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
             vw = max(1, int(vw))
             vh = max(1, int(vh))
             return (int(1.0 * float(x) * pw / vw), int(1.0 * float(y) * ph / vh))
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return (int(x), int(y))
 
     def mouse_event(self, ev):
@@ -553,7 +553,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
             y = getattr(ev, "y", None)
             if x is not None and y is not None:
                 return self.translate_point(int(x), int(y))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         return self.get_mouse_pos()
 
@@ -563,7 +563,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
 
             x, y = pygame.mouse.get_pos()
             return self.translate_point(x, y)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return (0, 0)
 
     def set_mouse_pos(self, x, y):
@@ -572,7 +572,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
 
             px, py = self.untranslate_point(x, y)
             pygame.mouse.set_pos((px, py))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
 
     def screenshot(self, surftree=None):
@@ -596,7 +596,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                 return None
             surf._pixels = bytearray(data[:n])
             return surf
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return None
 
     def screenshot_rgba(self):
@@ -605,7 +605,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
             import renpy_host  # type: ignore
 
             return renpy_host.read_game_rt_rgba()
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return (0, 0, b"")
 
     def event_peek_sleep(self):

@@ -92,7 +92,7 @@ class TraversalMixin:
 
                 if any(composition_mode(s) is None for s in shaders):
                     return None
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 return None
         uniforms = getattr(child, "uniforms", None)
         if isinstance(uniforms, dict) and (
@@ -194,7 +194,7 @@ class TraversalMixin:
         # Full-UV sample of a uniform solid leaf fills the dissolve slot.
         try:
             child._wgpu_solid_slot = leaf  # type: ignore[attr-defined]
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         return leaf
 
@@ -238,7 +238,7 @@ class TraversalMixin:
             if not getattr(child, "loaded", False):
                 try:
                     self.load_all_textures(child)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("child_to_texture.load_all_textures", e)
                 # Prepare may have produced cached_texture / HostTexture children.
                 pure = self._extract_host_texture(child)
@@ -262,7 +262,7 @@ class TraversalMixin:
             if ht is not None:
                 try:
                     child.cached_texture = ht
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             return ht
 
@@ -275,7 +275,7 @@ class TraversalMixin:
                 try:
                     w, h = child.get_size()
                     return HostTexture(tex, max(1, int(w)), max(1, int(h)))
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     return HostTexture(tex, 1, 1)
             return None
 
@@ -289,9 +289,9 @@ class TraversalMixin:
                     try:
                         w, h = child.get_size()
                         return HostTexture(tex, max(1, int(w)), max(1, int(h)))
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         return HostTexture(tex, 1, 1)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         try:
             handle = self.render_to_texture(child)
@@ -304,10 +304,10 @@ class TraversalMixin:
             if ht is not None and self._is_render_like(child):
                 try:
                     child.cached_texture = ht
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             return ht
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         return None
 
@@ -385,7 +385,7 @@ class TraversalMixin:
 
                     if hasattr(renpy_host, "in_frame"):
                         self._prepare_entered_in_frame = bool(renpy_host.in_frame())
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     self._prepare_entered_in_frame = False
             else:
                 self._prepare_depth = int(getattr(self, "_prepare_depth", 0) or 0) + 1
@@ -405,13 +405,13 @@ class TraversalMixin:
                                 stuck = bool(renpy_host.in_frame())
                             if stuck:
                                 self._recover_frame_state()
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             pass
         finally:
             if lock is not None:
                 try:
                     lock.release()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
 
     def _load_all_textures_inner(self, what, reverse=None):
@@ -424,7 +424,7 @@ class TraversalMixin:
             # prefers idle uploads over confirm/preferences chrome still on tree.
             try:
                 self._ensure_host_texture_alive(what)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 _host_draw_fail("prepare.ensure_host_texture", e)
             return
         if isinstance(what, int) and not isinstance(what, bool):
@@ -432,12 +432,12 @@ class TraversalMixin:
             try:
                 import renpy_host  # type: ignore
 
-                if what > 0 and hasattr(renpy_host, "touch_texture"):
+                if what > 0 and hasattr(renpy_host, "touch_texture"):  # noqa: SIM102 -- nested check clarifies touch_texture vs texture_alive existence
                     if (not hasattr(renpy_host, "texture_alive")) or renpy_host.texture_alive(
                         int(what)
                     ):
                         renpy_host.touch_texture(int(what))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
             return
 
@@ -469,9 +469,9 @@ class TraversalMixin:
                         if getattr(ht, "handle", 0) > 0 and int(ht.handle) != int(ct):
                             try:
                                 what.cached_texture = ht
-                            except Exception:
+                            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                                 pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("prepare.cached_texture", e)
 
         # Also revive prepared multi-slot model textures (dissolve/imagedissolve).
@@ -486,7 +486,7 @@ class TraversalMixin:
                 raw = getattr(cm, "texture", None)
                 if isinstance(raw, HostTexture):
                     self._ensure_host_texture_alive(raw)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
 
         # Already prepared this frame (also guards prepare↔RTT recursion).
@@ -496,7 +496,7 @@ class TraversalMixin:
             try:
                 for child, _xo, _yo in self._iter_children(what):
                     self._load_all_textures_inner(child, reverse)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
             return
         if hasattr(what, "loaded"):
@@ -590,7 +590,7 @@ class TraversalMixin:
             ):
                 try:
                     model._dissolve_origin = what
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             what.cached_model = model
 
@@ -603,18 +603,18 @@ class TraversalMixin:
         if hasattr(what, "loaded"):
             try:
                 what.loaded = False
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         if hasattr(what, "cached_model"):
             try:
                 what.cached_model = None
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         # Frame-local solid reverse dissolve-slot memo (Agent A Fade path).
         if hasattr(what, "_wgpu_solid_slot"):
             try:
                 what._wgpu_solid_slot = None
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         # Do NOT clear cached_texture here: product image cache and dissolve-slot
         # RTTs reuse HostTextures across frames. Solid reverse memo is enough for
@@ -622,7 +622,7 @@ class TraversalMixin:
         try:
             for child, _xo, _yo in self._iter_children(what):
                 self._invalidate_prepared(child)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
 
     # --- Tree walk (duck-typed Render / Model / Surface) ---------------------

@@ -31,13 +31,13 @@ class TextureMixin:
     def _stash_handle_pixels(self, handle, w, h, pixels, *, transient=False):
         try:
             handle = int(handle or 0)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return
         if handle <= 0:
             return
         try:
             w, h = int(w), int(h)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return
         if w <= 0 or h <= 0:
             return
@@ -66,7 +66,7 @@ class TextureMixin:
         def _area(ent):
             try:
                 return int(ent[0]) * int(ent[1])
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 return 0
         items = list(store.items())
         oversize = [(k, _area(v)) for k, v in items if _area(v) > pin_px]
@@ -98,7 +98,7 @@ class TextureMixin:
     def _forget_handle_pixels(self, handle):
         try:
             handle = int(handle or 0)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return
         if handle <= 0:
             return
@@ -117,7 +117,7 @@ class TextureMixin:
             return None
         try:
             old = int(getattr(ht, "handle", 0) or 0)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return ht
         if old <= 0:
             return ht
@@ -131,7 +131,7 @@ class TextureMixin:
             seen.add(cur)
             try:
                 cur = int(remap[cur])
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 break
         if cur != old and cur > 0:
             try:
@@ -143,7 +143,7 @@ class TextureMixin:
                     ht.handle = int(cur)
                     ht.texture = int(cur)
                     return ht
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         try:
             import renpy_host  # type: ignore
@@ -154,7 +154,7 @@ class TextureMixin:
                 if hasattr(renpy_host, "touch_texture"):
                     try:
                         renpy_host.touch_texture(int(ht.handle))
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         pass
                 return ht
             store = getattr(self, "_handle_pixels", None) or {}
@@ -165,7 +165,7 @@ class TextureMixin:
                         if int(v) in (old, cur) and k in store:
                             ent = store.get(k)
                             break
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S112 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         continue
             if ent is None:
                 ent = self._recover_pixels_for_dead_handle(old, cur, ht)
@@ -183,7 +183,7 @@ class TextureMixin:
             sw, sh, pixels = ent
             try:
                 new_h = int(renpy_host.create_texture_rgba(int(sw), int(sh), pixels))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 if (
                     os.environ.get("RENPY_HOST_UI_TRACE") == "1"
                     and "dead_present" not in _UI_TRACE_LOGGED
@@ -207,9 +207,9 @@ class TextureMixin:
                     try:
                         if int(h) in (old, cur):
                             self.texture_cache[k] = (fp, int(new_h), tw, th)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S112 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         continue
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
             try:
                 from renpy.display import im  # type: ignore
@@ -218,7 +218,7 @@ class TextureMixin:
                     try:
                         _lock = getattr(cache, "lock", None)
                         it = list(getattr(cache, "cache", {}).values())
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         it = []
                     for ce in it:
                         tex = getattr(ce, "texture", None)
@@ -227,7 +227,7 @@ class TextureMixin:
                                 if int(getattr(tex, "handle", 0) or 0) in (old, cur):
                                     tex.handle = int(new_h)
                                     tex.texture = int(new_h)
-                            except Exception:
+                            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                                 pass
                         elif isinstance(tex, int) and not isinstance(tex, bool):
                             try:
@@ -237,16 +237,16 @@ class TextureMixin:
                                         int(getattr(ht, "width", sw) or sw),
                                         int(getattr(ht, "height", sh) or sh),
                                     )
-                            except Exception:
+                            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                                 pass
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
             ht.handle = int(new_h)
             ht.texture = int(new_h)
             if hasattr(renpy_host, "touch_texture"):
                 try:
                     renpy_host.touch_texture(int(new_h))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             if (
                 os.environ.get("RENPY_HOST_UI_TRACE") == "1"
@@ -258,7 +258,7 @@ class TextureMixin:
                     f"{getattr(ht, 'h', '?')}) recover=ok new_handle={int(new_h)}",
                 )
             return ht
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             if (
                 os.environ.get("RENPY_HOST_UI_TRACE") == "1"
                 and "dead_present" not in _UI_TRACE_LOGGED
@@ -272,7 +272,7 @@ class TextureMixin:
     def _recover_pixels_for_dead_handle(self, old, cur, ht):
         try:
             from renpy.display import im  # type: ignore
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return None
         cache = getattr(im, "cache", None)
         if cache is None:
@@ -285,16 +285,16 @@ class TextureMixin:
                     entries = list(getattr(cache, "cache", {}).values())
             else:
                 entries = list(getattr(cache, "cache", {}).values())
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             try:
                 entries = list(getattr(cache, "cache", {}).values())
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 return None
         want = set()
         try:
             want.add(int(old))
             want.add(int(cur))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         for ce in entries:
             try:
@@ -312,14 +312,14 @@ class TextureMixin:
                     if what is not None and hasattr(what, "load"):
                         try:
                             surf = what.load()
-                        except Exception:
+                        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             surf = None
                 if surf is None:
                     continue
                 try:
                     sw, sh = surf.get_size()
                     sw, sh = int(sw), int(sh)
-                except Exception:
+                except Exception:  # noqa: BLE001, S112 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     continue
                 if sw <= 0 or sh <= 0:
                     continue
@@ -336,13 +336,13 @@ class TextureMixin:
                             surf = sub
                             sw, sh = surf.get_size()
                             sw, sh = int(sw), int(sh)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
                 pixels = getattr(surf, "_pixels", None)
                 if pixels is None and hasattr(surf, "get_buffer"):
                     try:
                         pixels = bytes(surf.get_buffer())
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         pixels = None
                 if not isinstance(pixels, (bytes, bytearray)):
                     continue
@@ -350,7 +350,7 @@ class TextureMixin:
                 if len(pixels) < need:
                     continue
                 return (sw, sh, bytes(pixels[:need]))
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 continue
         return None
 
@@ -382,22 +382,22 @@ class TextureMixin:
                         if hasattr(renpy_host, "texture_alive"):
                             try:
                                 alive = bool(renpy_host.texture_alive(int(thandle)))
-                            except Exception:
+                            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                                 alive = True
                         if alive:
                             if hasattr(renpy_host, "touch_texture"):
                                 try:
                                     renpy_host.touch_texture(int(thandle))
-                                except Exception:
+                                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                                     pass
                             return HostTexture(thandle, w, h)
             if hasattr(surf, "_pixels"):
                 raw = surf._pixels
-                pixels = bytes(raw) if not isinstance(raw, (bytes, bytearray)) else bytes(raw)
+                pixels = bytes(raw)
             else:
                 try:
                     pixels = bytes(surf.get_buffer())
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pixels = b""
             empty_pad_input = False
             if len(pixels) < need:
@@ -423,7 +423,7 @@ class TextureMixin:
                             break
                     if not any_a:
                         self._ui_trace_blank_pixels = (w, h, bool(empty_pad_input))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             def _alive(handle):
                 if not handle:
@@ -432,7 +432,7 @@ class TextureMixin:
                     return True
                 try:
                     return bool(renpy_host.texture_alive(int(handle)))
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     return True
             def _trace_empty_upload(handle, tag):
                 blank = getattr(self, "_ui_trace_blank_pixels", None)
@@ -453,14 +453,14 @@ class TextureMixin:
                     )
                     try:
                         del self._ui_trace_blank_pixels
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         self._ui_trace_blank_pixels = None
             def _touch(handle):
                 if not handle or not hasattr(renpy_host, "touch_texture"):
                     return
                 try:
                     renpy_host.touch_texture(int(handle))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             if transient:
                 if os.environ.get("RENPY_HOST_MOVIE_ASSERT", "").strip() in (
@@ -494,7 +494,7 @@ class TextureMixin:
                                     file=sys.stderr,
                                     flush=True,
                                 )
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             pass
                 tent = self._transient_tex.get(key)
                 if tent is not None:
@@ -512,7 +512,7 @@ class TextureMixin:
                                 if _wt0 is not None:
                                     wt_ms = (_time.monotonic() - _wt0) * 1000.0
                                 wrote = True
-                            except Exception:
+                            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                                 wrote = False
                         if wrote:
                             if _phase0_due_write():
@@ -530,13 +530,13 @@ class TextureMixin:
                             return HostTexture(thandle, w, h)
                         try:
                             renpy_host.destroy_texture(thandle)
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             pass
                         self._forget_handle_pixels(thandle)
                     elif thandle:
                         try:
                             renpy_host.destroy_texture(thandle)
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             pass
                         self._forget_handle_pixels(thandle)
                     self._transient_tex.pop(key, None)
@@ -551,11 +551,11 @@ class TextureMixin:
                         if old is not None:
                             try:
                                 renpy_host.destroy_texture(int(old[0]))
-                            except Exception:
+                            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                                 pass
                             try:
                                 self._forget_handle_pixels(int(old[0]))
-                            except Exception:
+                            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                                 pass
                 self._stash_handle_pixels(handle, w, h, pixels, transient=True)
                 _trace_empty_upload(handle, "transient_create")
@@ -583,7 +583,7 @@ class TextureMixin:
                             if _wt0 is not None:
                                 wt_ms = (_time.monotonic() - _wt0) * 1000.0
                             wrote = True
-                        except Exception:
+                        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             wrote = False
                     if wrote:
                         if _phase0_due_write():
@@ -599,7 +599,7 @@ class TextureMixin:
                         return HostTexture(handle, w, h)
                     try:
                         renpy_host.destroy_texture(handle)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         pass
                     self._forget_handle_pixels(handle)
                     self.texture_cache.pop(key, None)
@@ -612,12 +612,12 @@ class TextureMixin:
             if not empty_input:
                 _trace_empty_upload(handle, "cache_create")
             return HostTexture(handle, w, h)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("load_texture", e)
             try:
                 w, h = surf.get_size()
                 w, h = max(1, int(w)), max(1, int(h))
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 w, h = 1, 1
             try:
                 import renpy_host  # type: ignore
@@ -629,7 +629,7 @@ class TextureMixin:
                     f"size=({w},{h}) all_alpha_zero=1 was_empty_pad=1",
                 )
                 return HostTexture(handle, w, h)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 _ui_trace_once(
                     "empty_upload",
                     f"class=c handle=0 tag=placeholder_fail size=({w},{h})",
@@ -651,14 +651,14 @@ class TextureMixin:
         try:
             from renpy.display import im
             im.cache.clear()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         try:
             import renpy_host  # type: ignore
             for _fp, handle, _tw, _th in list(self.texture_cache.values()):
                 try:
                     renpy_host.destroy_texture(handle)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             for tent in list(self._transient_tex.values()):
                 handle = tent[0] if tent else 0
@@ -667,33 +667,33 @@ class TextureMixin:
                 _fp = tent[3] if tent and len(tent) > 3 else None
                 try:
                     renpy_host.destroy_texture(int(handle))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         self.texture_cache.clear()
         self._transient_tex.clear()
         try:
             self._handle_remap = {}
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         try:
             self._destroy_all_rtts()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         try:
             import renpy_host  # type: ignore
             for handle in list(self._mesh_cache.values()):
                 try:
                     renpy_host.destroy_mesh(int(handle))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             for handle in list(getattr(self, "_mesh_deferred_destroy", None) or []):
                 try:
                     renpy_host.destroy_mesh(int(handle))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         self._mesh_cache.clear()
         self._mesh_deferred_destroy = []

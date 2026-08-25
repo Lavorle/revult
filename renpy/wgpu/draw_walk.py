@@ -59,7 +59,7 @@ class WalkMixin:
 
                 if node.handle > 0 and hasattr(renpy_host, "touch_texture"):
                     renpy_host.touch_texture(int(node.handle))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
             self._draw_model_like(node, ox, oy)
             return
@@ -93,14 +93,14 @@ class WalkMixin:
                 special = self._is_dissolve_node(cached) or self._is_imagedissolve_node(
                     cached
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 special = False
             if not special:
                 try:
                     special = self._is_dissolve_node(node) or self._is_imagedissolve_node(
                         node
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     special = False
             if not special and isinstance(c_shaders, (list, tuple)):
                 special = any(
@@ -116,7 +116,7 @@ class WalkMixin:
             ):
                 try:
                     node.cached_model = None
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
                 # Fall through — do not early-return _draw_model_like(cached).
                 # children_preview still available for later dissolve walk.
@@ -136,7 +136,7 @@ class WalkMixin:
                     )
                 try:
                     node.cached_model = None
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             elif getattr(node, "cached_model", None) is not None:
                 # Residual class: multi-child proceeds with single-slot bake (not dropped).
@@ -328,7 +328,7 @@ class WalkMixin:
                     for child, _cx, _cy in children[:2]:
                         try:
                             tex = self._child_to_texture(child)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             _host_draw_fail("dissolve_mid.child_to_texture", e)
                             tex = None
                         if tex is not None:
@@ -353,7 +353,7 @@ class WalkMixin:
                         )
                         try:
                             leaf._dissolve_origin = node
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             pass
                         self._draw_model_like(leaf, ox, oy)
                         return
@@ -380,7 +380,7 @@ class WalkMixin:
                     # prepare + _child_to_texture must RTT that, not peel HostTexture.
                     try:
                         self.load_all_textures(node)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         _host_draw_fail("dissolve_fallback.load_all_textures", e)
                     cm = getattr(node, "cached_model", None)
                     if cm is not None:
@@ -410,7 +410,7 @@ class WalkMixin:
                         )
                         try:
                             leaf._dissolve_origin = node
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                             pass
                         self._draw_model_like(leaf, ox, oy)
                         return
@@ -449,7 +449,7 @@ class WalkMixin:
                 from renpy.wgpu.shaders import composition_mode
 
                 effect = any(composition_mode(s) is None for s in shaders_attr)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 effect = True
             uniforms_attr = getattr(node, "uniforms", None)
             if not effect and isinstance(uniforms_attr, dict):
@@ -622,7 +622,7 @@ class WalkMixin:
                     )
                     try:
                         leaf._dissolve_origin = node
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         pass
                     self._draw_model_like(leaf, child_draw_ox, child_draw_oy)
                     return
@@ -681,11 +681,11 @@ class WalkMixin:
                 self._clip_rect = old_clip
                 try:
                     self._end_frame_present()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("mesh_bake.end_frame", e)
                 try:
                     renpy_host.end_target()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("mesh_bake.end_target", e)
 
             class _BakedLeaf:
@@ -711,7 +711,7 @@ class WalkMixin:
             # change child textures and a sticky bake would freeze wrong art.
             # Re-bake each draw when mesh=True + children (MVP correctness).
             return leaf
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("mesh_bake", e)
             return None
 

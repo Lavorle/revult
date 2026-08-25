@@ -46,7 +46,7 @@ class PipelineMixin:
                 is_atomic,
                 is_mergeable,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             def composition_mode(_n):
                 return None
 
@@ -84,7 +84,7 @@ class PipelineMixin:
                         f"for {effect_parts!r}: {e}",
                         flush=True,
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             if result is not None:
                 pipe = int(getattr(result, "pipeline", 0) or 0)
@@ -97,7 +97,7 @@ class PipelineMixin:
                             f"{effect_parts!r}: {residual}",
                             flush=True,
                         )
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         pass
                 if pipe > 0:
                     return pipe
@@ -110,7 +110,7 @@ class PipelineMixin:
                         f"{effect_parts!r}; using prebaked prefer-list",
                         flush=True,
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
 
         # Priority: more specialized first. (single-effect, atomic, or residual)
@@ -181,7 +181,7 @@ class PipelineMixin:
                 float(matrix.xdz), float(matrix.ydz), float(matrix.zdz), float(matrix.wdz),
                 float(matrix.xdw), float(matrix.ydw), float(matrix.zdw), float(matrix.wdw),
             ]
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         try:
             m = list(matrix.m)  # type: ignore[attr-defined]
@@ -189,7 +189,7 @@ class PipelineMixin:
             while len(u) < 16:
                 u.append(0.0)
             return u
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             return None
 
 
@@ -496,11 +496,11 @@ class PipelineMixin:
                 finally:
                     try:
                         self._end_frame_present()
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         pass
                     try:
                         renpy_host.end_target()
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         pass
                 handle = int(rtt)
             else:
@@ -548,13 +548,13 @@ class PipelineMixin:
             if i + 3 >= len(rgba):
                 return True
             return rgba[i + 3] > 0
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             try:
                 print(
                     f"WgpuDraw.is_pixel_opaque: {type(e).__name__}: {e}",
                     flush=True,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
             return True
 

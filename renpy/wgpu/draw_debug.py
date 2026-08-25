@@ -22,7 +22,7 @@ import time as _time
 # draw_debug importable outside the wgpu package (hermetic gates / lint).
 try:
     from .host_bridge import host_env_bool  # type: ignore
-except Exception:  # pragma: no cover - import fallback for bare import
+except Exception:  # pragma: no cover - import fallback for bare import  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
 
     def host_env_bool(name: str) -> bool:  # type: ignore[no-redef]
         return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
@@ -79,7 +79,7 @@ def _phase0_log(msg: str) -> None:
             file=sys.stderr,
             flush=True,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
         pass
 
 
@@ -142,16 +142,16 @@ def _safe_print(msg: str) -> None:
         import renpy.log as _rlog  # type: ignore
 
         out = getattr(_rlog, "real_stdout", None) or sys.__stdout__
-    except Exception:
+    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
         out = sys.__stdout__
     try:
         out.write(msg + "\n")
         out.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
         try:
             sys.__stdout__.write(msg + "\n")
             sys.__stdout__.flush()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
 
 

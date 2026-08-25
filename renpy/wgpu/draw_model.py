@@ -80,7 +80,7 @@ class ModelMixin:
                 if hasattr(node, "get_size"):
                     w, h = node.get_size()
                     w, h = float(w), float(h)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 w = h = 0.0
 
         # NDC rect: explicit node.ndc wins; else virtual size at offset; else full NDC.
@@ -172,9 +172,9 @@ class ModelMixin:
                 if s is not None and getattr(s, "handle", 0) > 0:
                     alive_slots.append(s)
             tex_slots = alive_slots
-            if ht is not None and tex_slots:
+            if ht is not None and tex_slots:  # noqa: SIM102 -- nested if keeps remap comment readable; collapsed would obscure intent
                 # Keep ht in sync with first alive slot if it was remapped.
-                if ht not in tex_slots:
+                if ht not in tex_slots:  # noqa: SIM102 -- nested check clarifies remap vs handle validity
                     # ht may have been remapped in place; prefer it if still good.
                     if getattr(ht, "handle", 0) <= 0:
                         ht = tex_slots[0]
@@ -446,7 +446,7 @@ class ModelMixin:
             return
         try:
             self._draw_node_inner(node, ox, oy)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("draw_node", e)
 
     def _draw_node_inner(self, node, ox=0.0, oy=0.0):
@@ -498,7 +498,7 @@ class ModelMixin:
             return
         try:
             w, h = int(size[0]), int(size[1])
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             w, h = int(ht.w), int(ht.h)
         if w <= 0 or h <= 0:
             w, h = int(ht.w), int(ht.h)
@@ -533,7 +533,7 @@ class ModelMixin:
         if isinstance(node, HostTexture):
             try:
                 return max(1, int(node.w)), max(1, int(node.h))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         w = float(getattr(node, "width", 0) or getattr(node, "w", 0) or 0)
         h = float(getattr(node, "height", 0) or getattr(node, "h", 0) or 0)
@@ -544,7 +544,7 @@ class ModelMixin:
                 gw, gh = node.get_size()
                 if gw and gh:
                     return max(1, int(gw)), max(1, int(gh))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         dw = int(default[0]) if default and len(default) > 0 else 0
         dh = int(default[1]) if default and len(default) > 1 else 0

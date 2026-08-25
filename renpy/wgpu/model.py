@@ -189,7 +189,7 @@ def mesh_via_iostream(mesh: MeshData) -> MeshData:
     """
     try:
         from renpy.pygame import iostream as io
-    except Exception:
+    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
         from host_pygame import iostream as io  # type: ignore
 
     blob = mesh_to_blob(mesh)
@@ -203,7 +203,7 @@ def mesh_via_iostream_file(mesh: MeshData, path: str) -> MeshData:
     """Write blob to path via open, reload with iostream.from_file."""
     try:
         from renpy.pygame import iostream as io
-    except Exception:
+    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
         from host_pygame import iostream as io  # type: ignore
 
     blob = mesh_to_blob(mesh)

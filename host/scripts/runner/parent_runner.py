@@ -315,6 +315,67 @@ def run_parent_process(
         exit_code = 1
         provisional_metrics = {"runner_exception": str(e)}
     finally:
+        # Defensive: if gate result txt indicates ok=False, force exit_code=1
+        # even when host process mistakenly returned 0. Trust host code otherwise.
+        if exit_code == 0:
+            try:
+                gate_name = None
+                # Prefer sub_env RENPY_HOST_GATE (set by run_golden_tests.sh)
+                if isinstance(sub_env, dict):
+                    gate_name = sub_env.get("RENPY_HOST_GATE") or os.environ.get("RENPY_HOST_GATE")
+                else:
+                    gate_name = os.environ.get("RENPY_HOST_GATE")
+                if gate_name:
+                    gate_name = str(gate_name).strip()
+                    if gate_name:
+                        candidates: list[Path] = []
+                        if repo_root is not None:
+                            candidates.append(Path(repo_root) / "host" / "target" / f"gate-{gate_name}.txt")
+                        base_env = None
+                        if isinstance(sub_env, dict):
+                            base_env = sub_env.get("RENPY_HOST_BASE") or os.environ.get("RENPY_HOST_BASE")
+                        else:
+                            base_env = os.environ.get("RENPY_HOST_BASE")
+                        if base_env:
+                            candidates.append(Path(base_env) / "host" / "target" / f"gate-{gate_name}.txt")
+                        if cwd is not None:
+                            cwd_path = Path(cwd)
+                            if cwd_path.name == "host":
+                                candidates.append(cwd_path.parent / "host" / "target" / f"gate-{gate_name}.txt")
+                                candidates.append(cwd_path / "target" / f"gate-{gate_name}.txt")
+                            else:
+                                candidates.append(cwd_path / "host" / "target" / f"gate-{gate_name}.txt")
+                                candidates.append(cwd_path / f"host/target/gate-{gate_name}.txt")
+                        # fallback: repo root inferred from this file (host/scripts/runner/parent_runner.py -> 3 parents)
+                        try:
+                            inferred_root = Path(__file__).resolve().parents[3]
+                            candidates.append(inferred_root / "host" / "target" / f"gate-{gate_name}.txt")
+                        except Exception:
+                            pass
+                        # also try relative to current working directory
+                        try:
+                            candidates.append(Path.cwd() / "host" / "target" / f"gate-{gate_name}.txt")
+                        except Exception:
+                            pass
+                        seen = set()
+                        for gp in candidates:
+                            try:
+                                gp = gp.resolve()
+                            except Exception:
+                                pass
+                            if gp in seen:
+                                continue
+                            seen.add(gp)
+                            if gp.is_file():
+                                try:
+                                    content = gp.read_text(encoding="utf-8", errors="ignore")
+                                    if "ok=False" in content:
+                                        exit_code = 1
+                                        break
+                                except Exception:
+                                    continue
+            except Exception:
+                pass
         # Build envelope before deleting temp directory
         envelope = build_envelope(
             command=command,

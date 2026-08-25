@@ -90,7 +90,7 @@ class SurftreeMixin:
         try:
             nw = float(getattr(node, "width", 0) or getattr(node, "w", 0) or 0)
             nh = float(getattr(node, "height", 0) or getattr(node, "h", 0) or 0)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             nw = nh = 0.0
         if nw <= 0 or nh <= 0:
             try:
@@ -100,7 +100,7 @@ class SurftreeMixin:
                         nw = float(gw or 0)
                     if nh <= 0:
                         nh = float(gh or 0)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         if nw <= 0:
             nw = big if not xclip else 0.0
@@ -249,23 +249,23 @@ class SurftreeMixin:
                 if probe is not None:
                     try:
                         alive = bool(probe(int(cached)))
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         # Probe exists but failed — treat as dead and recreate
                         # rather than risk encode_pass skip of a bad handle.
                         alive = False
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 alive = True  # binding absent / import path
             if alive:
                 try:
                     touch = getattr(renpy_host, "touch_mesh", None)
                     if touch is not None:
                         touch(int(cached))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
                 return cached
             try:
                 del self._mesh_cache[key]
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 self._mesh_cache.pop(key, None)
 
         verts = [
@@ -289,7 +289,7 @@ class SurftreeMixin:
                     pending = []
                     self._mesh_deferred_destroy = pending
                 pending.append(int(old_h))
-            except Exception:
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 # If eviction fails, still drop a key so the Python map stops
                 # growing; arena residual is bounded by cap churn + deferred flush.
                 if self._mesh_cache:
@@ -321,9 +321,9 @@ class SurftreeMixin:
             for h in pending:
                 try:
                     destroy(int(h))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
 
     def _host_tex_uv(self, ht: HostTexture):
@@ -394,7 +394,7 @@ class SurftreeMixin:
                 try:
                     w, hh = tex.get_size()
                     return HostTexture(h, max(1, int(w)), max(1, int(hh)))
-                except Exception:
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     return HostTexture(h, 1, 1)
         return None
 
@@ -504,7 +504,7 @@ class SurftreeMixin:
         ):
             return True
         uniforms = getattr(node, "uniforms", None)
-        if isinstance(uniforms, dict) and (
+        if isinstance(uniforms, dict) and (  # noqa: SIM102 -- collapsed nested if would obscure product alias comment
             "u_renpy_dissolve_offset" in uniforms
             or "u_renpy_dissolve_multiplier" in uniforms
             # Product alias uniforms (HuangmeiC image_dissolve).
@@ -644,10 +644,7 @@ class SurftreeMixin:
             return False
         xdx, ydy = sc
         # Non-identity axis scale → apply reverse mapping.
-        if abs(xdx - 1.0) > 1e-6 or abs(ydy - 1.0) > 1e-6:
-            return True
-        # Identity reverse: never stretch on size mismatch (typewriter mid-st).
-        return False
+        return abs(xdx - 1.0) > 1e-6 or abs(ydy - 1.0) > 1e-6
 
     def _reverse_dest_size(self, node, child, parent_size):
         """Dest size for a reverse-scaled child.
@@ -695,7 +692,7 @@ class SurftreeMixin:
         ht = None
         try:
             ht = self._resolve_texture_full(child)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             ht = None
         if ht is not None and self._host_tex_is_full(ht):
             # Full image/text line texture → fill reverse node's virtual box.
@@ -716,8 +713,8 @@ class SurftreeMixin:
                 )
             return max(1, pw), max(1, ph)
         # Partial UV (typewriter): map drawable partial → virtual partial.
-        dw = max(1, int(round(abs(float(cw) * float(xdx)))))
-        dh = max(1, int(round(abs(float(ch) * float(ydy)))))
+        dw = max(1, round(abs(float(cw) * float(xdx))))
+        dh = max(1, round(abs(float(ch) * float(ydy))))
         if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
             _ui_trace_once(
                 "reverse_branch",

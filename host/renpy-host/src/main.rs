@@ -104,16 +104,26 @@ fn main() {
             error!("phase0 smoke failed: {e}");
             std::process::exit(1);
         }
+        let code = host_state().lock().map(|s| s.exit_code).unwrap_or(0);
+        if code != 0 {
+            std::process::exit(code);
+        }
         return;
     }
 
-    if let Err(e) = run_product_pump(python) {
-        error!("product pump failed: {e}");
-        std::process::exit(1);
+    let exit_code = match run_product_pump(python) {
+        Ok(code) => code,
+        Err(e) => {
+            error!("product pump failed: {e}");
+            1
+        }
+    };
+    if exit_code != 0 {
+        std::process::exit(exit_code);
     }
 }
 
-fn run_product_pump(python: PythonRuntime) -> Result<(), String> {
+fn run_product_pump(python: PythonRuntime) -> Result<i32, String> {
     let mut event_loop = EventLoop::new().map_err(|e| format!("EventLoop: {e}"))?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
@@ -174,6 +184,7 @@ fn run_product_pump(python: PythonRuntime) -> Result<(), String> {
     python::install_nested_pump(nested_pump_once);
 
     let max_wall = app.max_wall_deadline;
+    let mut pump_exit_code: Option<i32> = None;
 
     loop {
         if app.should_exit || host_state().lock().unwrap().should_exit {
@@ -213,6 +224,7 @@ fn run_product_pump(python: PythonRuntime) -> Result<(), String> {
             PumpStatus::Continue => {}
             PumpStatus::Exit(code) => {
                 info!("event loop exit code={code}");
+                pump_exit_code = Some(code);
                 break;
             }
         }
@@ -253,7 +265,10 @@ fn run_product_pump(python: PythonRuntime) -> Result<(), String> {
         }
     }
 
-    Ok(())
+    let host_code = host_state().lock().map(|s| s.exit_code).unwrap_or(0);
+    let pump_code = pump_exit_code.unwrap_or(0);
+    let final_code = if host_code != 0 { host_code } else { pump_code };
+    Ok(final_code)
 }
 
 fn inject_due_timers() {
@@ -533,6 +548,11 @@ impl ApplicationHandler for ProductApp {
                 info!("starting Python gate mode={gate}");
                 if let Err(e) = self.python.run_gate(&gate) {
                     error!("Python gate failed: {e}");
+                    {
+                        let mut st = host_state().lock().unwrap();
+                        st.should_exit = true;
+                        st.exit_code = 1;
+                    }
                     self.should_exit = true;
                     event_loop.exit();
                     return;

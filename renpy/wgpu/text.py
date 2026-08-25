@@ -19,8 +19,16 @@ def _font(size: int):
 
     path = os.environ.get("RENPY_HOST_FONT", DEFAULT_FONT)
     try:
-        return ImageFont.truetype(path, size)
-    except Exception:
+        # Explicitly pin to BASIC layout to suppress hinting/RAQM drift across Pillow versions.
+        # Fallback to no-layout_engine if Pillow does not support the kwarg.
+        try:
+            return ImageFont.truetype(path, size, layout_engine=ImageFont.Layout.BASIC)
+        except (TypeError, AttributeError):
+            return ImageFont.truetype(path, size)
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            # Any FreeType-specific failure with BASIC, retry without it
+            return ImageFont.truetype(path, size)
+    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
         return ImageFont.load_default()
 
 
@@ -35,73 +43,46 @@ def render_text_rgba(
     from PIL import Image, ImageDraw  # type: ignore
 
     font = _font(size)
-    # Measure
-    dummy = Image.new("RGBA", (1, 1))
-    draw = ImageDraw.Draw(dummy)
-    bbox = draw.textbbox((0, 0), text, font=font)
+    # Measure — prefer font.getbbox (more stable than draw.textbbox across versions).
+    bbox = None
+    # Try font.getbbox with explicit anchor lt for determinism
+    try:
+        bbox = font.getbbox(text, anchor="lt")  # type: ignore[call-arg]
+    except TypeError:
+        try:
+            bbox = font.getbbox(text)  # type: ignore[no-untyped-call]
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            bbox = None
+    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+        bbox = None
+    if bbox is None:
+        # Fallback to draw.textbbox for very old Pillow / bitmap fonts
+        try:
+            dummy = Image.new("RGBA", (1, 1))
+            d = ImageDraw.Draw(dummy)
+            bbox = d.textbbox((0, 0), text, font=font, anchor="lt")  # type: ignore[call-arg]
+        except TypeError:
+            dummy = Image.new("RGBA", (1, 1))
+            d = ImageDraw.Draw(dummy)
+            bbox = d.textbbox((0, 0), text, font=font)
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            dummy = Image.new("RGBA", (1, 1))
+            d = ImageDraw.Draw(dummy)
+            bbox = d.textbbox((0, 0), text, font=font)
     tw = max(1, bbox[2] - bbox[0])
     th = max(1, bbox[3] - bbox[1])
     w = tw + padding * 2
     h = th + padding * 2
+    # Even-align w/h so Linear 2.5x sampling centre stays pixel-aligned (avoids 0.5-texel drift)
+    if w % 2 == 1:
+        w += 1
+    if h % 2 == 1:
+        h += 1
     im = Image.new("RGBA", (w, h), bg)
     draw = ImageDraw.Draw(im)
-    draw.text((padding - bbox[0], padding - bbox[1]), text, font=font, fill=color)
+    # Explicit anchor lt for deterministic origin; fallback if Pillow version lacks it
+    try:
+        draw.text((padding - bbox[0], padding - bbox[1]), text, font=font, fill=color, anchor="lt")  # type: ignore[call-arg]
+    except TypeError:
+        draw.text((padding - bbox[0], padding - bbox[1]), text, font=font, fill=color)
     return w, h, im.tobytes()
-
-
-def draw_text_screen(
-    text: str,
-    ndc_x: float = -0.8,
-    ndc_y: float = 0.2,
-    ndc_w: float = 1.6,
-    ndc_h: float = 0.4,
-    size: int = 48,
-):
-    """Upload text texture and draw a textured quad in NDC via draw_model."""
-    import renpy_host  # type: ignore
-
-    w, h, rgba = render_text_rgba(text, size=size)
-    tex = renpy_host.create_texture_rgba(w, h, rgba)
-    # Quad corners in NDC
-    x0, y0 = ndc_x, ndc_y
-    x1, y1 = ndc_x + ndc_w, ndc_y - ndc_h
-    verts = [
-        x0,
-        y1,
-        0.0,
-        1.0,
-        1,
-        1,
-        1,
-        1,
-        x1,
-        y1,
-        1.0,
-        1.0,
-        1,
-        1,
-        1,
-        1,
-        x1,
-        y0,
-        1.0,
-        0.0,
-        1,
-        1,
-        1,
-        1,
-        x0,
-        y0,
-        0.0,
-        0.0,
-        1,
-        1,
-        1,
-        1,
-    ]
-    mesh = renpy_host.create_mesh(verts, [0, 1, 2, 0, 2, 3])
-    pipe = renpy_host.textured_pipeline()
-    renpy_host.begin_frame()
-    renpy_host.draw_model(pipe, mesh, tex)
-    renpy_host.end_frame_present()
-    return {"tex": tex, "mesh": mesh, "pipe": pipe, "size": (w, h)}

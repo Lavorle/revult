@@ -2278,10 +2278,21 @@ fn vs_main(v: VsIn) -> VsOut {
 }
 @fragment
 fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    let amt = clamp(u.data0.x, 0.0, 1.0);
+    // uniform-level branch: same for all 32 lanes in a wave → S_CBRANCH_EXECZ-friendly.
+    if (amt <= 0.0) {
+        let c1 = textureSample(t_new, s_color, v.uv) * v.color;
+        let a = clamp(c1.a, 0.0, 1.0);
+        return vec4<f32>(c1.rgb * a, a);
+    }
+    if (amt >= 1.0) {
+        let c0 = textureSample(t_old, s_color, v.uv) * v.color;
+        let a = clamp(c0.a, 0.0, 1.0);
+        return vec4<f32>(c0.rgb * a, a);
+    }
     let c0 = textureSample(t_old, s_color, v.uv);
     let c1 = textureSample(t_new, s_color, v.uv);
-    let amount = clamp(u.data0.x, 0.0, 1.0);
-    let c = mix(c0, c1, amount) * v.color;
+    let c = mix(c0, c1, amt) * v.color;
     let a = clamp(c.a, 0.0, 1.0);
     return vec4<f32>(c.rgb * a, a);
 }
@@ -2327,16 +2338,16 @@ fn vs_main(v: VsIn) -> VsOut {
 }
 @fragment
 fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    let off = u.data0.x;
+    let mult = u.data0.y;
+    // uniform-level select: same for all lanes in a wave.
+    let use_red = u.data0.z > 0.5;
     let control = textureSample(t_control, s_color, v.uv);
+    let ctrl = select(control.a, control.r, use_red);
+    // scalar-only compute; ctrl VGPR dies before bottom/top samples.
+    let a = clamp((ctrl + off) * mult, 0.0, 1.0);
     let bottom = textureSample(t_bottom, s_color, v.uv);
     let top = textureSample(t_top, s_color, v.uv);
-    let offset = u.data0.x;
-    let mult = u.data0.y;
-    // data0.z > 0.5 → sample control.r (HuangmeiC image_dissolve rule.png);
-    // else control.a (stock ImageDissolve after matrixcolor red→alpha).
-    let use_red = u.data0.z > 0.5;
-    let ctrl = select(control.a, control.r, use_red);
-    let a = clamp((ctrl + offset) * mult, 0.0, 1.0);
     let c = mix(bottom, top, a) * v.color;
     let out_a = clamp(c.a, 0.0, 1.0);
     return vec4<f32>(c.rgb * out_a, out_a);
@@ -2468,9 +2479,9 @@ fn vs_main(v: VsIn) -> VsOut {
 @fragment
 fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
     let src = textureSample(t_src, s_color, v.uv) * v.color;
-    let mask = textureSample(t_mask, s_color, v.uv);
-    let a = src.a * mask.r;
-    return vec4<f32>(src.rgb * mask.r, a);
+    let ma = textureSample(t_mask, s_color, v.uv).r;
+    let a = src.a * ma;
+    return vec4<f32>(src.rgb * ma, a);
 }
 "#;
 
@@ -2507,12 +2518,12 @@ fn vs_main(v: VsIn) -> VsOut {
 }
 @fragment
 fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
-    let src = textureSample(t_src, s_color, v.uv) * v.color;
-    let mask = textureSample(t_mask, s_color, v.uv);
     let mult = u.data0.x;
     let offset = u.data0.y;
-    let factor = mask.a * mult + offset;
-    let c = src * factor;
+    let src = textureSample(t_src, s_color, v.uv) * v.color;
+    let ma = textureSample(t_mask, s_color, v.uv).a;
+    let k = ma * mult + offset;
+    let c = src * k;
     return vec4<f32>(c.r, c.g, c.b, c.a);
 }
 "#;

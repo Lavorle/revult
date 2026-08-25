@@ -472,7 +472,9 @@ def register_builtin_core():
         fragment_hooks=[(350, _MATRIXCOLOR_FS)],
         atomic=False,
     )
+    # renpy.alpha_mask: src * mask.r (dual tex). data0 unused; binds tex0=src, tex1=mask.
     register_wgsl_shader("renpy.alpha_mask", priority=400, kind="alpha_mask")
+    # renpy.mask: src * (mask.a * mult + offset). data0.x=mult, data0.y=offset (uniform-level).
     register_wgsl_shader("renpy.mask", priority=400, kind="mask")
     # Phase 7 Live2D (WGSL-producing registrations; no Cubism Core required for sample).
     register_wgsl_shader("live2d.mask", priority=200, kind="live2d_mask")

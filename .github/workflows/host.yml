@@ -21,7 +21,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-dev vulkan-tools mesa-vulkan-drivers libasound2-dev
+          sudo apt-get install -y python3-dev vulkan-tools mesa-vulkan-drivers libasound2-dev xvfb
           vulkaninfo --summary | head -n 50 || true
           lspci | grep -i vga || true
       - name: Setup Rust
@@ -64,13 +64,13 @@ jobs:
           echo "OK no libSDL*"
       - name: Golden 8/8 via parent_runner
         run: |
-          bash host/scripts/run_golden_tests.sh | tee host/target/verify-golden.log
+          xvfb-run -a bash host/scripts/run_golden_tests.sh | tee host/target/verify-golden.log
           grep -q '8 / 8' host/target/verify-golden.log
           PYTHONPATH=host/python/gates python3 tests/test_golden_mae.py | tee host/target/verify-golden-mae.log
           PYTHONPATH=host/scripts/runner python3 tests/test_parent_runner.py | tee host/target/verify-parent.log
       - name: phase1_gates (Vulkan backend + smoke/nested/periodic/input)
         run: |
-          bash host/scripts/phase1_gates.sh | tee host/target/verify-phase1.log
+          xvfb-run -a bash host/scripts/phase1_gates.sh | tee host/target/verify-phase1.log
           grep -q 'backend=Vulkan' host/target/verify-phase1.log
           grep -q 'OK: no libSDL' host/target/verify-phase1.log
       - name: Upload artifacts

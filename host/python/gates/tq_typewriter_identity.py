@@ -151,7 +151,7 @@ def main():
         )
         ok_id = (not needs) and not_stretched and partial_ok and width_ok
         lines.append(
-            "sub_w=%d ink_cols=%d coverage=%.3f max_ink_x=%d"  # noqa: UP031
+            "sub_w=%d ink_cols=%d coverage=%.3f max_ink_x=%d"
             % (sub_w, ink_cols, coverage, max_x)
         )
         lines.append(
@@ -187,7 +187,7 @@ def main():
         needs2 = draw._node_needs_axis_scale(text2, kids2)
         dest = draw._reverse_dest_size(text2, sub2, (TW, TH))
         lines.append(
-            "oversample needs_axis_scale=%s (expect True) dest=%s expect≈(%d,%d)"  # noqa: UP031
+            "oversample needs_axis_scale=%s (expect True) dest=%s expect≈(%d,%d)"
             % (needs2, dest, EXPECTED_W, TH)
         )
         dest_ok = (
@@ -208,7 +208,7 @@ def main():
         )
         ok_os = dest_ok and os_not_stretched and os_partial and os_width_ok
         lines.append(
-            "oversample ink_cols=%d coverage=%.3f max_ink_x=%d dest_ok=%s"  # noqa: UP031
+            "oversample ink_cols=%d coverage=%.3f max_ink_x=%d dest_ok=%s"
             % (ink2, cov2, max2, dest_ok)
         )
         lines.append(

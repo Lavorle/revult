@@ -22,11 +22,11 @@ def _log(m):
         sys.__stdout__.write(f"[dc_spatial] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_dc_spatial.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_spatial.log","a").write(m+"\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -64,12 +64,12 @@ def _pre():
         for n in dir(u):
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
-        import renpy; renpy.uguu=pkg  # noqa: I001
+        import renpy; renpy.uguu=pkg
     except Exception as e: _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-        import renpy; renpy.ecsign=e  # noqa: I001
+        import renpy; renpy.ecsign=e
     except Exception as e: _log(f"ecsign {e}")
 
 def _sample_regions():
@@ -164,7 +164,7 @@ def _walk_bg(node, budget=None, acc=None, depth=0):
     try:
         ts=getattr(node,"textures",None)
         if ts:
-            for t in ts: kids.append(t)  # noqa: PERF402
+            for t in ts: kids.append(t)
     except Exception: pass
     for k in kids: _walk_bg(k, budget, acc, depth+1)
     return acc
@@ -235,7 +235,7 @@ def main():
         if p not in sys.path: sys.path.insert(0,p)
     # install ourselves as gate by writing into gates path and using product path
     # simpler: run like phase0 gate
-    open("/tmp/hmc_dc_spatial.log","w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_spatial.log","w").write("start\n")
     import bootstrap as boot
     for name,call in (
         ("import_renpy",boot.stage_import_renpy),
@@ -249,7 +249,7 @@ def main():
     import renpy
     renpy.host_build=True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e: _log(f"main_host {e}")
     try:
         import renpy.arguments

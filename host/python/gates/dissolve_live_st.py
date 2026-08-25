@@ -209,7 +209,7 @@ def _bootstrap(lines):
     """Import renpy under host, seed styles/models/prefs for real Dissolve.render."""
     import bootstrap as boot
 
-    good, miss, err, extra = boot.stage_import_renpy()  # noqa: RUF059
+    good, miss, err, extra = boot.stage_import_renpy()
     _log(lines, f"import_renpy good={good} err={err}")
     if not good:
         raise RuntimeError(f"import_renpy failed: {err}")

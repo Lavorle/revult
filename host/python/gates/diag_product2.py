@@ -10,7 +10,7 @@ except ImportError:
         from host.python.gates._harness import gate_harness, parametrized_gate
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
-out = open("/tmp/diag_product2.txt", "w")  # noqa: SIM115
+out = open("/tmp/diag_product2.txt", "w")
 def log(m):
     out.write(str(m) + "\n"); out.flush()
 try:

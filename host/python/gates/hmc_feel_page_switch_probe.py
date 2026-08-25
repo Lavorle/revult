@@ -26,7 +26,7 @@ def _base():
 
 def _log(msg):
     try:
-        open("/tmp/hmc_feel_page_switch_probe.log", "a").write(str(msg) + "\n")  # noqa: SIM115
+        open("/tmp/hmc_feel_page_switch_probe.log", "a").write(str(msg) + "\n")
     except Exception:
         pass
     try:
@@ -197,7 +197,7 @@ def probe():
 
 
 def main():
-    open("/tmp/hmc_feel_page_switch_probe.log", "w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_feel_page_switch_probe.log", "w").write("start\n")
     base = _base()
     game = os.environ.get("RENPY_HOST_GAME") or str(base / "host" / "playtests" / "HuangmeiC")
     os.environ["RENPY_HOST_BASE"] = str(base)

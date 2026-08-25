@@ -36,7 +36,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/product-prefs-inject.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/product-prefs-inject.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -183,9 +183,9 @@ def run():
                         pass
                     mm = getattr(renpy.store, "main_menu", None)
                     if i % 3 == 0:
-                        rec("pulse#%d prefs_screen=%r main_menu=%r" % (i, scr is not None, mm))  # noqa: UP031
+                        rec("pulse#%d prefs_screen=%r main_menu=%r" % (i, scr is not None, mm))
                     if scr is not None:
-                        rec("Preferences opened at pulse#%d" % i)  # noqa: UP031
+                        rec("Preferences opened at pulse#%d" % i)
                         state["prefs"] = True
                         break
                 except Exception as e:

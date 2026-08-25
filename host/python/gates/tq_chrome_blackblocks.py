@@ -343,7 +343,7 @@ def main():
 
     ok = border_ok and outside_ok and not featureless_black
     msg = (
-        "ok=%s border_hits=%d/%d border_ok=%s center_rgb=(%d,%d,%d) "  # noqa: UP031
+        "ok=%s border_hits=%d/%d border_ok=%s center_rgb=(%d,%d,%d) "
         "center_black=%s center_orange=%s outside_ok=%s featureless_black=%s "
         "top=%s left=%s dest=%dx%d src=%dx%d border=%d src_tag=%s "
         "confirm_borders=40 product_frame=True"

@@ -18,8 +18,6 @@ except ImportError:
 
 # Bind renpy.config BEFORE any print: host bootstrap partially imports renpy and
 # renpy.log redirects stdout to StdoutRedirector which reads renpy.config.
-import renpy
-import renpy.config  # noqa: F401
 
 OUT = Path(os.environ.get("RENPY_HOST_BASE", "/mnt/nvme1n1p2/revult")) / "host" / "target" / "gate-verify-dead-input.txt"
 _lines = []

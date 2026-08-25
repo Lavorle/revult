@@ -22,11 +22,11 @@ def _log(m):
         sys.__stdout__.write(f"[dc_bg] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_dc_bg_diag.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_bg_diag.log","a").write(m+"\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -64,12 +64,12 @@ def _pre():
         for n in dir(u):
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
-        import renpy; renpy.uguu=pkg  # noqa: I001
+        import renpy; renpy.uguu=pkg
     except Exception as e: _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-        import renpy; renpy.ecsign=e  # noqa: I001
+        import renpy; renpy.ecsign=e
     except Exception as e: _log(f"ecsign {e}")
 
 def _sample_rt():
@@ -102,9 +102,9 @@ def _find_in_render(node, pred, acc=None, budget=None, depth=0, path=""):
         if ch:
             for i,c in enumerate(ch):
                 if isinstance(c,(list,tuple)) and c:
-                    kids.append((c[0], "%s/c%d"%(path,i)))  # noqa: UP031
+                    kids.append((c[0], "%s/c%d"%(path,i)))
                 else:
-                    kids.append((c, "%s/c%d"%(path,i)))  # noqa: UP031
+                    kids.append((c, "%s/c%d"%(path,i)))
     except Exception: pass
     for attr in ("cached_texture","cached_model","texture"):
         try:
@@ -115,7 +115,7 @@ def _find_in_render(node, pred, acc=None, budget=None, depth=0, path=""):
         ts=getattr(node,"textures",None)
         if ts:
             for i,t in enumerate(ts):
-                kids.append((t, "%s/tex%d"%(path,i)))  # noqa: UP031
+                kids.append((t, "%s/tex%d"%(path,i)))
     except Exception: pass
     for k,p in kids:
         _find_in_render(k, pred, acc, budget, depth+1, p)
@@ -195,7 +195,7 @@ def _scan_displayables(root, needle_substrings):
             if attr=="children":
                 try:
                     for i,c in enumerate(list(v)[:50]):
-                        walk(c, path+"/ch%d"%i, depth+1)  # noqa: UP031
+                        walk(c, path+"/ch%d"%i, depth+1)
                 except Exception:
                     pass
             elif attr=="style":
@@ -318,12 +318,12 @@ def _worker():
                     d_hits=_scan_displayables(child, ["background.png","mask.png","preferences/common"])
                 except Exception as e:
                     d_hits=[("scan_err",str(e))]
-            lines.append("KIND %s displayable_hits=%d"% (kind, len(d_hits)))  # noqa: UP031
+            lines.append("KIND %s displayable_hits=%d"% (kind, len(d_hits)))
             for h in d_hits[:12]:
                 lines.append(f"  disp {h}")
 
             rd, st, pre = _redraw()
-            lines.append("KIND %s redraw=%s pre_large_ht=%d"%(kind, rd, len(pre) if isinstance(pre,list) else -1))  # noqa: UP031
+            lines.append("KIND %s redraw=%s pre_large_ht=%d"%(kind, rd, len(pre) if isinstance(pre,list) else -1))
             if isinstance(pre,list):
                 for p,n in pre[:8]:
                     lines.append(f"  pre {p} {_ht_info(n) if isinstance(n,HostTexture) else type(n).__name__}")
@@ -335,7 +335,7 @@ def _worker():
                 return isinstance(n, HostTexture) and (int(getattr(n,"w",0) or 0), int(getattr(n,"h",0) or 0))==(1920,1080)
             bgs=_find_in_render(st, pred_bg) if st is not None else []
             fulls=_find_in_render(st, pred_full) if st is not None else []
-            lines.append("  post bg1849_count=%d full1920_count=%d"%(len(bgs), len(fulls)))  # noqa: UP031
+            lines.append("  post bg1849_count=%d full1920_count=%d"%(len(bgs), len(fulls)))
             for p,n in bgs[:4]:
                 lines.append(f"  bg {p} {_ht_info(n)}")
             for p,n in fulls[:4]:
@@ -346,7 +346,7 @@ def _worker():
             def pred_all(n):
                 if isinstance(n, HostTexture):
                     key=(int(getattr(n,"w",0) or 0), int(getattr(n,"h",0) or 0))
-                    hist[key]=hist.get(key,0)+1  # noqa: B023
+                    hist[key]=hist.get(key,0)+1
                 return False
             _find_in_render(st, pred_all)
             top=sorted(hist.items(), key=lambda kv: -kv[1])[:15]
@@ -355,7 +355,7 @@ def _worker():
             # texture_cache size
             try:
                 draw=renpy.display.draw
-                lines.append("  texture_cache=%d handle_pixels=%d remap=%d"%(  # noqa: UP031
+                lines.append("  texture_cache=%d handle_pixels=%d remap=%d"%(
                     len(getattr(draw,"texture_cache",{}) or {}),
                     len(getattr(draw,"_handle_pixels",{}) or {}),
                     len(getattr(draw,"_handle_remap",{}) or {}),
@@ -418,7 +418,7 @@ def main():
     _clear_falsey("RENPY_SKIP_MAIN_MENU"); _clear_falsey("RENPY_SKIP_SPLASHSCREEN")
     for p in (str(base/"host"/"python"/"gates"), str(base/"host"/"python")):
         if p not in sys.path: sys.path.insert(0,p)
-    open("/tmp/hmc_dc_bg_diag.log","w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_bg_diag.log","w").write("start\n")
     import bootstrap as boot
     for name,call in (
         ("import_renpy",boot.stage_import_renpy),
@@ -432,7 +432,7 @@ def main():
     import renpy
     renpy.host_build=True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e: _log(f"main_host {e}")
     try:
         import renpy.arguments

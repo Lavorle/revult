@@ -30,11 +30,11 @@ def _log(m):
         sys.__stdout__.write(f"[hmc_p0] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_phase0_class_labels.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_phase0_class_labels.log","a").write(m+"\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -72,12 +72,12 @@ def _pre():
         for n in dir(u):
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
-        import renpy; renpy.uguu=pkg  # noqa: I001
+        import renpy; renpy.uguu=pkg
     except Exception as e: _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-        import renpy; renpy.ecsign=e  # noqa: I001
+        import renpy; renpy.ecsign=e
     except Exception as e: _log(f"ecsign {e}")
 
 def _sample_rt():
@@ -357,9 +357,8 @@ def main():
     for p in (str(base/"host"/"python"/"gates"), str(base/"host"/"python")):
         if p not in sys.path:
             sys.path.insert(0,p)
-    open("/tmp/hmc_phase0_class_labels.log","w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_phase0_class_labels.log","w").write("start\n")
     import bootstrap as boot
-    import renpy_host  # noqa: F401
     for name,call in (
         ("import_renpy",boot.stage_import_renpy),
         ("import_all",boot.stage_import_all),

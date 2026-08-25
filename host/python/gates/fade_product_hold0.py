@@ -229,7 +229,7 @@ def _luma(m):
 def _bootstrap(lines):
     import bootstrap as boot
 
-    good, miss, err, extra = boot.stage_import_renpy()  # noqa: RUF059
+    good, miss, err, extra = boot.stage_import_renpy()
     _log(lines, f"import_renpy good={good} err={err}")
     if not good:
         raise RuntimeError(f"import_renpy failed: {err}")

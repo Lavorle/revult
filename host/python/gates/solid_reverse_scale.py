@@ -140,7 +140,7 @@ def main():
     not_clear = not (r_c < 8 and g_c < 8 and b_c < 8)
     ok = center_ok and corner_ok and not_clear
     msg = (
-        "ok=%s center_rgb=(%d,%d,%d) corner_rgb=(%d,%d,%d) "  # noqa: UP031
+        "ok=%s center_rgb=(%d,%d,%d) corner_rgb=(%d,%d,%d) "
         "center_ok=%s corner_ok=%s not_clear=%s dest=%dx%d src=%dx%d"
         % (
             ok,

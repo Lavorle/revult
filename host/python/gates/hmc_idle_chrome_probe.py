@@ -55,7 +55,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_idle_chrome_probe.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_idle_chrome_probe.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -1029,7 +1029,7 @@ def _dump_phase(label, lines):
                             for i, entry in enumerate(kids[:4]):
                                 ch = entry[0] if isinstance(entry, (tuple, list)) else entry
                                 lines.append(
-                                    "  diss_child[%d] cls=%s mesh=%s kids=%s ht_count=%s size=%s sh=%s"  # noqa: UP031
+                                    "  diss_child[%d] cls=%s mesh=%s kids=%s ht_count=%s size=%s sh=%s"
                                     % (
                                         i,
                                         type(ch).__name__,
@@ -1052,7 +1052,7 @@ def _dump_phase(label, lines):
                 lines.append(f"DISSOLVE dump fail: {e}")
             path = _struct_path(st)
             if path:
-                lines.append("LIVE_STRUCT_PATH n=%d" % len(path))  # noqa: UP031
+                lines.append("LIVE_STRUCT_PATH n=%d" % len(path))
                 for p in path:
                     lines.append(
                         "  path d={} {} mesh={} kids={} loaded={} cm={} cm_texs={} size={} sh={} extra={}".format(
@@ -1138,7 +1138,7 @@ def _dump_phase(label, lines):
     if surftree is not None:
         try:
             tex_nodes = _walk_surftree_textures(surftree)
-            lines.append("SURFTREE textured_nodes=%d" % len(tex_nodes))  # noqa: UP031
+            lines.append("SURFTREE textured_nodes=%d" % len(tex_nodes))
             # All textured (not only dock) — logo / movie may be outside band
             lines.append("SURFTREE all_textured:")
             for n in tex_nodes[:40]:
@@ -1156,7 +1156,7 @@ def _dump_phase(label, lines):
                     )
                 )
             dock_nodes = [n for n in tex_nodes if (n.get("oy") or 0) >= 900]
-            lines.append("SURFTREE dock_band(oy>=900) n=%d" % len(dock_nodes))  # noqa: UP031
+            lines.append("SURFTREE dock_band(oy>=900) n=%d" % len(dock_nodes))
         except Exception as e:
             lines.append(f"SURFTREE walk fail: {e}")
             lines.append(traceback.format_exc()[-600:])
@@ -1168,7 +1168,7 @@ def _dump_phase(label, lines):
         lines.append(f"BUTTONS fail: {e}")
         lines.append(traceback.format_exc()[-600:])
         btns = []
-    lines.append("BUTTONS n=%d" % len(btns))  # noqa: UP031
+    lines.append("BUTTONS n=%d" % len(btns))
     for b in btns:
         if "error" in b and len(b) == 1:
             lines.append("  ERROR {}".format(b["error"]))
@@ -1190,7 +1190,7 @@ def _dump_phase(label, lines):
                 samp = _sample_rect_mean(rgba0, w0, h0, px, py)
                 if samp:
                     lines.append(
-                        "  PIX_PRE action=%s virt_c=(%.0f,%.0f) phys_c=(%d,%d) mean_rgba=(%.1f,%.1f,%.1f,%.1f)"  # noqa: UP031
+                        "  PIX_PRE action=%s virt_c=(%.0f,%.0f) phys_c=(%d,%d) mean_rgba=(%.1f,%.1f,%.1f,%.1f)"
                         % (b.get("action"), vx, vy, px, py, samp[0], samp[1], samp[2], samp[3])
                     )
     except Exception as e:
@@ -1223,7 +1223,7 @@ def _dump_phase(label, lines):
                 samp = _sample_rect_mean(rgba, pw, ph, px, py)
                 if samp:
                     lines.append(
-                        "  PIX action=%s virt_c=(%.0f,%.0f) phys_c=(%d,%d) mean_rgba=(%.1f,%.1f,%.1f,%.1f)"  # noqa: UP031
+                        "  PIX action=%s virt_c=(%.0f,%.0f) phys_c=(%d,%d) mean_rgba=(%.1f,%.1f,%.1f,%.1f)"
                         % (
                             b.get("action"),
                             vx,
@@ -1246,7 +1246,7 @@ def _dump_phase(label, lines):
                 samp = _sample_rect_mean(rgba, pw, ph, px, py)
                 if samp:
                     lines.append(
-                        "  PIX region=%s virt=(%d,%d) phys=(%d,%d) mean_rgba=(%.1f,%.1f,%.1f,%.1f)"  # noqa: UP031
+                        "  PIX region=%s virt=(%d,%d) phys=(%d,%d) mean_rgba=(%.1f,%.1f,%.1f,%.1f)"
                         % (name, vx, vy, px, py, samp[0], samp[1], samp[2], samp[3])
                     )
     except Exception as e:
@@ -1420,7 +1420,7 @@ def run():
             try:
                 if bool(getattr(renpy.store, "main_menu", False)):
                     state["main_menu"] = True
-                    rec("main_menu at tick=%d" % i)  # noqa: UP031
+                    rec("main_menu at tick=%d" % i)
                     break
             except Exception:
                 pass

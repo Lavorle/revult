@@ -22,11 +22,11 @@ def _log(m):
         sys.__stdout__.write(f"[flow_diag] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_flowchart_diag.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_flowchart_diag.log","a").write(m+"\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -62,14 +62,14 @@ def _stubs():
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu = u; pkg.gl = u
         try:
-            import renpy; renpy.uguu=pkg  # noqa: I001
+            import renpy; renpy.uguu=pkg
         except Exception: pass
     except Exception as e: _log(f"u {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
         try:
-            import renpy as r; r.ecsign = e  # noqa: I001
+            import renpy as r; r.ecsign = e
         except Exception: pass
     except Exception as e: _log(f"e {e}")
 
@@ -168,7 +168,7 @@ def _redraw():
     return {"st":st,"root":type(root).__name__}
 
 def run():
-    open("/tmp/hmc_flowchart_diag.log","w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_flowchart_diag.log","w").write("start\n")
     base=_base()
     game=os.environ.get("RENPY_HOST_GAME") or str(base/"host/playtests/HuangmeiC")
     os.environ.update({"RENPY_HOST_BASE":str(base),"RENPY_HOST_BUILD":"1","RENPY_HOST_GAME":game})
@@ -188,7 +188,7 @@ def run():
     try: renpy.config.performance_test=False
     except Exception: pass
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e: _log(f"mh {e}")
     try:
         import renpy.arguments
@@ -207,7 +207,7 @@ def run():
         for i in range(400):
             try:
                 if bool(getattr(renpy.store,"main_menu",False)):
-                    _log("main_menu t=%d"%i); break  # noqa: UP031
+                    _log("main_menu t=%d"%i); break
             except Exception: pass
             time.sleep(0.05)
         else:
@@ -249,7 +249,7 @@ def run():
             _log(f"ShowMenu fail {e}"); _quit(); return
         for j in range(40):
             if renpy.display.screen.get_screen("flowchart") is not None:
-                _log("opened j=%d"%j); break  # noqa: UP031
+                _log("opened j=%d"%j); break
             time.sleep(0.1)
         time.sleep(0.5)
         # live iface before force
@@ -279,7 +279,7 @@ def run():
                 mesh=getattr(ch,"mesh",None)
                 tex=getattr(ch,"texture",None)
                 nch=len(list(getattr(ch,"children",None) or []))
-                _log("top[%d] type=%s pos=(%s,%s) size=(%s,%s) mesh=%s tex=%s nch=%s"%(i,type(ch).__name__,cx,cy,tw,th,bool(mesh),type(tex).__name__ if tex is not None else None,nch))  # noqa: UP031
+                _log("top[%d] type=%s pos=(%s,%s) size=(%s,%s) mesh=%s tex=%s nch=%s"%(i,type(ch).__name__,cx,cy,tw,th,bool(mesh),type(tex).__name__ if tex is not None else None,nch))
         except Exception as e:
             _log(f"top dump {e}")
         post=_sample(); _log("POST mean={} var={:.1f} ok={} pure={:.3f}".format(tuple(round(x,1) for x in post.get("mean",(0,0,0))), post.get("var",0), post.get("ok"), post.get("pure",0)))
@@ -298,7 +298,7 @@ def run():
 
     threading.Thread(target=inj,daemon=True).start()
     try:
-        import renpy.main as m; m.main()  # noqa: I001
+        import renpy.main as m; m.main()
     except Exception as e:
         _log(f"main {type(e).__name__}: {e}")
     _log("done")

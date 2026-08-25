@@ -576,7 +576,7 @@ def _draw_product_frame_chrome(log: list) -> dict:
         )
         _append_log(
             log,
-            "chrome border_hits=%d/5 border_ok=%s center=%s featureless_black=%s "  # noqa: UP031
+            "chrome border_hits=%d/5 border_ok=%s center=%s featureless_black=%s "
             "top=%s left=%s path=%s"
             % (
                 border_hits,
@@ -1041,7 +1041,7 @@ def run() -> None:
     atexit.register(_atexit_report)
 
     try:
-        import renpy_host  # noqa: F401
+        pass
     except Exception as e:
         _append_log(log, f"FATAL no renpy_host: {e}")
         meta["notes"] = "must run under renpy-host embed"
@@ -1068,7 +1068,7 @@ def run() -> None:
         state["reached"] = "import_renpy"
         _append_log(log, "stage import_renpy ok")
 
-        good, miss, err, extra = boot.stage_import_all()  # noqa: RUF059
+        good, miss, err, extra = boot.stage_import_all()
         if not good:
             raise RuntimeError(f"import_all: {err}")
         state["reached"] = "import_all"

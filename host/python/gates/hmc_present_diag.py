@@ -25,11 +25,11 @@ def _log(msg):
         sys.__stdout__.write(f"[present_diag] {msg}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_present_diag.log","a").write(msg+"\n")  # noqa: SIM115
+    open("/tmp/hmc_present_diag.log","a").write(msg+"\n")
 
 def _request_quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -65,14 +65,14 @@ def _stubs():
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu = u; pkg.gl = u
         try:
-            import renpy; renpy.uguu=pkg  # noqa: I001
+            import renpy; renpy.uguu=pkg
         except Exception: pass
     except Exception as e: _log(f"u {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
         try:
-            import renpy as r; r.ecsign = e  # noqa: I001
+            import renpy as r; r.ecsign = e
         except Exception: pass
     except Exception as e: _log(f"e {e}")
 
@@ -119,7 +119,7 @@ def _find_dissolve(draw, node, depth=0):
     return None
 
 def run():
-    open("/tmp/hmc_present_diag.log","w").write("start v12\n")  # noqa: SIM115
+    open("/tmp/hmc_present_diag.log","w").write("start v12\n")
     base=_base()
     game=os.environ.get("RENPY_HOST_GAME") or str(base/"host/playtests/HuangmeiC")
     os.environ.update({"RENPY_HOST_BASE":str(base),"RENPY_HOST_BUILD":"1","RENPY_HOST_GAME":game})
@@ -138,7 +138,7 @@ def run():
     try: renpy.config.performance_test=False
     except Exception: pass
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e: _log(f"mh {e}")
     try:
         import renpy.arguments
@@ -205,7 +205,7 @@ def run():
     threading.Thread(target=watcher,daemon=True).start()
     _log("waiting")
     try:
-        import renpy.main as m; m.main()  # noqa: I001
+        import renpy.main as m; m.main()
     except Exception as e:
         _log(f"main {type(e).__name__}: {e}")
     _log("done")

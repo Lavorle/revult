@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hermetic contract checks for the HuangmeiC launcher and wrapper."""  # noqa: EXE001
+"""Hermetic contract checks for the HuangmeiC launcher and wrapper."""
 
 from __future__ import annotations
 

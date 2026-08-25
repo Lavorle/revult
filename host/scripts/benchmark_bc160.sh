@@ -10,6 +10,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 HOST_DIR="$ROOT/host"
 
 OUT_DEFAULT="$HOST_DIR/target/bc160_perf_metrics.json"
+MEASURED_FRAMES=1800
 MODE="placeholder"
 RUN_GATE=0
 SMOKE_SECS="${RENPY_HOST_SMOKE_SECS:-10}"
@@ -18,20 +19,19 @@ OUT="$OUT_DEFAULT"
 
 _usage() {
   cat <<'USAGE'
-Usage: benchmark_bc160.sh [--help] [--placeholder] [--run-gate] [--out PATH]
+Usage: benchmark_bc160.sh [--help] [--placeholder] [--measured] [--measured-frames N] [--run-gate] [--out PATH]
 
-  --placeholder   Write explicit NOT_MEASURED metrics JSON (default).
-                  Cannot be mistaken for release evidence.
-  --run-gate      Optionally run RENPY_HOST_GATE once for health only.
-                  Still writes NOT_MEASURED metrics (does not invent FPS).
-  --out PATH      Metrics output path (default: host/target/bc160_perf_metrics.json)
-  --help          Show this help.
+  --placeholder       Write explicit NOT_MEASURED metrics JSON (default).
+                      Cannot be mistaken for release evidence.
+  --measured          Run --benchmark $MEASURED_FRAMES frames and write MEASURED metrics with real FPS/avg_ns.
+  --measured-frames N Frames for --measured (default 1800).
+  --run-gate          Optionally run RENPY_HOST_GATE once for health only (placeholder only).
+  --out PATH          Metrics output path (default: host/target/bc160_perf_metrics.json)
+  --help              Show this help.
 
 Honesty contract:
-  - Never writes average_fps / 1_percent_low_fps as measured values without a
-    real collector.
-  - pass_status is never PERFORMANCE_TARGET_MET.
-  - release_evidence_eligible is always false from this script.
+  - placeholder never writes measured FPS; measured requires real cargo --benchmark collector.
+  - measured passes only if average_fps >=60 then PERFORMANCE_TARGET_MET and eligible true.
 USAGE
 }
 
@@ -44,6 +44,15 @@ while [[ $# -gt 0 ]]; do
     --placeholder)
       MODE="placeholder"
       shift
+      ;;
+    --measured)
+      MODE="measured"
+      shift
+      ;;
+    --measured-frames)
+      [[ $# -ge 2 ]] || { echo "ERROR: --measured-frames requires N" >&2; exit 2; }
+      MEASURED_FRAMES="$2"
+      shift 2
       ;;
     --run-gate)
       RUN_GATE=1
@@ -95,6 +104,85 @@ if [[ "$RUN_GATE" -eq 1 ]]; then
   GATE_EXIT=$?
   set -e
   echo "gate_exit_code=$GATE_EXIT (health only; metrics remain NOT_MEASURED)"
+fi
+if [[ "$MODE" == "measured" ]]; then
+  echo "--- Measured benchmark ($MEASURED_FRAMES frames) ---"
+  BENCH_JSON="/tmp/bench_${MEASURED_FRAMES}.json"
+  set +e
+  cargo run -p renpy-host -- --benchmark --benchmark-frames "$MEASURED_FRAMES" --output "$BENCH_JSON"
+  BENCH_EXIT=$?
+  set -e
+  if [[ $BENCH_EXIT -ne 0 ]]; then
+    echo "ERROR: benchmark run failed exit $BENCH_EXIT" >&2
+    exit $BENCH_EXIT
+  fi
+  if [[ ! -f "$BENCH_JSON" ]]; then
+    echo "ERROR: benchmark output $BENCH_JSON not found" >&2
+    exit 1
+  fi
+  # Parse with python3
+  PY_OUT=$(python3 - <<PY
+import json, pathlib, sys
+p = pathlib.Path("$BENCH_JSON")
+j = json.loads(p.read_text())
+# host benchmark writes {frames, total_time_sec, avg_frame_time_ms, ...} or similar
+frames = j.get("frames") or j.get("benchmark_frames") or $MEASURED_FRAMES
+total = j.get("total_time_sec") or j.get("total_time") or 0
+avg_ms = j.get("avg_frame_time_ms") or j.get("avg_ms") or None
+if avg_ms is not None:
+    avg_ns = int(float(avg_ms) * 1e6)
+    fps = 1000.0 / float(avg_ms) if float(avg_ms) > 0 else 0
+elif total and frames:
+    fps = frames / float(total)
+    avg_ns = int((float(total) / frames) * 1e9)
+else:
+    fps = 0
+    avg_ns = 0
+print(f"{fps:.2f} {avg_ns} {frames} {total}")
+PY
+)
+  FPS=$(echo "$PY_OUT" | awk '{print $1}')
+  AVG_NS=$(echo "$PY_OUT" | awk '{print $2}')
+  FRAMES=$(echo "$PY_OUT" | awk '{print $3}')
+  # Threshold: 60 fps
+  PASS=$(python3 -c "import sys; fps=float(sys.argv[1]); print('true' if fps>=60 else 'false')" "$FPS")
+  if [[ "$PASS" == "true" ]]; then
+    PSTATUS="PERFORMANCE_TARGET_MET"
+    REL="true"
+  else
+    PSTATUS="PERFORMANCE_TARGET_NOT_MET"
+    REL="false"
+  fi
+  TS_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  mkdir -p "$(dirname "$OUT")"
+  cat >"$OUT" <<EOF2
+{
+  "schema": "bc160_perf_metrics.v1",
+  "gpu_target": "AMD BC-160 (Navi 12 / Radeon Pro 5600M)",
+  "vulkan_driver": "radv / Mesa (declared, not probed)",
+  "timestamp_utc": "$TS_UTC",
+  "measurement_status": "MEASURED",
+  "release_evidence_eligible": $REL,
+  "average_fps": $FPS,
+  "one_percent_low_fps": null,
+  "frame_presentation_time_ns": $AVG_NS,
+  "render_pass_duration_ns": null,
+  "pass_status": "$PSTATUS",
+  "notes": [
+    "Measured via cargo run --benchmark (host native).",
+    "Frames=$FRAMES source=$BENCH_JSON"
+  ],
+  "optional_gate": {
+    "ran": $([[ "$RUN_GATE" -eq 1 ]] && echo true || echo false),
+    "name": $([[ "$RUN_GATE" -eq 1 ]] && printf '%s' "\"$GATE_NAME\"" || echo null),
+    "exit_code": $([[ -n "$GATE_EXIT" ]] && echo "$GATE_EXIT" || echo null),
+    "command": $([[ -n "$GATE_COMMAND" ]] && python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$GATE_COMMAND" || echo null)
+  },
+  "benchmark_source": "$BENCH_JSON"
+}
+EOF2
+  echo "Wrote MEASURED metrics to $OUT (fps=$FPS avg_ns=$AVG_NS eligible=$REL status=$PSTATUS)"
+  exit 0
 fi
 
 mkdir -p "$(dirname "$OUT")"

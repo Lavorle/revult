@@ -141,10 +141,17 @@ else:
 # New fields from main.rs bench JSON (may be null)
 one_low = j.get("one_percent_low_fps")
 render_ns = j.get("render_pass_duration_ns")
+cpu_proxy = j.get("render_pass_cpu_proxy")
 # Normalize: bench writes number or null; ensure python prints "null" or number
 one_low_str = "null" if one_low is None else str(float(one_low))
 render_str = "null" if render_ns is None else str(int(render_ns))
-print(f"{fps:.2f} {avg_ns} {frames} {total} {one_low_str} {render_str}")
+if cpu_proxy is True:
+    cpu_str = "true"
+elif cpu_proxy is False:
+    cpu_str = "false"
+else:
+    cpu_str = "true"
+print(f"{fps:.2f} {avg_ns} {frames} {total} {one_low_str} {render_str} {cpu_str}")
 PY
 )
   FPS=$(echo "$PY_OUT" | awk '{print $1}')
@@ -152,6 +159,7 @@ PY
   FRAMES=$(echo "$PY_OUT" | awk '{print $3}')
   ONE_LOW=$(echo "$PY_OUT" | awk '{print $5}')
   RENDER_NS=$(echo "$PY_OUT" | awk '{print $6}')
+  CPU_PROXY=$(echo "$PY_OUT" | awk '{print $7}')
   # Threshold: 60 fps
   PASS=$(python3 -c "import sys; fps=float(sys.argv[1]); print('true' if fps>=60 else 'false')" "$FPS")
   if [[ "$PASS" == "true" ]]; then
@@ -160,6 +168,11 @@ PY
   else
     PSTATUS="PERFORMANCE_TARGET_NOT_MET"
     REL="false"
+  fi
+  if [[ "$CPU_PROXY" == "true" ]]; then
+    NOTE="render_pass cpu_proxy (fallback Instant, TIMESTAMP_QUERY not available or bench without GPU; see main.rs benchmark_render_pass_total)"
+  else
+    NOTE="render_pass GPU timestamp (TIMESTAMP_QUERY, period via queue.get_timestamp_period())"
   fi
   TS_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   mkdir -p "$(dirname "$OUT")"
@@ -175,12 +188,12 @@ PY
   "one_percent_low_fps": $ONE_LOW,
   "frame_presentation_time_ns": $AVG_NS,
   "render_pass_duration_ns": $RENDER_NS,
-  "render_pass_cpu_proxy": true,
+  "render_pass_cpu_proxy": $CPU_PROXY,
   "pass_status": "$PSTATUS",
   "notes": [
     "Measured via cargo run --benchmark (host native).",
     "Frames=$FRAMES source=$BENCH_JSON",
-    "render_pass cpu_proxy (wgpu TIMESTAMP_QUERY not wired; Instant proxy, see main.rs benchmark_render_pass_total)"
+    "$NOTE"
   ],
   "optional_gate": {
     "ran": $([[ "$RUN_GATE" -eq 1 ]] && echo true || echo false),
@@ -191,7 +204,7 @@ PY
   "benchmark_source": "$BENCH_JSON"
 }
 EOF2
-  echo "Wrote MEASURED metrics to $OUT (fps=$FPS avg_ns=$AVG_NS one_low=$ONE_LOW render_ns=$RENDER_NS cpu_proxy=true eligible=$REL status=$PSTATUS)"
+  echo "Wrote MEASURED metrics to $OUT (fps=$FPS avg_ns=$AVG_NS one_low=$ONE_LOW render_ns=$RENDER_NS cpu_proxy=$CPU_PROXY eligible=$REL status=$PSTATUS)"
   exit 0
 fi
 

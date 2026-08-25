@@ -277,6 +277,13 @@ fn run_product_pump(python: PythonRuntime) -> Result<i32, String> {
             Some(v) => v.to_string(),
             None => "null".to_string(),
         };
+        let is_cpu_proxy = !host_state()
+            .lock()
+            .unwrap()
+            .gpu
+            .as_ref()
+            .map(|g| g.timestamp_supported)
+            .unwrap_or(false);
         let json = format!(
             r#"{{
   "frames": {},
@@ -288,7 +295,7 @@ fn run_product_pump(python: PythonRuntime) -> Result<i32, String> {
   "one_percent_low_fps": {},
   "render_pass_duration_ns": {},
   "benchmark_render_pass_total_ns": {},
-  "render_pass_cpu_proxy": true
+  "render_pass_cpu_proxy": {}
 }}"#,
             app.benchmark_count,
             app.benchmark_total.as_millis(),
@@ -298,7 +305,8 @@ fn run_product_pump(python: PythonRuntime) -> Result<i32, String> {
             app.benchmark_total.as_secs_f64(),
             one_low_str,
             render_pass_str,
-            app.benchmark_render_pass_total.as_nanos()
+            app.benchmark_render_pass_total.as_nanos(),
+            is_cpu_proxy
         );
         let path = app.benchmark_output.as_deref().unwrap_or("benchmark.json");
         match std::fs::write(path, json) {
@@ -527,8 +535,9 @@ impl ApplicationHandler for ProductApp {
                     // Benchmark: record start time before render
                     let start = std::time::Instant::now();
                     match gpu.render_clear() {
-                        Ok(()) => {
+                        Ok(gpu_dur) => {
                             let elapsed = start.elapsed();
+                            let render_dur = gpu_dur.unwrap_or(elapsed);
                             self.frames = self.frames.saturating_add(1);
                             st.frames = self.frames;
                             // Defensive: if a clear ever runs while product-owned, count it.
@@ -545,7 +554,7 @@ impl ApplicationHandler for ProductApp {
                                 self.benchmark_count += 1;
                                 self.benchmark_total += elapsed;
                                 self.benchmark_durations.push(elapsed);
-                                self.benchmark_render_pass_total += elapsed;
+                                self.benchmark_render_pass_total += render_dur;
                                 if elapsed < self.benchmark_min {
                                     self.benchmark_min = elapsed;
                                 }

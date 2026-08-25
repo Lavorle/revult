@@ -1,6 +1,7 @@
 //! wgpu Vulkan surface + clear-color present (Phase 0).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use log::info;
 use wgpu::util::DeviceExt;
@@ -11,7 +12,6 @@ use winit::window::Window;
 /// Some Wayland/X11 surfaces only expose Bgra8Unorm{,Srgb}; GpuState falls back
 /// and stores the actual `surface_format` so arena pipelines/textures match.
 pub const SWAPCHAIN_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-
 pub struct GpuState {
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
@@ -25,6 +25,12 @@ pub struct GpuState {
     pub clear: wgpu::Color,
     /// Actual surface / RT / sample format (Rgba8Unorm preferred, Bgra8Unorm fallback).
     pub surface_format: wgpu::TextureFormat,
+    /// TIMESTAMP_QUERY support probing (D debt).
+    pub timestamp_supported: bool,
+    pub query_set: Option<wgpu::QuerySet>,
+    pub query_resolve_buffer: Option<wgpu::Buffer>,
+    pub query_readback_buffer: Option<wgpu::Buffer>,
+    pub timestamp_period: f32,
 }
 
 fn present_mode_name(mode: wgpu::PresentMode) -> &'static str {
@@ -151,17 +157,22 @@ impl GpuState {
                 info.backend, info.name
             ));
         }
-
         info!(
             "adapter: name={} vendor={} device={} backend={:?}",
             info.name, info.vendor, info.device, info.backend
         );
-
+        let ts_supported = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+        info!("timestamp_query supported={}", ts_supported);
+        let required_features = if ts_supported {
+            wgpu::Features::TIMESTAMP_QUERY
+        } else {
+            wgpu::Features::empty()
+        };
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("renpy-host-device"),
-                    required_features: wgpu::Features::empty(),
+                    required_features,
                     required_limits: wgpu::Limits::default(),
                     memory_hints: Default::default(),
                 },
@@ -223,7 +234,31 @@ impl GpuState {
             contents: &[0u8; 4],
             usage: wgpu::BufferUsages::UNIFORM,
         });
-
+        let (query_set, query_resolve_buffer, query_readback_buffer, timestamp_period) =
+            if ts_supported {
+                let qs = device.create_query_set(&wgpu::QuerySetDescriptor {
+                    label: Some("timestamp-query"),
+                    ty: wgpu::QueryType::Timestamp,
+                    count: 2,
+                });
+                let resolve_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("timestamp-resolve"),
+                    size: 16,
+                    usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                });
+                let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("timestamp-readback"),
+                    size: 16,
+                    usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                let period = queue.get_timestamp_period();
+                info!("timestamp period={}", period);
+                (Some(qs), Some(resolve_buf), Some(readback_buf), period)
+            } else {
+                (None, None, None, 1.0)
+            };
         Ok(Self {
             surface,
             device,
@@ -239,6 +274,11 @@ impl GpuState {
                 a: 1.0,
             },
             surface_format: format,
+            timestamp_supported: ts_supported,
+            query_set,
+            query_resolve_buffer,
+            query_readback_buffer,
+            timestamp_period,
         })
     }
 
@@ -252,7 +292,6 @@ impl GpuState {
             wgpu::Backend::Empty => "Empty",
         }
     }
-
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
         if size.width == 0 || size.height == 0 {
             return;
@@ -274,7 +313,7 @@ impl GpuState {
         );
     }
 
-    pub fn render_clear(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render_clear(&mut self) -> Result<Option<Duration>, wgpu::SurfaceError> {
         let frame = self.surface.get_current_texture()?;
         let view = frame
             .texture
@@ -285,6 +324,14 @@ impl GpuState {
                 label: Some("phase0-clear"),
             });
         {
+            let timestamp_writes =
+                self.query_set
+                    .as_ref()
+                    .map(|qs| wgpu::RenderPassTimestampWrites {
+                        query_set: qs,
+                        beginning_of_pass_write_index: Some(0),
+                        end_of_pass_write_index: Some(1),
+                    });
             let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("phase0-clear-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -296,12 +343,57 @@ impl GpuState {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes,
                 occlusion_query_set: None,
             });
         }
+        if let (Some(qs), Some(resolve_buf), Some(readback_buf)) = (
+            &self.query_set,
+            &self.query_resolve_buffer,
+            &self.query_readback_buffer,
+        ) {
+            encoder.resolve_query_set(qs, 0..2, resolve_buf, 0);
+            encoder.copy_buffer_to_buffer(resolve_buf, 0, readback_buf, 0, 16);
+        }
         self.queue.submit(Some(encoder.finish()));
+        // Read back GPU timestamps if supported
+        let gpu_duration = if self.timestamp_supported {
+            if let Some(buf) = &self.query_readback_buffer {
+                let slice = buf.slice(..);
+                let (sender, receiver) = std::sync::mpsc::channel();
+                slice.map_async(wgpu::MapMode::Read, move |r| {
+                    let _ = sender.send(r);
+                });
+                // Block until mapping completes
+                self.device.poll(wgpu::Maintain::Wait);
+                match receiver.recv() {
+                    Ok(Ok(())) => {
+                        let data = slice.get_mapped_range();
+                        let mut ns_opt: Option<Duration> = None;
+                        if data.len() >= 16 {
+                            let start = u64::from_le_bytes(data[0..8].try_into().unwrap());
+                            let end = u64::from_le_bytes(data[8..16].try_into().unwrap());
+                            let diff = end.wrapping_sub(start);
+                            let ns = (diff as f64 * self.timestamp_period as f64) as u64;
+                            ns_opt = Some(Duration::from_nanos(ns));
+                        }
+                        drop(data);
+                        buf.unmap();
+                        ns_opt
+                    }
+                    _ => {
+                        // unmap if needed (no-op if not mapped)
+                        let _ = buf.unmap();
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         frame.present();
-        Ok(())
+        Ok(gpu_duration)
     }
 }

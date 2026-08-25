@@ -1863,6 +1863,14 @@ impl GpuArena {
             self.bg_cache.clear();
         }
 
+        let timestamp_writes = gpu
+            .query_set
+            .as_ref()
+            .map(|qs| wgpu::RenderPassTimestampWrites {
+                query_set: qs,
+                beginning_of_pass_write_index: Some(0),
+                end_of_pass_write_index: Some(1),
+            });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("draw"),
@@ -1875,7 +1883,7 @@ impl GpuArena {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes,
                 occlusion_query_set: None,
             });
 
@@ -2017,6 +2025,14 @@ impl GpuArena {
                     pass.draw(0..mesh.vertex_count, 0..1);
                 }
             }
+        }
+        if let (Some(qs), Some(resolve_buf), Some(readback_buf)) = (
+            &gpu.query_set,
+            &gpu.query_resolve_buffer,
+            &gpu.query_readback_buffer,
+        ) {
+            encoder.resolve_query_set(qs, 0..2, resolve_buf, 0);
+            encoder.copy_buffer_to_buffer(resolve_buf, 0, readback_buf, 0, 16);
         }
         Ok(())
     }

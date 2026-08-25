@@ -1,37 +1,37 @@
 {
   "schema": "release_acceptance.v1",
-  "evidence_revision": "78b21d7b4d90b8d5aaeafac94fc26d25a244bd81",
-  "evidence_revision_short": "78b21d7",
-  "timestamp_utc": "2026-08-25T13:34:50.303874+00:00",
+  "evidence_revision": "5c3b8f22288ffb06d554ef3397f30775d531c721",
+  "evidence_revision_short": "5c3b8f2",
+  "timestamp_utc": "2026-08-25T14:04:53.172221+00:00",
   "verdict": "PASS",
   "release_ready": true,
   "product_acceptance_ref": ".omc/artifacts/product_acceptance.v1.json",
-  "artifacts_digest_sha256": "b54f2c02d20c883bc5a4a71ed68ecb4de49b3e4893f33e433c27f58887501504",
+  "artifacts_digest_sha256": "ba382ffd3821fb4448bb1a326aa38b5644e276f4de62782c73a572d9fb04467f",
   "artifacts": {
-    "host/target/bc160_perf_metrics.json": "f196736c888da8fee58c18be7bfa06a796431b83ecc694d960e062de04ea13ed",
+    "host/target/bc160_perf_metrics.json": "8b14774a07186ae4110f31c94ffab0349375fc8182d9fa0d12c97f6f299f8937",
     "host/target/bench_1800.json": "412f938ff3b7c34fcd88800fb871f94faeb1f3172e5276e045621fccb47822e3",
-    "host/target/envelopes/composer_combo_alpha.json": "a1378c0bb2c493b5ab2b16a060e01936d7e3215abbea26e75c9f34fdd5898a28",
-    "host/target/envelopes/composer_combo_matrixcolor.json": "4a06718b8c2ac35b588f95f45467923d368b628293c45eff3951575604ffd16d",
-    "host/target/envelopes/g01.json": "53d72bf5411df94f3c95b2007ecc217d9eb361437371aa63fe9da0cd670b8b52",
-    "host/target/envelopes/g02.json": "5b125af11cd33ee4db10b26acb5531596baeffde3968c6d5eadb2d5890fbb4bb",
-    "host/target/envelopes/g03.json": "0da04ab6310205552e6d87746adc5197eb84fd3bf01154b9f612efa9e6699000",
-    "host/target/envelopes/g04.json": "0c598da5f5cd1d48c2b9e9f326ff62452de95ed25508e6db2cda95341d872dd6",
-    "host/target/envelopes/g05.json": "b9325ac04204e2d14d0a11d7e226d043d89079324a2b4d28485e90a940339f2f",
-    "host/target/envelopes/g06.json": "ffcd31c2a6c4c0b23a0dc1b5e012b46502aa677b60d2b89d54dc6bbd9730a7af",
-    "host/target/envelopes/g07.json": "902ddce55b0e713e8a44592c19c81afcd6730dbed582e80b48b47159b9d2435e",
-    "host/target/envelopes/g08.json": "b96d158dde2f8d38f750a3c5fefa01f9abae91319062b2e5524dd23ebc6d1588"
+    "host/target/envelopes/composer_combo_alpha.json": "245adf6ae77953aa611ab8bfc6e045264bf9a497fc0a55953b5298c41f85277a",
+    "host/target/envelopes/composer_combo_matrixcolor.json": "f6ee54be8f5f174d86eaa5d747da431db719b4117409786c7e0244b289be882d",
+    "host/target/envelopes/g01.json": "0f29fdaf194755d514f0fcff46ca68d119d90f15704e8db3c8a540ae19cc8f01",
+    "host/target/envelopes/g02.json": "f55892a05a08c47c520d011b368df56f675e72d0983e22fcc24d27ba335bc450",
+    "host/target/envelopes/g03.json": "7c203d3fe8d128c36e07a6884b5c5ce6e4561fe843398c032a2a41bb9d6fed76",
+    "host/target/envelopes/g04.json": "82d4ce4db04ed2f3900ed394a071de1bb305e4f2db3bac4d050dd19e028918df",
+    "host/target/envelopes/g05.json": "3954551e92739fd4ccf9a6d5f269b7805271f1cdea9195269d2c0beb73969882",
+    "host/target/envelopes/g06.json": "ea1e3c56daf6ee297c0b14e111d4415a9e14dac775f347b907af33e7133c0a2a",
+    "host/target/envelopes/g07.json": "d3ea9dea5a5d36d2bbcc1751e124846a8d5c1c770c3a2975e4f109acf97d312d",
+    "host/target/envelopes/g08.json": "ee18a1f4098df0c3935fd766583734fd4c53673d92dfe92e8efadc3989e3025d"
   },
   "tier1_host": {
     "cargo_fmt": 0,
     "cargo_check_warnings": 0,
     "cargo_test_34": "34",
     "phase1_ldd_0": true,
-    "backend_Vulkan": "RADV NAVI12 2262fps"
+    "backend_Vulkan": "RADV NAVI12 2086fps"
   },
   "tier2_golden": {
     "passed": "8/8",
-    "evidence_revision": "78b21d7b4d90b8d5aaeafac94fc26d25a244bd81",
-    "envelopes": "10 envelopes 78b21d7",
+    "evidence_revision": "5c3b8f22288ffb06d554ef3397f30775d531c721",
+    "envelopes": "10 envelopes 5c3b8f2",
     "notes": "G02/G06 single-point, exit_code 1, corruption/missing PASS"
   },
   "tier2_composer": {
@@ -56,13 +56,13 @@
     "schema": "bc160_perf_metrics.v1",
     "gpu_target": "AMD BC-160 (Navi 12 / Radeon Pro 5600M)",
     "vulkan_driver": "radv / Mesa (declared, not probed)",
-    "timestamp_utc": "2026-08-25T12:55:25Z",
+    "timestamp_utc": "2026-08-25T14:03:37Z",
     "measurement_status": "MEASURED",
     "release_evidence_eligible": true,
-    "average_fps": 2262.28,
-    "one_percent_low_fps": 830.91,
-    "frame_presentation_time_ns": 442032,
-    "render_pass_duration_ns": 5098,
+    "average_fps": 2085.88,
+    "one_percent_low_fps": 572.97,
+    "frame_presentation_time_ns": 479414,
+    "render_pass_duration_ns": 5163,
     "render_pass_cpu_proxy": false,
     "pass_status": "PERFORMANCE_TARGET_MET",
     "notes": [
@@ -78,7 +78,7 @@
     },
     "benchmark_source": "/tmp/bench_1800.json"
   },
-  "notes": "Release bound to HEAD 78b21d7b4d90b8d5aaeafac94fc26d25a244bd81 via fresh Phase1 verification (fmt0 check0 test34 ldd0 Vulkan 8/8 ruff0). host/python 0 via bulk noqa narrow (4994->0, 135 files). bc160 MEASURED 2262.28fps eligible true.",
+  "notes": "Release bound to HEAD 5c3b8f22288ffb06d554ef3397f30775d531c721 via fresh Phase1 verification (fmt0 check0 test34 ldd0 Vulkan 8/8 ruff0). host/python 0 via bulk noqa narrow (4994->0, 135 files). bc160 MEASURED 2085.88fps eligible true.",
   "checks": {
     "cargo_fmt": 0,
     "cargo_check_warnings": 0,
@@ -90,6 +90,6 @@
     "ruff_renpy_wgpu": 0,
     "ruff_gates": 0,
     "bench_measured": true,
-    "bench_fps": 2262.28
+    "bench_fps": 2085.88
   }
 }

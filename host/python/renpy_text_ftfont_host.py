@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import io
 import os
-from typing import Any
 
 try:
     from PIL import Image, ImageDraw, ImageFont  # type: ignore
@@ -145,8 +144,8 @@ class FTFont:
                     box = None
                 if box is not None:
                     # baseline-relative: top <= 0, bottom >= 0 for latin
-                    a2 = max(0, int(round(-box[1])))
-                    d2 = max(0, int(round(box[3])))
+                    a2 = max(0, round(-box[1]))
+                    d2 = max(0, round(box[3]))
                     if ascent is None or ascent <= 0:
                         ascent = a2
                     else:
@@ -160,7 +159,7 @@ class FTFont:
                     if box is not None:
                         h = max(1, int(box[3] - box[1]))
                         if ascent is None or ascent <= 0:
-                            ascent = max(1, int(round(h * 0.8)))
+                            ascent = max(1, round(h * 0.8))
                         if descent is None:
                             descent = max(0, h - int(ascent))
             except Exception:
@@ -298,7 +297,7 @@ class FTFont:
                             ]
                             # Approximate circle samples (no math import needed).
                             # 0.707 ≈ cos(45°) for intermediate radius points.
-                            m = max(1, int(round(r * 0.707)))
+                            m = max(1, round(r * 0.707))
                             offsets.extend(
                                 [
                                     (-m, -r),

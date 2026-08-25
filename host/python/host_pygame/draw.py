@@ -69,7 +69,7 @@ def circle(surface, color, center, radius, width=0):
     cx, cy = int(center[0]), int(center[1])
     r = int(radius)
     if r < 0:
-        return None
+        return
     # Row-span fill: for each y compute x span of the circle (no set_at).
     r2 = r * r
     inner = max(0, r - (0 if width == 0 else max(1, int(width))))
@@ -87,7 +87,7 @@ def circle(surface, color, center, radius, width=0):
         rem = r2 - dy2
         if rem < 0:
             continue
-        half = int(math.isqrt(rem))
+        half = math.isqrt(rem)
         x_left = max(0, cx - half)
         x_right = min(sw - 1, cx + half)
         if width == 0:
@@ -102,7 +102,7 @@ def circle(surface, color, center, radius, width=0):
             if rem >= 0:
                 if inner > 0 and dy2 <= inner2:
                     irem = inner2 - dy2
-                    ihalf = int(math.isqrt(irem)) if irem >= 0 else -1
+                    ihalf = math.isqrt(irem) if irem >= 0 else -1
                     # left outer segment
                     lx1 = max(0, cx - half)
                     lx2 = min(sw - 1, cx - ihalf - 1)
@@ -122,7 +122,7 @@ def circle(surface, color, center, radius, width=0):
                     if span > 0:
                         off = y * pitch + x_left * 4
                         view[off : off + span * 4] = px * span
-    return None
+    return
 
 
 def ellipse(surface, color, rect, width=0):
@@ -154,17 +154,16 @@ def line(surface, color, start_pos, end_pos, width=1):
         if e2 <= dx:
             err += dx
             y0 += sy
-    return None
 
 
 def lines(surface, color, closed, points, width=1):
     if not points:
-        return None
+        return
     for i in range(len(points) - 1):
         line(surface, color, points[i], points[i + 1], width)
     if closed and len(points) > 2:
         line(surface, color, points[-1], points[0], width)
-    return None
+    return
 
 
 def aaline(surface, color, startpos, endpos, blend=1):

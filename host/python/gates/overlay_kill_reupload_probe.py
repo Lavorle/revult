@@ -109,7 +109,7 @@ try:
     else:
         lines.append("PASS reverse full")
 
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok=False
     import traceback
     lines.append(f"EXC {e!r}")

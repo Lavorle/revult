@@ -22,14 +22,14 @@ def _base():
 def _log(m):
     try:
         sys.__stdout__.write(f"[hmc_confirm_diag] {m}\n"); sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_nav_confirm_diag.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
         import renpy_host; renpy_host.request_quit()  # noqa: I001
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def _clear_falsey(n):
@@ -43,7 +43,7 @@ def _pre():
         import renpy.audio as a
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; a.renpysound=h
-    except Exception as e: _log(f"sound {e}")  # noqa: BLE001
+    except Exception as e: _log(f"sound {e}")
     try:
         import host_pygame
         import host_pygame.locals as loc
@@ -54,10 +54,10 @@ def _pre():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.scrap=scrap
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
         try: rpg.import_as_pygame()
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception as e: _log(f"pygame {e}")  # noqa: BLE001
+        except Exception: pass
+    except Exception as e: _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u; sys.modules["renpy.uguu.gl"]=u
@@ -67,12 +67,12 @@ def _pre():
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
         import renpy; renpy.uguu=pkg  # noqa: I001
-    except Exception as e: _log(f"uguu {e}")  # noqa: BLE001
+    except Exception as e: _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
         import renpy; renpy.ecsign=e  # noqa: I001
-    except Exception as e: _log(f"ecsign {e}")  # noqa: BLE001
+    except Exception as e: _log(f"ecsign {e}")
 
 def _sample():
     import renpy_host
@@ -95,7 +95,7 @@ def _frame_state():
     for name in ("in_frame","frame_depth"):
         try:
             d[name]=getattr(renpy_host,name)()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             d[name]=f"err:{e}"
     return d
 
@@ -116,14 +116,14 @@ def _present():
     before=_frame_state()
     try:
         if hasattr(draw,"load_all_textures"): draw.load_all_textures(st)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"prepare_err {e}")
     mid=_frame_state()
     try:
         draw.draw_screen(st, flip=True)
         iface.surftree=st
         path="rebuild"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"draw_err {e}")
         path="err"
     after=_frame_state()
@@ -139,21 +139,21 @@ def _show_confirm():
         confirm_type="quit",
     )
     try: renpy.restart_interaction()
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
 
 def _show_flow():
     import renpy
     renpy.store.ShowMenu("flowchart")()
     try: renpy.restart_interaction()
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
 
 def _hide_all():
     import renpy
     for n in ("load","preferences","appreciation","flowchart","confirm","save"):
         try: renpy.display.screen.hide_screen(n)
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
     try: renpy.restart_interaction()
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
 
 def run():
     base=_base()
@@ -176,7 +176,7 @@ def run():
     renpy.host_build=True
     try:
         import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
-    except Exception as e: _log(f"main_host {e}")  # noqa: BLE001
+    except Exception as e: _log(f"main_host {e}")
     try:
         import renpy.arguments
         basedir=getattr(renpy.config,"basedir",None) or game
@@ -186,9 +186,9 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
         renpy.game.args=renpy.arguments.bootstrap()
-    except Exception as e: _log(f"args {e}")  # noqa: BLE001
+    except Exception as e: _log(f"args {e}")
     _pre()
     results=[]
     def injector():
@@ -196,7 +196,7 @@ def run():
             try:
                 if bool(getattr(renpy.store,"main_menu",False)):
                     _log("main_menu tick=%d"%i); break  # noqa: UP031
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
             time.sleep(0.05)
         time.sleep(2.0)
         # Case A: confirm alone
@@ -245,7 +245,7 @@ def run():
     threading.Thread(target=injector,daemon=True).start()
     import renpy.main as m
     try: m.main()
-    except BaseException as e: _log(f"main exit {e}")  # noqa: BLE001
+    except BaseException as e: _log(f"main exit {e}")
 
 run()
 

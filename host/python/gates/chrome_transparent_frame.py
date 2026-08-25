@@ -171,7 +171,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     # --- A2: fully transparent Frame over green BG must leave BG unchanged ---
@@ -189,7 +189,7 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[chrome_transparent_frame]", msg, flush=True)
@@ -240,7 +240,7 @@ def main():
     draw.draw_screen(root2, flip=True)
     try:
         rw2, rh2, rgba2 = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=read_rt_orange err={e}"
         out.write_text(msg + "\n")
         print("[chrome_transparent_frame]", msg, flush=True)
@@ -269,7 +269,7 @@ def main():
     draw.draw_screen(root3, flip=True)
     try:
         rw3, rh3, rgba3 = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=read_rt_reverse err={e}"
         out.write_text(msg + "\n")
         print("[chrome_transparent_frame]", msg, flush=True)

@@ -64,7 +64,7 @@ try:
         fragment_300="/* stub */",
     )
     notes.append("register_shader_image_dissolve=ok")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     notes.append(f"FAIL: register_shader image_dissolve {type(e).__name__}: {e}")
 

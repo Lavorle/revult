@@ -23,7 +23,6 @@ reach WgpuDraw. Full GL mesh acceleration is not available on host.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
 
 
 def nogil_copy(src, dest):
@@ -200,7 +199,8 @@ class RenderTransform:
         Render = None
         identity = None
         try:
-            from renpy.display.render import Render as _Render, IDENTITY as _IDENTITY
+            from renpy.display.render import IDENTITY as _IDENTITY
+            from renpy.display.render import Render as _Render
 
             Render = _Render
             identity = _IDENTITY

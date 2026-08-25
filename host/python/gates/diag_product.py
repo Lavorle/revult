@@ -30,7 +30,7 @@ try:
             log(f"{name}: good={good} err={err!r} miss={miss} extra={ {k:extra.get(k) for k in list(extra)[:12]} }")
             if not good:
                 break
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"{name} EXC {type(e).__name__}: {e}")
             log(traceback.format_exc())
             break
@@ -42,16 +42,16 @@ try:
         try:
             import renpy.config
             log(f"manual import renpy.config ok has_attr_now={hasattr(renpy,'config')}")
-        except Exception:  # noqa: BLE001
+        except Exception:
             log("manual import config FAIL\n"+traceback.format_exc())
-except Exception:  # noqa: BLE001
+except Exception:
     log("OUTER\n"+traceback.format_exc())
 finally:
     out.close()
 try:
     import renpy_host
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

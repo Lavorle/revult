@@ -4,7 +4,7 @@ Values mirror SDL3 `SDL_EventType` / key mods so `renpy.display.core` can import
 under renpy-host without the SDL Cython `renpy.pygame.locals` extension.
 """
 
-from ._keys_generated import *  # noqa: F401,F403
+from ._keys_generated import *
 
 # App / lifecycle
 NOEVENT = 0

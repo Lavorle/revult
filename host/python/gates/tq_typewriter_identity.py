@@ -217,7 +217,7 @@ def main():
 
         ok = bool(ok_id and ok_os)
         lines.append(f"ok={ok}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         lines.append(f"EXCEPTION {e!r}")
         lines.append(traceback.format_exc())
@@ -229,11 +229,11 @@ def main():
 
         sys.__stdout__.write(body)
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     if not ok:
         raise RuntimeError(f"tq_typewriter_identity failed; see {out}")

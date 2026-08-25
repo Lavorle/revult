@@ -148,7 +148,7 @@ def _checkerboard_draw(draw, cell=32):
     surf = _Surf(vw, vh, pixels)
     try:
         tex = draw.load_texture(surf, transient=True)
-    except Exception:  # noqa: BLE001
+    except Exception:
         tex = None
 
     root = FakeRender(vw, vh)
@@ -250,7 +250,7 @@ def _pump_until_size(timeout_ms=2000, baseline=None):
         for _ in range(8):
             try:
                 renpy_host.pump_once(0)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 break
             d = renpy_host.poll_event()
             if d is not None and (d.get("type") == WINDOWRESIZED or d.get("type") == 0x206):
@@ -265,7 +265,7 @@ def _pump_until_size(timeout_ms=2000, baseline=None):
     while renpy_host.get_ticks_ms() < deadline:
         try:
             renpy_host.pump_once(16)
-        except Exception:  # noqa: BLE001
+        except Exception:
             renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
 
         d = renpy_host.poll_event()
@@ -382,7 +382,7 @@ def main():
         try:
             updated = draw.update(force=True)
             note(f"NOTE: draw.update(force=True) returned {updated!r}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             note(f"NOTE: draw.update raised {e!r}; trying resize()")
             draw.resize()
         draw.resize()
@@ -396,12 +396,12 @@ def main():
         # Re-present at new density. kill_textures path (Lane A) should re-raster;
         # without it, stretched 1x bitmap softens (edge metric collapses).
         try:
-            if hasattr(draw, "kill_textures"):  # noqa: SIM102
+            if hasattr(draw, "kill_textures"):
                 # Only if size actually changed — mirrors before_resize intent.
                 if size_changed:
                     draw.kill_textures()
                     note("NOTE: kill_textures() after size change")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             note(f"NOTE: kill_textures raised {e!r}")
 
         _checkerboard_draw(draw)
@@ -456,7 +456,7 @@ def main():
             "size_unchanged is hard FAIL (false-green prevention)"
         )
 
-    except Exception:  # noqa: BLE001
+    except Exception:
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())
@@ -470,11 +470,11 @@ def main():
 
         sys.__stdout__.write(body)
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     if not ok:
         raise RuntimeError(f"resize_sharpness_probe failed; see {out_path}")

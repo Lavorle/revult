@@ -23,7 +23,7 @@ def log(m):
     try:
         sys.__stdout__.write(f"[verify-input-pump] {m}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def finish(ok, **extra):
@@ -39,7 +39,7 @@ def rq():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def run():
@@ -63,7 +63,7 @@ def run():
     try:
         import renpy_main_host
         renpy_main_host.install(renpy)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log(f"main_host: {e}")
     try:
         import product as pm
@@ -72,7 +72,7 @@ def run():
         if hasattr(pm, "_pre_main_host_stubs"):
             pm._pre_main_host_stubs()
         log("product helpers ok")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log(f"product helpers: {e}")
         log(traceback.format_exc())
 
@@ -108,7 +108,7 @@ def run():
             # also mouse click near Start (approx center-left of 1280x720 main menu)
             renpy_host.inject_mouse(640, 420, 1, True)
             renpy_host.inject_mouse(640, 420, 1, False)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         time.sleep(4)
         rq()
@@ -119,7 +119,7 @@ def run():
     try:
         renpy_main.main()
         log("main returned")
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         log(f"main exit {type(e).__name__}: {e}")
     finish(True, note="supporting pump+inject path exercised")
     rq()

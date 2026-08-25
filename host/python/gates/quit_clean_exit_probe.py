@@ -95,7 +95,7 @@ def main():
                 )
             else:
                 note(f"PASS: wait_until returned promptly ({waited}ms < 4500ms)")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             # Some host builds may raise QuitException / HostStop from wait_until.
             t3 = int(renpy_host.get_ticks_ms())
             waited = t3 - t2
@@ -134,7 +134,7 @@ def main():
         )
         note("path=request_quit → should_exit → wait_until (cooperative Q-A)")
 
-    except Exception:  # noqa: BLE001
+    except Exception:
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())
@@ -148,7 +148,7 @@ def main():
     # Always signal quit so the host process exits even on failure.
     try:
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     if not ok:

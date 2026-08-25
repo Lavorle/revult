@@ -175,7 +175,7 @@ def _load_image_rgba(path):
         im = Image.open(path).convert("RGBA")
         w, h = im.size
         return w, h, im.tobytes(), path.name
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise RuntimeError(f"load {path} failed: {e}")
 
 
@@ -236,7 +236,7 @@ def _maybe_set_transitions_pref():
         else:
             # Store on a module-level marker so artifact proves we did not force 0.
             source = "declared_no_prefs_obj"
-    except Exception:  # noqa: BLE001
+    except Exception:
         source = "declared_import_softfail"
     return value, source
 
@@ -271,7 +271,7 @@ def main():
                 dst_off = ((y0 + y) * vw + x0) * 4
                 buf[dst_off : dst_off + copy_w * 4] = orgba[src_off : src_off + copy_w * 4]
             old_surf = _Surf(vw, vh, bytes(buf))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         old_tag = f"solid_red_fallback({e})"
         old_surf = _Surf(vw, vh, _solid_rgba(vw, vh, (220, 40, 40, 255)))
 
@@ -292,7 +292,7 @@ def main():
                 dst_off = ((y0 + y) * vw + x0) * 4
                 buf[dst_off : dst_off + copy_w * 4] = nrgba[src_off : src_off + copy_w * 4]
             new_surf = _Surf(vw, vh, bytes(buf))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         new_tag = f"solid_blue_fallback({e})"
         new_surf = _Surf(vw, vh, _solid_rgba(vw, vh, (40, 40, 220, 255)))
 
@@ -309,13 +309,13 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = (
             f"ok=False reason=read_rt err={e} transitions_pref={transitions_pref} transitions_src={transitions_src} "
             f"transitions_ok={transitions_ok} old={old_tag} new={new_tag}"

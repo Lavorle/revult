@@ -62,7 +62,7 @@ def main():
     try:
         fs0 = bool(renpy_host.is_fullscreen())
         lines.append(f"is_fullscreen_initial={fs0}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         lines.append(f"is_fullscreen_fail={e!r}")
         fs0 = False
@@ -82,7 +82,7 @@ def main():
         fs2 = bool(renpy_host.is_fullscreen())
         lines.append(f"is_fullscreen_after_off={fs2}")
         toggle_ok = True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         toggle_ok = False
         lines.append(f"toggle_fail={e!r}")
@@ -147,7 +147,7 @@ def main():
         draw.resize()
         lines.append("draw_resize_restore=ok")
         resize_ok = True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         resize_ok = False
         lines.append(f"draw_resize_fail={e!r}")

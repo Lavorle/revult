@@ -36,7 +36,7 @@ text_msg = ""
 # Game/mod GLSL part — must hard-fail (AC8).
 try:
     register_shader("demo.part", variables="uniform float u_x;")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     shader_raised = True
     shader_msg = str(e)
 
@@ -45,7 +45,7 @@ except Exception as e:  # noqa: BLE001
 # text is also OK.
 try:
     register_textshader("demo", variables="uniform float u_x;")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     text_raised = True
     text_msg = str(e)
 

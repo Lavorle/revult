@@ -645,7 +645,7 @@ def main() -> int:
     for name, test in tests:
         try:
             test()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"FAIL {name}: {type(exc).__name__}: {exc}", file=sys.stderr)
             return 1
         print(f"PASS {name}")

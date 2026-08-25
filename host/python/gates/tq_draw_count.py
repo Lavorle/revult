@@ -64,7 +64,7 @@ def ef(*a, **k):
                 non += 1
         samples.append(("rt_after_end", counts["end"], round(mr,1), round(mg,1), round(mb,1), non, counts["draw_model"]))
         print(f"[tq_draw_count] after end#{counts['end']} mean=({mr:.1f},{mg:.1f},{mb:.1f}) nonclear={non} dm_total={counts['draw_model']}", flush=True)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         samples.append(("rt_fail", str(e)))
     return _orig_ef(*a, **k)
 renpy_host.end_frame_present = ef
@@ -112,7 +112,7 @@ def soft_run():
         print(f"[tq_draw_count] soft RuntimeError: {e}", flush=True)
     except SystemExit:
         pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"[tq_draw_count] other {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
 tq.run = soft_run
@@ -129,7 +129,7 @@ for s in samples[:40]:
     print(f"[tq_draw_count] {s}", flush=True)
 try:
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

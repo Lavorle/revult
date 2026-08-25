@@ -44,11 +44,11 @@ def _log(msg):
     try:
         sys.__stdout__.write(f"[hmc_ui_trace] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/hmc_ui_trace_matrix.log", "a").write(msg + "\n")  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -57,7 +57,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -78,7 +78,7 @@ def _pre_main_host_stubs():
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}")
 
     try:
@@ -98,13 +98,13 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame soft-fail: {e}")
 
     try:
@@ -123,7 +123,7 @@ def _pre_main_host_stubs():
         import renpy
 
         renpy.uguu = pkg
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}")
 
     try:
@@ -133,7 +133,7 @@ def _pre_main_host_stubs():
         import renpy
 
         renpy.ecsign = e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -142,7 +142,7 @@ def _get_screen(name):
         import renpy
 
         return renpy.display.screen.get_screen(name)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -152,10 +152,10 @@ def _hide_menus():
     for n in ("load", "preferences", "appreciation", "flowchart", "confirm", "save", "chat"):
         try:
             renpy.store.Hide(n)()
-        except Exception:  # noqa: BLE001
+        except Exception:
             try:
                 renpy.hide_screen(n)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
 
 
@@ -167,18 +167,18 @@ def _force_show_menu(name):
         action()
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return True, "ShowMenu()"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         try:
             renpy.display.screen.show_screen(name)
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             return True, f"display.screen.show_screen:{e}"
-        except Exception as e2:  # noqa: BLE001
+        except Exception as e2:
             return False, f"ShowMenu fail {e} / {e2}"
 
 
@@ -192,7 +192,7 @@ def _force_confirm():
                 mapping = getattr(m, "preferences_confirm_requirement_mapping", None)
                 if isinstance(mapping, dict):
                     mapping["quit"] = True
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         renpy.display.screen.show_screen(
             "confirm",
@@ -203,10 +203,10 @@ def _force_confirm():
         )
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return True, "show_screen_confirm"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return False, f"confirm fail {e}"
 
 
@@ -233,10 +233,10 @@ def _force_chat():
         )
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return True, "show_screen_chat"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         # Fallback: positional kwargs if screen signature differs.
         try:
             renpy.display.screen.show_screen(
@@ -249,10 +249,10 @@ def _force_chat():
             )
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             return True, f"show_screen_chat_kwargs:{e}"
-        except Exception as e2:  # noqa: BLE001
+        except Exception as e2:
             return False, f"chat fail {e} | {e2}"
 
 
@@ -266,7 +266,7 @@ def _force_product_redraw():
 
     try:
         import interact_helpers as ih
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return f"no_ih:{e}"
     try:
         ready, why, iface = ih.interface_ready()
@@ -284,15 +284,15 @@ def _force_product_redraw():
         try:
             if hasattr(draw, "load_all_textures"):
                 draw.load_all_textures(surftree)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return f"load_fail:{e}"
         draw.draw_screen(surftree, flip=True)
         try:
             iface.surftree = surftree
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return "rebuild_render_screen"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return f"redraw_exc:{e}"
 
 
@@ -320,7 +320,7 @@ def _walk_text_stats(node, acc=None, depth=0, budget=None):
         # Text displayable
         try:
             from renpy.text.text import Text as _Text
-        except Exception:  # noqa: BLE001
+        except Exception:
             _Text = ()
         if _Text and isinstance(node, _Text):
             acc["n_text"] += 1
@@ -330,7 +330,7 @@ def _walk_text_stats(node, acc=None, depth=0, budget=None):
                     if isinstance(s, list):
                         s = "".join(str(x) for x in s[:4])
                     acc["text_samples"].append(str(s)[:40] if s is not None else tname)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     acc["text_samples"].append(tname)
         # HostTexture-like
         handle = getattr(node, "handle", None)
@@ -342,7 +342,7 @@ def _walk_text_stats(node, acc=None, depth=0, budget=None):
             try:
                 if hasattr(renpy_host, "texture_alive"):
                     alive = bool(renpy_host.texture_alive(int(handle)))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 alive = True
             if alive:
                 acc["n_alive"] += 1
@@ -361,9 +361,9 @@ def _walk_text_stats(node, acc=None, depth=0, budget=None):
                 ch = getattr(node, attr, None)
                 if ch is not None and ch is not node:
                     _walk_text_stats(ch, acc, depth + 1, budget)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     return acc
 
@@ -402,7 +402,7 @@ def _leaf_font_probe():
                         face = FTFace(fh, 0, str(p))
                     face_path = str(p)
                     break
-            except Exception:  # noqa: BLE001, S112
+            except Exception:
                 continue
         if face is None:
             face = FTFace(_io_bytes := __import__("io").BytesIO(b""), 0, "empty")
@@ -411,7 +411,7 @@ def _leaf_font_probe():
         # Detect load_default fallback: FTFace stores _pil default when truetype fails.
         try:
             font = FTFont(face, 28, False, False, 0, True, False, "auto")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             info["err"] = f"FTFont:{e}"
             return info
         surf = Surface((256, 64))
@@ -424,7 +424,7 @@ def _leaf_font_probe():
             for i in range(3, len(px), 4):
                 if px[i]:
                     nonzero += 1
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         info["alpha_nonzero"] = nonzero
         # Upload through product draw path if available.
@@ -443,13 +443,13 @@ def _leaf_font_probe():
                         info["alive"] = bool(renpy_host.texture_alive(handle))
                     else:
                         info["alive"] = handle > 0
-                except Exception:  # noqa: BLE001
+                except Exception:
                     info["alive"] = handle > 0
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             info["err"] = f"upload:{e}"
         info["ok"] = nonzero > 0 and (info.get("handle") or 0) > 0
         return info
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         info["err"] = f"{type(e).__name__}:{e}"
         return info
 
@@ -508,7 +508,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
@@ -516,7 +516,7 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -529,12 +529,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -556,7 +556,7 @@ def run():
                     state["main_menu"] = True
                     rec("main_menu at tick=%d" % i)  # noqa: UP031
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             # Soft alternate: main_menu screen already present.
             try:
@@ -564,7 +564,7 @@ def run():
                     state["main_menu"] = True
                     rec("main_menu screen present at tick=%d" % i)  # noqa: UP031
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.05)
         if not state["main_menu"]:
@@ -579,7 +579,7 @@ def run():
         try:
             pinfo = _force_product_redraw()
             rec(f"main_menu redraw={pinfo}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"main_menu redraw fail: {e}")
 
         for tname, screen_name, kind in targets:
@@ -641,7 +641,7 @@ def run():
                             entry["struct"].get("text_samples"),
                         )
                     )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     entry["struct"] = {"err": str(e)}
                     rec(f"struct fail: {e}")
                 # Direct leaf font probe once (same for all targets; still per-row evidence).
@@ -657,11 +657,11 @@ def run():
                             entry["leaf"].get("err"),
                         )
                     )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     entry["leaf"] = {"err": str(e)}
                     rec(f"leaf fail: {e}")
                 time.sleep(0.3)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 entry["error"] = str(e)
                 rec(f"target exc: {e}")
                 rec(traceback.format_exc())
@@ -723,7 +723,7 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         rec(f"main exit {type(e).__name__}: {e}")
         rec(traceback.format_exc())
 
@@ -731,10 +731,10 @@ def run():
     try:
         if not out.exists() or out.stat().st_size == 0:
             _finish()
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             _finish()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 

@@ -107,7 +107,7 @@ def main():
             # inject_mouse is supposed to emit motion first; soft note only
             lines.append("NOTE: no MOUSEMOTION observed before button (unexpected)")
 
-    except Exception:  # noqa: BLE001
+    except Exception:
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())

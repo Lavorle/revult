@@ -6,7 +6,7 @@ from collections import deque
 
 import renpy_host  # type: ignore
 
-from .locals import NOEVENT, USEREVENT
+from .locals import NOEVENT
 
 _event_names: dict[int, str] = {}
 _pushback = None
@@ -411,7 +411,6 @@ def clear(eventtype=None):
 def pump():
     """Drain live winit events into the host queue (was a no-op; starved input)."""
     _nested_pump_slice(_NESTED_PUMP_EXPLICIT_MS)
-    return None
 
 
 def post(event: Event):

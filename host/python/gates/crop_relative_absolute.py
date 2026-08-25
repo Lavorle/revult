@@ -36,7 +36,7 @@ for p in (_base, str(Path(_base) / "host" / "python")):
 # Host already seeds renpy; ensure config has crop_relative_default.
 try:
     import renpy  # type: ignore
-except Exception:  # noqa: BLE001
+except Exception:
     renpy = types.ModuleType("renpy")
     sys.modules["renpy"] = renpy
 
@@ -232,7 +232,7 @@ def main():
         import renpy_host  # type: ignore
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 

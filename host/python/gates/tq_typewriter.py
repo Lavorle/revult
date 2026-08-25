@@ -102,7 +102,7 @@ class FakeRender:
         # Product text path uses absolute_blit(tex.subsurface(...), (x,y)).
         try:
             xo, yo = pos
-        except Exception:  # noqa: BLE001
+        except Exception:
             xo, yo = 0, 0
         self.children.append((child, float(xo), float(yo), False, True))
         return self
@@ -119,10 +119,10 @@ def _safe_print(msg):
 
         sys.__stdout__.write(f"[tq_typewriter] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             print("[tq_typewriter]", msg, flush=True)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -139,13 +139,13 @@ def _write(lines, ok, **extra):
     text = "\n".join(body) + "\n"
     try:
         out.write_text(text)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         # Last-ditch: write minimal ok line next to CWD target
         try:
             Path("target/gate-tq_typewriter.txt").write_text(
                 f"ok={ok} write_err={e}\n"
             )
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return
     _safe_print(f"WROTE {out} ok={ok}")
@@ -154,7 +154,7 @@ def _write(lines, ok, **extra):
 def _request_quit():
     try:
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -271,7 +271,7 @@ def main():
         draw.init((VW, VH))
         try:
             draw.physical_size = renpy_host.window_size()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
         full_tex = _make_line_tex(draw)
@@ -409,7 +409,7 @@ def main():
                 "identity_reverse mid_w=%d coverage=%.3f max_ink_x=%d stretch_ok=%s"  # noqa: UP031
                 % (mid_w, m2["coverage"], m2["max_ink_x"], stretch_ok),
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(lines, f"identity_reverse_err={e!r}")
             stretch_ok = False
 
@@ -474,7 +474,7 @@ def main():
             TH=TH,
             reason=reason,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(lines, f"exception {e}\n{traceback.format_exc()}")
         _write(
             lines,

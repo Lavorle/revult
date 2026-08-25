@@ -175,7 +175,7 @@ try:
         renpy_host.end_frame_present()
         renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
     notes.append("matrixcolor_parent_promote=ok")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     notes.append(f"FAIL: matrixcolor parent promote {type(e).__name__}: {e}")
 

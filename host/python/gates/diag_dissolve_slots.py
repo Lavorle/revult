@@ -29,7 +29,7 @@ def rec(m):
     try:
         sys.__stdout__.write(f"[diag] {m}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 try:
@@ -49,7 +49,7 @@ try:
     w,h=1280,720
     draw=WgpuDraw(); draw.init((w,h))
     try: draw.physical_size=renpy_host.window_size()
-    except Exception as e: rec(f"phys: {e}")  # noqa: BLE001
+    except Exception as e: rec(f"phys: {e}")
 
     def solid(rgba):
         s=Surface((w,h)); s.fill(rgba); return s
@@ -129,14 +129,14 @@ try:
         return total
     if kids:
         rec(f"ht_count old={ht_count(kids[0][0])} new={ht_count(kids[-1][0])}")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     rec(f"EXC {e}")
     rec(traceback.format_exc())
 
 out.write_text("\n".join(lines)+"\n")
 try:
     sys.__stdout__.write(f"WROTE {out}\n"); sys.__stdout__.flush()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # ----------------------------------------------------------------------

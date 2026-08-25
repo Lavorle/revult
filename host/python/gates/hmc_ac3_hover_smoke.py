@@ -50,7 +50,7 @@ def _log(msg):
     try:
         sys.__stdout__.write(line)
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     for p in (
         "/tmp/hmc_ac3_hover_smoke.log",
@@ -59,7 +59,7 @@ def _log(msg):
         try:
             Path(p).parent.mkdir(parents=True, exist_ok=True)
             open(p, "a").write(msg + "\n")  # noqa: SIM115
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -68,7 +68,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -91,7 +91,7 @@ def _pre_main_host_stubs():
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}")
 
     try:
@@ -111,14 +111,14 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             rpg.import_as_pygame()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"import_as_pygame soft-fail: {e}")
         _log("pygame host shim ok")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame soft-fail: {e}")
 
     try:
@@ -140,10 +140,10 @@ def _pre_main_host_stubs():
             import renpy
 
             renpy.uguu = pkg
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("uguu host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}")
 
     try:
@@ -154,10 +154,10 @@ def _pre_main_host_stubs():
             import renpy as _renpy_pkg
 
             _renpy_pkg.ecsign = _ecsign
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("ecsign host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -170,7 +170,7 @@ def _pump(ms=80):
             deadline = int(renpy_host.get_ticks_ms()) + int(ms)
             renpy_host.wait_until(deadline)
             return
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     time.sleep(max(0.01, ms / 1000.0))
 
@@ -190,7 +190,7 @@ def _sample_rt():
     pres = {"path": "live_rt_only", "error": None}
     try:
         w, h, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {
             "ok": False,
             "error": f"read:{e}",
@@ -245,7 +245,7 @@ def _sample_rt():
             arena["order_len"] = int(renpy_host.texture_order_len())
         if hasattr(renpy_host, "texture_map_len"):
             arena["map_len"] = int(renpy_host.texture_map_len())
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         arena["error"] = str(e)
 
     return {
@@ -283,7 +283,7 @@ def _walk_dock_hosttex(surftree):
 
                 if hasattr(renpy_host, "texture_alive"):
                     alive = bool(renpy_host.texture_alive(int(node.handle)))
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             if not alive:
                 dead += 1
@@ -318,7 +318,7 @@ def _walk_dock_hosttex(surftree):
                     else:
                         walk(item, ox, oy, depth + 1)
                 return
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         if children:
             try:
@@ -328,12 +328,12 @@ def _walk_dock_hosttex(surftree):
                         walk(c, ox + float(cx or 0), oy + float(cy or 0), depth + 1)
                     else:
                         walk(item, ox, oy, depth + 1)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         for attr in ("cached_texture", "texture", "cached_model"):
             try:
                 walk(getattr(node, attr, None), ox, oy, depth + 1)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
 
     walk(surftree)
@@ -360,7 +360,7 @@ def _surftree_snapshot():
             info["surftree"] = st
             if st is None:
                 info["error"] = "surftree_absent"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         info["error"] = str(e)
         st = None
     else:
@@ -415,9 +415,9 @@ def _collect_focus_rects():
                         "prefix": prefix,
                     }
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 out.append({"error": str(e)})
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {"error": str(e), "items": []}
     return {"items": out}
 
@@ -472,19 +472,19 @@ def _mouse_move(vx, vy):
             ps = getattr(draw, "physical_size", None)
             if ps:
                 pw, ph = int(ps[0]), int(ps[1])
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             vs = getattr(draw, "virtual_size", None)
             if vs:
                 vw, vh = int(vs[0]), int(vs[1])
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     if not pw or not ph:
         try:
             w, h, _ = renpy_host.read_game_rt_rgba()
             pw, ph = int(w), int(h)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pw, ph = 1280, 720
     px = int(float(vx) * pw / float(vw))
     py = int(float(vy) * ph / float(vh))
@@ -492,11 +492,11 @@ def _mouse_move(vx, vy):
         from renpy import pygame
 
         pygame.mouse.set_pos((px, py))
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         renpy_host.inject_mouse(int(px), int(py), 0, False)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return f"fail:{e}", px, py
     return "ok", px, py
 
@@ -585,7 +585,7 @@ def run():
     try:
         open("/tmp/huangmeic-ab/ac3-hover-smoke.log", "w").write("")  # noqa: SIM115
         open("/tmp/hmc_ac3_hover_smoke.log", "w").write("")  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     lines = []
@@ -647,7 +647,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
@@ -655,7 +655,7 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -668,12 +668,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -687,7 +687,7 @@ def run():
                     state["main_menu"] = True
                     rec("main_menu at tick=%d" % i)  # noqa: UP031
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.05)
         if not state["main_menu"]:
@@ -736,7 +736,7 @@ def run():
             if not ok0:
                 state["failures"].append(("baseline", why0))
                 # continue thrash anyway — still collect evidence
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"BASELINE fail: {e}")
             rec(traceback.format_exc()[-1200:])
             state["error"] = f"baseline:{e}"
@@ -763,7 +763,7 @@ def run():
                     rec(f"mouse_off result={r_off} phys=({px_off},{py_off})")
                     try:
                         renpy.restart_interaction()
-                    except Exception:  # noqa: BLE001, S110
+                    except Exception:
                         pass
                     time.sleep(0.25)
 
@@ -771,14 +771,14 @@ def run():
                 rec(f"mouse_on result={r} virt=({cx:.1f},{cy:.1f}) phys=({px},{py})")
                 try:
                     renpy.restart_interaction()
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
                 try:
                     import renpy_host as _rh
 
                     if hasattr(_rh, "request_redraw"):
                         _rh.request_redraw()
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
                 # Product interact must drain motion + re-present (no force redraw).
                 _pump(200)
@@ -810,13 +810,13 @@ def run():
                     # still on main_menu?
                     try:
                         mm = bool(getattr(renpy.store, "main_menu", False))
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         mm = "?"
                     rec(f"{label} still_main_menu={mm}")
                     state["checks"].append((label, ok, why))
                     if not ok:
                         state["failures"].append((label, why))
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"{label} sample fail: {e}")
                     rec(traceback.format_exc()[-800:])
                     state["failures"].append((label, [f"exception:{e}"]))
@@ -825,7 +825,7 @@ def run():
                 _r2, _, _ = _mouse_move(960, 540)
                 try:
                     renpy.restart_interaction()
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
                 time.sleep(0.20)
 
@@ -852,7 +852,7 @@ def run():
                 state["checks"].append((label, ok, why))
                 if not ok:
                     state["failures"].append((label, why))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 rec(f"{label} fail: {e}")
                 state["failures"].append((label, [f"exception:{e}"]))
 
@@ -867,7 +867,7 @@ def run():
                 r, px, py = _mouse_move(cx, cy)
                 try:
                     renpy.restart_interaction()
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
                 time.sleep(0.35)
                 # Do NOT click — click may ShowMenu/Start. Focus alone is AC3 select path.
@@ -879,7 +879,7 @@ def run():
                 )
                 try:
                     mm = bool(getattr(renpy.store, "main_menu", False))
-                except Exception:  # noqa: BLE001
+                except Exception:
                     mm = "?"
                 rec(
                     "focus_%s ok=%s main_menu=%s dock_nc=%.3f movie_nc=%.3f dock_tex=%d reasons=%s"  # noqa: UP031
@@ -901,7 +901,7 @@ def run():
                         (f"focus_{name}", ["left_main_menu_unexpected"])
                     )
                     break
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"FOCUS_SELECT_STAY fail: {e}")
             rec(traceback.format_exc()[-800:])
 
@@ -913,7 +913,7 @@ def run():
             _mouse_move(960, 540)
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.5)
             sample = _sample_rt()
@@ -939,7 +939,7 @@ def run():
             state["checks"].append(("final", ok, why))
             if not ok:
                 state["failures"].append(("final", why))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"FINAL fail: {e}")
             state["failures"].append(("final", [f"exception:{e}"]))
 
@@ -969,7 +969,7 @@ def run():
         import renpy.main as renpy_main
 
         renpy_main.main()
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         rec(f"main exit {type(e).__name__}: {e}")
     t.join(timeout=3.0)
 
@@ -993,12 +993,12 @@ def run():
     out.write_text(body)
     try:
         Path("/tmp/huangmeic-ab/ac3-hover-smoke-gate.txt").write_text(body)
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         sys.__stdout__.write(body[-6000:])
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     _request_quit()
     if not ok:

@@ -90,7 +90,6 @@ def sign_data(data: bytes, private_key: bytes) -> bytes:
 def verify_data(data: bytes, public_key: bytes, sign: bytes) -> bool:
     """Verify ECDSA-SHA1 signature (64-byte raw R||S)."""
     try:
-        from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -195,9 +194,9 @@ def der_to_pem(der: bytes, name: str) -> bytes:
     import base64
 
     b64 = base64.b64encode(der)
-    lines = [("-----BEGIN %s KEY-----\n" % name).encode()]
+    lines = [(f"-----BEGIN {name} KEY-----\n").encode()]
     lines.extend(
         [b64[start : start + 76] + b"\n" for start in range(0, len(b64), 76)]
     )
-    lines.append(("-----END %s KEY-----\n" % name).encode())
+    lines.append((f"-----END {name} KEY-----\n").encode())
     return b"".join(lines)

@@ -92,7 +92,7 @@ def main():
                 )
             else:
                 lines.append(f"PASS: path load size={sz} path={png_path!r}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             ok = False
             lines.append(f"FAIL: path load raised {type(e).__name__}: {e}")
             surf_path = None
@@ -115,7 +115,7 @@ def main():
                 f"FAIL: BytesIO+namehint TypeError (arity missing namehint?): {e}"
             )
             surf_bio = None
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             ok = False
             lines.append(f"FAIL: BytesIO+namehint load raised {type(e).__name__}: {e}")
             surf_bio = None
@@ -146,7 +146,7 @@ def main():
                         )
                     else:
                         lines.append(f"PASS: get_bounding_rect={t}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 ok = False
                 lines.append(
                     f"FAIL: get_bounding_rect raised {type(e).__name__}: {e}"
@@ -164,7 +164,7 @@ def main():
                     import renpy_display_accelerator_host as _acc  # type: ignore
 
                     _sys.modules["renpy.display.accelerator"] = _acc
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             # Ensure renpy.pygame is the host shim (embed install_host_pygame
             # already does this; re-bind defensively for isolated re-runs).
@@ -182,7 +182,7 @@ def main():
                         _m = getattr(_hp, _n, None)
                         if _m is not None:
                             _sys.modules[f"renpy.pygame.{_n}"] = _m
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
 
             from renpy.display import pgrender  # type: ignore
@@ -214,7 +214,7 @@ def main():
                         developer=False,
                         debug=False,
                     )
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
 
             surf_pg = pgrender.load_image(
@@ -228,7 +228,7 @@ def main():
                 )
             else:
                 lines.append(f"PASS: pgrender.load_image size={sz3}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             ok = False
             lines.append(
                 f"FAIL: pgrender.load_image unavailable/failed "
@@ -245,7 +245,7 @@ def main():
                 f"FAIL: garbage load returned size={bsz} instead of raising "
                 f"(silent 1x1 magenta stub is not allowed)"
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             lines.append(
                 f"PASS: garbage load raised {type(e).__name__}: {e}"
             )
@@ -258,7 +258,7 @@ def main():
         except TypeError as e:
             ok = False
             lines.append(f"FAIL: load(fi, namehint) TypeError: {e}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             # Decode errors are about implementation quality, not arity — still note.
             lines.append(
                 f"PASS: load(fi, namehint) arity OK (raised {type(e).__name__}: {e})"
@@ -273,7 +273,7 @@ def main():
         except TypeError as e:
             ok = False
             lines.append(f"FAIL: load(fi, namehint, None) TypeError: {e}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             lines.append(
                 f"PASS: load(fi, namehint, None) arity OK "
                 f"(raised {type(e).__name__}: {e})"
@@ -291,13 +291,13 @@ def main():
         except TypeError as e:
             ok = False
             lines.append(f"FAIL: load(fi, namehint, size=None) TypeError: {e}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             lines.append(
                 f"PASS: load(fi, namehint, size=None) arity OK "
                 f"(raised {type(e).__name__}: {e})"
             )
 
-    except Exception:  # noqa: BLE001
+    except Exception:
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())
@@ -313,7 +313,7 @@ def main():
     # config stub; host teardown must not flip a green artifact to red.
     try:
         renpy_host.request_quit()
-    except BaseException:  # noqa: BLE001, S110
+    except BaseException:
         pass
     return 0
 

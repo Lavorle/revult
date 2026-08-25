@@ -54,14 +54,14 @@ class GLTFModel:
 
 def preload():
     """Stock assimp preload hook — no-op on host."""
-    return None
+    return
 
 
 def finish_predict():
     """Stock assimp prediction end hook — no-op on host."""
-    return None
+    return
 
 
 def free_memory():
     """Stock assimp free_memory — no-op on host."""
-    return None
+    return

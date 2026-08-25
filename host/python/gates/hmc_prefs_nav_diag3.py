@@ -23,14 +23,14 @@ def _base():
 def _log(m):
     try:
         sys.__stdout__.write(f"[diag3] {m}\n"); sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_prefs_diag3.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
         import renpy_host; renpy_host.request_quit()  # noqa: I001
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def run():
@@ -49,7 +49,7 @@ def run():
     renpy.host_build = True
     try:
         import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"main_host {e}")
     import renpy.arguments
     basedir = str(base/"host/playtests/HuangmeiC")
@@ -58,18 +58,18 @@ def run():
         if not getattr(renpy.arguments, "commands", None):
             renpy.arguments.register_command("run", renpy.arguments.run, True)
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"args {e}")
     try:
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; renpy.audio.renpysound=h
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import renpy_uguu_host as u; sys.modules["renpy.uguu.uguu"]=u  # noqa: I001
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import renpy_ecsign_host as e; sys.modules["renpy.ecsign"]=e  # noqa: I001
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import host_pygame
         import host_pygame.locals as loc
@@ -78,8 +78,8 @@ def run():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.import_as_pygame()
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
+    except Exception: pass
 
     # Monkeypatch RenderTransform to log exceptions
     import renpy_display_accelerator_host as acc
@@ -99,11 +99,11 @@ def run():
         while time.time()<deadline:
             try:
                 if getattr(renpy.store,"main_menu",None): break
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
             time.sleep(0.1)
         try:
             renpy.store.Show("preferences", kind="sound_config")()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"Show {e}")
         time.sleep(0.5)
         import interact_helpers as ih
@@ -117,7 +117,7 @@ def run():
                     st=renpy.display.render.render_screen(root,w,h)
                     renpy.display.draw.draw_screen(st, flip=True)
                     iface.surftree=st
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 _log(f"redraw {e}")
             time.sleep(0.05)
 
@@ -153,7 +153,7 @@ def run():
                 type(getattr(mrv,"mesh",None)).__name__,
                 len(getattr(mrv,"children",()) or ()),
                 getattr(mrv,"shaders",None)))
-        except Exception:  # noqa: BLE001
+        except Exception:
             _log("Model.render FAIL:\n" + traceback.format_exc())
         # Direct via renpy.display.render.render
         try:
@@ -162,7 +162,7 @@ def run():
                 type(getattr(mrv,"mesh",None)).__name__ if getattr(mrv,"mesh",None) is not None else None,
                 len(getattr(mrv,"children",()) or ()),
                 (mrv.width, mrv.height)))
-        except Exception:  # noqa: BLE001
+        except Exception:
             _log("render(Model) FAIL:\n" + traceback.format_exc())
         # Instrument host RT child path
         import renpy_display_accelerator_host as acc2
@@ -175,7 +175,7 @@ def run():
                 type(cr).__name__, cr.width, cr.height,
                 type(getattr(cr,"mesh",None)).__name__ if getattr(cr,"mesh",None) is not None else None,
                 len(cr.children or ())))
-        except Exception:  # noqa: BLE001
+        except Exception:
             _log("manual cr FAIL:\n" + traceback.format_exc())
         try:
             rv = rt.render(179, 64, 1.0, 1.0)
@@ -190,14 +190,14 @@ def run():
             stt = dt.state
             _log("state during: shader={!r} alpha={} u_anim={}".format(
                 getattr(stt,"shader",None), getattr(stt,"alpha",None), getattr(stt,"u_animation",None)))
-        except Exception:  # noqa: BLE001
+        except Exception:
             _log("RT.render FAIL:\n" + traceback.format_exc())
 
         # Check _empty path: width of empty?
         try:
             # Force exception path by temporarily breaking Model
             pass
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
         # Colorize full pack
@@ -215,7 +215,7 @@ def run():
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         _log(f"main exit {e}")
 
 run()

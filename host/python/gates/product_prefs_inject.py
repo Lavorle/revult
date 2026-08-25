@@ -33,11 +33,11 @@ def _log(msg):
     try:
         sys.__stdout__.write(f"[product-prefs-inject] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/product-prefs-inject.log", "a").write(msg + "\n")  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -46,7 +46,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -59,7 +59,7 @@ def _pre_main_host_stubs():
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}")
     try:
         import renpy_uguu_host as _uguu
@@ -70,17 +70,17 @@ def _pre_main_host_stubs():
             import renpy
 
             renpy.uguu = _uguu
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("uguu stub")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}")
     try:
         import renpy_ecsign_host as _ecsign
 
         sys.modules["renpy.ecsign"] = _ecsign
         _log("ecsign stub")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -124,14 +124,14 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
         import renpy_main_host
 
         renpy_main_host.install(renpy)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -144,12 +144,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={}".format(getattr(args, "command", None)))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -179,7 +179,7 @@ def run():
                     scr = None
                     try:
                         scr = renpy.display.screen.get_screen("preferences")
-                    except Exception:  # noqa: BLE001, S110
+                    except Exception:
                         pass
                     mm = getattr(renpy.store, "main_menu", None)
                     if i % 3 == 0:
@@ -188,10 +188,10 @@ def run():
                         rec("Preferences opened at pulse#%d" % i)  # noqa: UP031
                         state["prefs"] = True
                         break
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"status: {e}")
                 time.sleep(0.2)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"inject exc: {e}")
             rec(traceback.format_exc())
         time.sleep(1.5)
@@ -207,7 +207,7 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         rec(f"main exit {type(e).__name__}: {e}")
 
     prefs_ok = bool(state.get("prefs"))
@@ -216,7 +216,7 @@ def run():
         if scr is not None:
             prefs_ok = True
         rec(f"prefs_screen={scr is not None!r} prefs_ok={prefs_ok}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"post-check: {e}")
 
     ok = bool(prefs_ok)

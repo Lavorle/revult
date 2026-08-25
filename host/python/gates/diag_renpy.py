@@ -19,7 +19,7 @@ try:
         out.write(f"dir conf={[x for x in dir(r) if 'conf' in x.lower() or x=='host_build']}\n")
         try:
             out.write(f"config={r.config!r}\n")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             out.write(f"access config FAIL {type(e).__name__}: {e}\n")
             out.write(traceback.format_exc())
     # try import
@@ -30,14 +30,14 @@ try:
     import renpy.config
     out.write(f"import renpy.config ok module={renpy.config}\n")
     out.write(f"after import has attr={hasattr(renpy,'config')}\n")
-except Exception:  # noqa: BLE001
+except Exception:
     out.write("OUTER\n"+traceback.format_exc())
 finally:
     out.close()
 try:
     import renpy_host
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

@@ -98,7 +98,7 @@ def try_write_png(path: Path, w: int, h: int, rgba: bytes) -> None:
 
         path.parent.mkdir(parents=True, exist_ok=True)
         Image.frombytes("RGBA", (int(w), int(h)), bytes(rgba)).save(path)
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -228,7 +228,7 @@ def compare_or_bootstrap(
 
     try:
         bw, bh, baseline = read_raw_rgba(base_path)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"[{name}] FAIL-CLOSED: failed reading baseline at {base_path}: {e} ok=False"
         print(msg, flush=True)
         return False, msg
@@ -355,7 +355,7 @@ def main() -> int:
     try:
         aw, ah, actual_rgba = load_image_or_rgba(args.actual)
         bw, bh, baseline_rgba = load_image_or_rgba(args.baseline)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         err_res = {
             "status": "FAIL",
             "passed": False,

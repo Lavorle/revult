@@ -119,7 +119,7 @@ try:
     else:
         lines.append("PASS C")
 
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok=False
     import traceback
     lines.append(f"EXCEPTION {e!r}")

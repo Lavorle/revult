@@ -43,11 +43,11 @@ def _safe_write(msg: str) -> None:
     data = (msg if msg.endswith("\n") else msg + "\n").encode("utf-8", "replace")
     try:
         os.write(1, data)
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             sys.__stdout__.write(msg if msg.endswith("\n") else msg + "\n")
             sys.__stdout__.flush()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -159,7 +159,7 @@ try:
     notes.append(f"pack_alpha_dict={u_a}")
     renpy_host.end_frame_present()
     notes.append("live_draw_ok=True")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     notes.append(f"FAIL: live_draw {type(e).__name__}: {e}")
 

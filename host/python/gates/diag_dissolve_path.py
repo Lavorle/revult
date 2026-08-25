@@ -27,7 +27,7 @@ def rec(m):
     lines.append(str(m))
     try:
         sys.__stdout__.write(f"[dpath] {m}\n"); sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 class FakeRender:
@@ -47,7 +47,7 @@ try:
     w,h=1280,720
     draw=WgpuDraw(); draw.init((w,h))
     try: draw.physical_size=renpy_host.window_size()
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
 
     # monkeypatch key methods
     hits={"mid":0,"extreme0":0,"extreme1":0,"leaf_draw":0,"tex_slots":0,"walk_both":0,"is_diss":0,"mesh_branch":0,"surface_draw":0}
@@ -91,12 +91,12 @@ try:
     for i in range(0,n,step):
         o=i*4; rs+=rgba[o]; gs+=rgba[o+1]; bs+=rgba[o+2]; cnt+=1
     rec(f"ROOT mean=({rs/cnt:.1f},{gs/cnt:.1f},{bs/cnt:.1f}) hits={hits}")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     rec(f"EXC {e}"); rec(traceback.format_exc())
 out.write_text("\n".join(lines)+"\n")
 try:
     sys.__stdout__.write(f"WROTE {out}\n"); sys.__stdout__.flush()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

@@ -27,7 +27,7 @@ def _log(m):
     try:
         sys.__stdout__.write(f"[mesh_thrash] {m}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_dc_mesh_thrash.log", "a").write(m + "\n")  # noqa: SIM115
 
@@ -37,7 +37,7 @@ def _quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -125,7 +125,7 @@ def main():
         lines.append(f"ok={ok}")
         out.write_text("\n".join(lines) + "\n")
         _log(f"wrote {out} ok={ok}")
-    except Exception:  # noqa: BLE001
+    except Exception:
         tb = traceback.format_exc()
         lines.append(tb)
         out.write_text("\n".join(lines) + "\n")
@@ -139,7 +139,7 @@ if __name__ == "__main__":
 else:
     try:
         main()
-    except Exception:  # noqa: BLE001
+    except Exception:
         traceback.print_exc()
         _quit()
 

@@ -375,7 +375,7 @@ def main():
     draw.init((VW, VH))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     # --- Real textbox.png Image path ---
@@ -384,7 +384,7 @@ def main():
             draw, tb_png, "gui/textbox.png"
         )
         textbox_load_ok = True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=load_textbox_png err={e} path={tb_png}"
         out.write_text(msg + "\n")
         print("[tq_say_chrome]", msg, flush=True)
@@ -396,7 +396,7 @@ def main():
             draw, nb_png, "gui/namebox.png"
         )
         namebox_load_ok = True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=load_namebox_png err={e} path={nb_png}"
         out.write_text(msg + "\n")
         print("[tq_say_chrome]", msg, flush=True)
@@ -442,7 +442,7 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[tq_say_chrome]", msg, flush=True)

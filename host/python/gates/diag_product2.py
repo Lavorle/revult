@@ -41,14 +41,14 @@ try:
         if not good:
             break
     log(f"final has_config={hasattr(renpy,'config')} basedir={getattr(getattr(renpy,'config',None),'basedir',None)}")
-except Exception:  # noqa: BLE001
+except Exception:
     log("EXC\n"+traceback.format_exc())
 finally:
     out.close()
 try:
     import renpy_host
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

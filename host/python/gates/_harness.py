@@ -66,11 +66,11 @@ def _safe_write(msg: str) -> None:
     try:
         sys.stdout.buffer.write(data)
         sys.stdout.flush()
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             sys.stdout.write(msg if msg.endswith("\n") else msg + "\n")
             sys.stdout.flush()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -132,7 +132,7 @@ def gate_harness(
         label = f"case {idx} {case}" if case else f"case {idx}"
         try:
             out = run_one(case)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             msg = f"[{name}] {label} FAIL: run_one {type(e).__name__}: {e}"
             notes.append(msg)
             results.append({"case": case, "passed": False, "error": msg})
@@ -158,7 +158,7 @@ def gate_harness(
                 # fallback: let golden_compare decide (may raise TypeError -> handled)
                 ok, msg = golden_compare(out)  # type: ignore[call-arg]
                 results.append({"case": case, "passed": ok, "message": msg})
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             ok, msg = False, f"[{name}] {label} FAIL: golden_compare {type(e).__name__}: {e}"
             results.append({"case": case, "passed": False, "error": msg})
         notes.append(msg)

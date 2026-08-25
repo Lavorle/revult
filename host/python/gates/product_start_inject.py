@@ -33,11 +33,11 @@ def _log(msg):
     try:
         sys.__stdout__.write(f"[product-start-inject] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/product-start-inject.log", "a").write(msg + "\n")  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -46,7 +46,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -59,7 +59,7 @@ def _pre_main_host_stubs():
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}")
     try:
         import renpy_uguu_host as _uguu
@@ -70,17 +70,17 @@ def _pre_main_host_stubs():
             import renpy
 
             renpy.uguu = _uguu
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("uguu stub")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}")
     try:
         import renpy_ecsign_host as _ecsign
 
         sys.modules["renpy.ecsign"] = _ecsign
         _log("ecsign stub")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -124,14 +124,14 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
         import renpy_main_host
 
         renpy_main_host.install(renpy)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -144,12 +144,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={}".format(getattr(args, "command", None)))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -177,7 +177,7 @@ def run():
                     focused = None
                     try:
                         focused = renpy.display.focus.get_focused()
-                    except Exception:  # noqa: BLE001, S110
+                    except Exception:
                         pass
                     if i % 5 == 0:
                         rec(
@@ -187,10 +187,10 @@ def run():
                     if mm is False:
                         rec("left main_menu at pulse#%d (Start activated)" % i)  # noqa: UP031
                         break
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"status: {e}")
                 time.sleep(0.2)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"inject exc: {e}")
             rec(traceback.format_exc())
         time.sleep(2.0)
@@ -206,7 +206,7 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         rec(f"main exit {type(e).__name__}: {e}")
 
     started = False
@@ -217,9 +217,9 @@ def run():
         try:
             ctx = renpy.game.context()
             rec("context.current={!r}".format(getattr(ctx, "current", None)))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"context: {e}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"post-check: {e}")
 
     ok = bool(started)

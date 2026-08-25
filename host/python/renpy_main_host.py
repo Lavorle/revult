@@ -247,11 +247,11 @@ def install(renpy_module=None):
 
 # Also expose as a module attribute for getattr(renpy.__main__, ...) probes.
 __all__ = [
-    "path_to_gamedir",
-    "path_to_common",
-    "path_to_saves",
-    "path_to_renpy_base",
-    "path_to_logdir",
-    "predefined_searchpath",
     "install",
+    "path_to_common",
+    "path_to_gamedir",
+    "path_to_logdir",
+    "path_to_renpy_base",
+    "path_to_saves",
+    "predefined_searchpath",
 ]

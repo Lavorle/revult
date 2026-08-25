@@ -177,7 +177,7 @@ def main():
         while renpy_host.get_ticks_ms() < deadline:
             try:
                 renpy_host.pump_once(16)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
 
             d = renpy_host.poll_event()
@@ -288,7 +288,7 @@ def main():
         idle_clears = int(renpy_host.idle_clears_after_present())
         lines.append(f"NOTE: idle_clears_after_present={idle_clears}")
 
-    except Exception:  # noqa: BLE001
+    except Exception:
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())

@@ -172,7 +172,7 @@ for _ in range(3):
     renpy_host.begin_frame()
     try:
         draw.load_all_textures(root)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         notes.append(f"FAIL: load_all_textures {type(e).__name__}: {e}")
     draw._draw_node(root, 0.0, 0.0)

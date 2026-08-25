@@ -25,7 +25,7 @@ try:
     assert hasattr(scrap, "put_data")
     scrap.put_data({"image/png": b"x"})
     lines.append("PASS: host scrap.put_data")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     lines.append(f"FAIL scrap {e!r}")
 
@@ -73,7 +73,7 @@ try:
         lines.append("FAIL tw")
     else:
         lines.append("PASS tw partial")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     lines.append(f"EXCEPTION {e!r}")
     lines.append(traceback.format_exc())

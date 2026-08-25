@@ -30,7 +30,7 @@ def log(msg):
     try:
         sys.__stdout__.write(f"[verify-dead-input] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -44,10 +44,10 @@ def finish(ok, **extra):
             f.write("--- log ---\n")
             for line in _lines:
                 f.write(line + "\n")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         try:
             sys.__stderr__.write(f"write report fail: {e}\n")
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -55,7 +55,7 @@ def _request_quit():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -96,14 +96,14 @@ def run():
         renpy.host_build = True
         try:
             renpy.config.performance_test = False
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
         try:
             import renpy_main_host
             renpy_main_host.install(renpy)
             log("renpy_main_host installed")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"renpy_main_host soft-fail: {e}")
 
         try:
@@ -112,14 +112,14 @@ def run():
             _ra.renpysound = _rs
             sys.modules["renpy.audio.renpysound"] = _rs
             log("renpysound rebound")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"renpysound soft-fail: {e}")
 
         try:
             import renpy.arguments
             # product uses custom prepare; keep minimal
             log("arguments module present")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"args soft-fail: {e}")
 
         # Supporting inject (NOT V1 bare proof). Pre-queue Return for Start.
@@ -128,7 +128,7 @@ def run():
                 renpy_host.inject_key(13, True, "\r")
                 renpy_host.inject_key(13, False, "\r")
             log("pre-injected KEYDOWN/UP Return x3 (supporting only; V3)")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"inject soft-fail: {e}")
 
         # Match product.py: prepare run args if available
@@ -140,7 +140,7 @@ def run():
             if hasattr(product_mod, "_pre_main_host_stubs"):
                 product_mod._pre_main_host_stubs()
                 log("pre_main_host_stubs done")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"product helpers soft-fail: {e}")
             log(traceback.format_exc())
 

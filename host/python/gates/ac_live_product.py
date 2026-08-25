@@ -40,11 +40,11 @@ def _log(msg, lines=None):
     try:
         sys.__stdout__.write(f"[ac_live_product] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/ac_live_product.log", "a").write(msg + "\n")  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     if lines is not None:
         lines.append(msg)
@@ -55,7 +55,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -67,7 +67,7 @@ def _pre_main_host_stubs(lines):
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound", lines)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}", lines)
     try:
         import renpy_uguu_host as _uguu
@@ -78,17 +78,17 @@ def _pre_main_host_stubs(lines):
             import renpy
 
             renpy.uguu = _uguu
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("uguu stub", lines)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}", lines)
     try:
         import renpy_ecsign_host as _ecsign
 
         sys.modules["renpy.ecsign"] = _ecsign
         _log("ecsign stub", lines)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}", lines)
 
 
@@ -138,7 +138,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
@@ -146,7 +146,7 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -159,12 +159,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={}".format(getattr(args, "command", None)))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -217,7 +217,7 @@ def run():
                     rec(
                         "Dissolve.render st={:.4f} complete={} u={} T={}".format(entry["st"], entry["complete"], entry["u"], entry["time"])
                     )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 rec(f"hook log soft: {e}")
             return rv
 
@@ -226,9 +226,9 @@ def run():
         rec("Dissolve.render hook installed")
         try:
             render_mod.models = True
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         state["error"] = f"hook_fail: {e}"
         rec(state["error"])
         rec(traceback.format_exc())
@@ -255,14 +255,14 @@ def run():
                 try:
                     _renpy.game.less_updates = False
                     state["less_updates"] = bool(_renpy.game.less_updates)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"less_updates soft: {e}")
                 try:
                     import renpy.display.render as rm
 
                     rm.models = True
                     state["models"] = bool(rm.models)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"models soft: {e}")
                 try:
                     _renpy.config.performance_test = False
@@ -273,9 +273,9 @@ def run():
                             prefs.performance_test = False
                         if hasattr(prefs, "text_cps"):
                             prefs.text_cps = 0
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"prefs soft: {e}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 rec(f"prefs block: {e}")
 
             state["phase"] = "injecting"
@@ -297,7 +297,7 @@ def run():
                         state["started"] = True
                         rec("left main_menu at pulse#%d" % i)  # noqa: UP031
                         break
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"status: {e}")
                 time.sleep(0.25)
 
@@ -316,7 +316,7 @@ def run():
                     if mm is False:
                         state["left_main_menu"] = True
                         state["started"] = True
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
 
             try:
@@ -324,7 +324,7 @@ def run():
                 if prefs is not None and hasattr(prefs, "transitions"):
                     state["transitions_pref"] = int(prefs.transitions)
                 state["less_updates"] = bool(getattr(_renpy.game, "less_updates", None))
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
 
             state["phase"] = "quitting"
@@ -336,7 +336,7 @@ def run():
                     state["transitions_pref"],
                 )
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             state["error"] = f"{type(e).__name__}: {e}"
             rec("injector exc: {}".format(state["error"]))
             rec(traceback.format_exc())
@@ -351,7 +351,7 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         rec(f"main exit {type(e).__name__}: {e}")
 
     mids = [

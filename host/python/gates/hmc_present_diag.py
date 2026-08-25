@@ -23,14 +23,14 @@ def _base():
 def _log(msg):
     try:
         sys.__stdout__.write(f"[present_diag] {msg}\n"); sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_present_diag.log","a").write(msg+"\n")  # noqa: SIM115
 
 def _request_quit():
     try:
         import renpy_host; renpy_host.request_quit()  # noqa: I001
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def _stubs():
@@ -39,7 +39,7 @@ def _stubs():
         import renpy.audio as a
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; a.renpysound=h
-    except Exception as e: _log(f"rs {e}")  # noqa: BLE001
+    except Exception as e: _log(f"rs {e}")
     try:
         import host_pygame
         import host_pygame.locals as L
@@ -51,10 +51,10 @@ def _stubs():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.scrap=S
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
         try: rpg.import_as_pygame()
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception as e: _log(f"pg {e}")  # noqa: BLE001
+        except Exception: pass
+    except Exception as e: _log(f"pg {e}")
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u; sys.modules["renpy.uguu.gl"]=u
@@ -66,15 +66,15 @@ def _stubs():
         pkg.uguu = u; pkg.gl = u
         try:
             import renpy; renpy.uguu=pkg  # noqa: I001
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception as e: _log(f"u {e}")  # noqa: BLE001
+        except Exception: pass
+    except Exception as e: _log(f"u {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
         try:
             import renpy as r; r.ecsign = e  # noqa: I001
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception as e: _log(f"e {e}")  # noqa: BLE001
+        except Exception: pass
+    except Exception as e: _log(f"e {e}")
 
 def _dock_mean():
     import renpy_host
@@ -100,7 +100,7 @@ def _find_dissolve(draw, node, depth=0):
     try:
         from renpy.wgpu.draw import HostTexture
         if isinstance(node, HostTexture): return None
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     mesh=getattr(node,"mesh",None)
     shaders=list(getattr(node,"shaders",None) or ())
@@ -111,7 +111,7 @@ def _find_dissolve(draw, node, depth=0):
         return {"op":op,"op_c":getattr(node,"operation_complete",None),"u":u,"n_kids":len(list(draw._iter_children(node)))}
     try:
         kids=list(draw._iter_children(node))
-    except Exception:  # noqa: BLE001
+    except Exception:
         kids=[]
     for c,_,_ in kids:
         r=_find_dissolve(draw,c,depth+1)
@@ -136,19 +136,19 @@ def run():
     import renpy
     renpy.host_build=True
     try: renpy.config.performance_test=False
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
-    except Exception as e: _log(f"mh {e}")  # noqa: BLE001
+    except Exception as e: _log(f"mh {e}")
     try:
         import renpy.arguments
         basedir=getattr(renpy.config,"basedir",None) or game
         sys.argv=[sys.argv[0] if sys.argv else "renpy-host", basedir, "run"]
         if not getattr(renpy.arguments,"commands",None):
             try: renpy.arguments.register_command("run", renpy.arguments.run, True)
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
         renpy.game.args=renpy.arguments.bootstrap()
-    except Exception as e: _log(f"args {e}")  # noqa: BLE001
+    except Exception as e: _log(f"args {e}")
     _stubs()
 
     # count product draw_model of dock-ish sizes via texture touch isn't available;
@@ -193,20 +193,20 @@ def run():
                         if hasattr(draw,"load_all_textures"): draw.load_all_textures(st2)
                         draw.draw_screen(st2, flip=True)
                         _log(f"rebuild mean={_dock_mean()}")
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e:
                         _log(f"reb fail {e}\n{traceback.format_exc()[-300:]}")
                 if age>=22:
                     done["v"]=True
                     _request_quit()
                     return
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 _log(f"watch {e}\n{traceback.format_exc()[-400:]}")
         _request_quit()
     threading.Thread(target=watcher,daemon=True).start()
     _log("waiting")
     try:
         import renpy.main as m; m.main()  # noqa: I001
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"main {type(e).__name__}: {e}")
     _log("done")
 

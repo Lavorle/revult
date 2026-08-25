@@ -54,7 +54,7 @@ try:
         raise RuntimeError(f"missing Live2D WGSL parts: {missing}")
     registry_ok = True
     registry_parts = sorted(needed)
-except Exception as e:  # pragma: no cover - host may not have full renpy on path  # noqa: BLE001
+except Exception as e:  # pragma: no cover - host may not have full renpy on path
     registry_ok = False
     registry_parts = []
     registry_err = repr(e)
@@ -197,7 +197,7 @@ try:
     from golden_mae import gate_result_path
 
     out = gate_result_path("live2d")
-except Exception:  # noqa: BLE001
+except Exception:
     base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
     out = Path(base) / "host" / "target" / "gate-live2d.txt"
     if not out.parent.is_dir():

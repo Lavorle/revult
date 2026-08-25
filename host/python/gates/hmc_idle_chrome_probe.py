@@ -52,11 +52,11 @@ def _log(msg):
     try:
         sys.__stdout__.write(f"[hmc_idle_probe] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/hmc_idle_chrome_probe.log", "a").write(msg + "\n")  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -65,7 +65,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -88,7 +88,7 @@ def _pre_main_host_stubs():
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}")
 
     try:
@@ -108,14 +108,14 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             rpg.import_as_pygame()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"import_as_pygame soft-fail: {e}")
         _log("pygame host shim ok")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame soft-fail: {e}")
 
     try:
@@ -137,10 +137,10 @@ def _pre_main_host_stubs():
             import renpy
 
             renpy.uguu = pkg
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("uguu host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}")
 
     try:
@@ -151,10 +151,10 @@ def _pre_main_host_stubs():
             import renpy as _renpy_pkg
 
             _renpy_pkg.ecsign = _ecsign
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("ecsign host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -165,7 +165,7 @@ def _disp_path(d):
     for attr in ("filename", "name", "image", "_target"):
         try:
             v = getattr(d, attr, None)
-        except Exception:  # noqa: BLE001
+        except Exception:
             v = None
         if v is None:
             continue
@@ -173,7 +173,7 @@ def _disp_path(d):
             try:
                 t = v()
                 return _disp_path(t)
-            except Exception:  # noqa: BLE001, S112
+            except Exception:
                 continue
         if isinstance(v, (str, bytes)):
             return str(v)
@@ -184,7 +184,7 @@ def _disp_path(d):
         n = getattr(d, "name", None)
         if n is not None:
             return repr(n)
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     return f"{type(d).__name__}@{id(d)}"
 
@@ -194,13 +194,13 @@ def _action_label(action):
         return None
     try:
         cls = type(action).__name__
-    except Exception:  # noqa: BLE001
+    except Exception:
         cls = "?"
     # Start / ShowMenu / ConfirmAction
     for attr in ("label", "screen", "name", "confirm_type", "slot"):
         try:
             v = getattr(action, attr, None)
-        except Exception:  # noqa: BLE001
+        except Exception:
             v = None
         if v is not None and not callable(v):
             return f"{cls}({attr}={v!r})"
@@ -223,7 +223,7 @@ def _texinfo(t):
                 "x": int(getattr(t, "x", 0) or 0),
                 "y": int(getattr(t, "y", 0) or 0),
             }
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     if t is None:
         return None
@@ -241,7 +241,7 @@ def _walk_surftree_textures(node, acc=None, depth=0, budget=400, ox=0.0, oy=0.0)
     try:
         tw = getattr(node, "width", None) or getattr(node, "w", None)
         th = getattr(node, "height", None) or getattr(node, "h", None)
-    except Exception:  # noqa: BLE001
+    except Exception:
         tw = th = None
     tex = getattr(node, "texture", None)
     cm = getattr(node, "cached_model", None)
@@ -289,7 +289,7 @@ def _walk_surftree_textures(node, acc=None, depth=0, budget=400, ox=0.0, oy=0.0)
             else:
                 ch = entry
                 cx = cy = 0.0
-        except Exception:  # noqa: BLE001, S112
+        except Exception:
             continue
         # HostTexture as direct child
         try:
@@ -313,7 +313,7 @@ def _walk_surftree_textures(node, acc=None, depth=0, budget=400, ox=0.0, oy=0.0)
                     }
                 )
                 continue
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _walk_surftree_textures(ch, acc, depth + 1, budget, ox + cx, oy + cy)
     return acc
@@ -346,18 +346,18 @@ def _force_product_redraw():
         try:
             if hasattr(draw, "load_all_textures"):
                 draw.load_all_textures(surftree)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             info["prepare_err"] = f"{type(e).__name__}:{e}"
         draw.draw_screen(surftree, flip=True)
         try:
             iface.surftree = surftree
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         info["path"] = "rebuild_render_screen"
         info["root"] = type(root).__name__
         info["surftree"] = surftree
         return info
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         info["error"] = f"{type(e).__name__}:{e}"
         info["tb"] = traceback.format_exc()[-800:]
         return info
@@ -369,7 +369,7 @@ def _sample_rt_bottom_band():
 
     try:
         w, h, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {"ok": False, "error": str(e)}
     if not w or not h or not rgba:
         return {"ok": False, "error": "empty_rt"}
@@ -410,20 +410,20 @@ def _virt_to_phys(vx, vy, vw=1920, vh=1080, pw=None, ph=None):
     if pw is None or ph is None:
         try:
             pw, ph = renpy_host_size()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pw = ph = None
     if draw is not None:
         try:
             ps = getattr(draw, "physical_size", None)
             if ps:
                 pw, ph = int(ps[0]), int(ps[1])
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             vs = getattr(draw, "virtual_size", None) or getattr(draw, "physical_size", None)
             if vs:
                 vw, vh = int(vs[0]), int(vs[1])
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     if not pw or not ph:
         pw, ph = 1280, 720
@@ -481,7 +481,7 @@ def _sample_live_surftree_only():
         info["all"] = nodes
         info["dock"] = [n for n in nodes if (n.get("oy") or 0) >= 900]
         return info
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         info["error"] = f"{type(e).__name__}:{e}"
         info["tb"] = traceback.format_exc()[-600:]
         return info
@@ -498,7 +498,7 @@ def _collect_imagebuttons():
     # From focus_list (has dest rects)
     try:
         fl = list(renpy.display.focus.focus_list or [])
-    except Exception:  # noqa: BLE001
+    except Exception:
         fl = []
 
     for f in fl:
@@ -530,7 +530,7 @@ def _collect_imagebuttons():
                     # continue dual-ATL button etc.
                     seen.add(id(d))
                     rows.append(_describe_button(d, focus=None, source="screen_walk"))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rows.append({"error": f"screen_walk:{e}"})
 
     return rows
@@ -545,7 +545,7 @@ def _iter_displayables(d, budget=500, _acc=None, _seen=None):
         return _acc
     try:
         i = id(d)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return _acc
     if i in _seen:
         return _acc
@@ -584,11 +584,11 @@ def _describe_button(w, focus=None, source="?"):
     }
     try:
         row["style_prefix"] = getattr(w.style, "prefix", None)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         row["style_prefix"] = f"err:{e}"
     try:
         row["style_name"] = str(getattr(w.style, "style_name", None) or getattr(w.style, "name", None))
-    except Exception:  # noqa: BLE001
+    except Exception:
         row["style_name"] = None
 
     # focus rect
@@ -601,7 +601,7 @@ def _describe_button(w, focus=None, source="?"):
         )
         try:
             row["full_focus_name"] = getattr(focus, "full_focus_name", None)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     else:
         row["dest_rect"] = None
@@ -625,7 +625,7 @@ def _describe_button(w, focus=None, source="?"):
                 "id": id(child) if child is not None else None,
                 "raw_child_path": _disp_path(getattr(w, "imagebutton_raw_child", None)),
             }
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             row["get_child"] = {"error": f"{type(e).__name__}:{e}"}
         # Which prefix key is used
         pref = row.get("style_prefix")
@@ -645,7 +645,7 @@ def _describe_button(w, focus=None, source="?"):
                 if hasattr(w.style, "hover_background")
                 else None
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             row["background_err"] = str(e)
         try:
             child = w.get_child() if hasattr(w, "get_child") else getattr(w, "child", None)
@@ -653,17 +653,17 @@ def _describe_button(w, focus=None, source="?"):
                 "path": _disp_path(child),
                 "type": type(child).__name__ if child is not None else None,
             }
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             row["get_child"] = {"error": str(e)}
 
     # selected / sensitive
     try:
         row["is_selected"] = bool(w.is_selected()) if hasattr(w, "is_selected") else None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         row["is_selected"] = f"err:{e}"
     try:
         row["is_sensitive"] = bool(w.is_sensitive()) if hasattr(w, "is_sensitive") else None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         row["is_sensitive"] = f"err:{e}"
 
     # Try render-size of active child if possible
@@ -672,10 +672,10 @@ def _describe_button(w, focus=None, source="?"):
         if isinstance(w, ImageButton):
             child = w.get_child()
         if child is not None:
-            renpy.display.render.render  # noqa: B018
+            renpy.display.render.render
             # Don't force full render here — just note child attributes
             row["child_style_prefix"] = getattr(getattr(child, "style", None), "prefix", None)
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     return row
@@ -702,10 +702,10 @@ def _focus_snapshot():
             out["focused_action"] = _action_label(getattr(fw, "action", None))
             try:
                 out["focused_prefix"] = getattr(fw.style, "prefix", None)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             out["focused_role"] = getattr(fw, "role", None)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         out["focused_err"] = str(e)
     try:
         fl = list(renpy.display.focus.focus_list or [])
@@ -727,11 +727,11 @@ def _focus_snapshot():
                     "full_focus_name": getattr(f, "full_focus_name", None),
                 }
             )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         out["focus_list_err"] = str(e)
     try:
         out["grab"] = type(renpy.display.focus.get_grab()).__name__ if renpy.display.focus.get_grab() else None
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     return out
 
@@ -854,7 +854,7 @@ def _dump_phase(label, lines):
         else:
             lines.append("LIVE_RT_PRE_FORCE empty")
             _dump_phase._pre_rgba = None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         lines.append(f"LIVE_RT_PRE_FORCE fail: {e}")
         _dump_phase._pre_rgba = None
 
@@ -876,7 +876,7 @@ def _dump_phase(label, lines):
                 _rh.product_presents() if hasattr(_rh, "product_presents") else "?",
             )
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         lines.append(f"ARENA fail: {e}")
     for n in (live.get("dock") or [])[:40]:
         tex = n.get("tex") or {}
@@ -888,7 +888,7 @@ def _dump_phase(label, lines):
 
                 if hasattr(_rh, "texture_alive"):
                     alive = bool(_rh.texture_alive(int(handle)))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 alive = f"err:{e}"
         lines.append(
             "  live_dock d={} {} ox={:.0f} oy={:.0f} size={} tex={} loaded={} alpha={} alive={}".format(
@@ -1013,7 +1013,7 @@ def _dump_phase(label, lines):
                             try:
                                 draw = renpy.display.draw
                                 complete = draw._dissolve_complete(node) if hasattr(draw, "_dissolve_complete") else "?"
-                            except Exception as e:  # noqa: BLE001
+                            except Exception as e:
                                 complete = f"err:{e}"
                             lines.append(
                                 "DISSOLVE d={} kids={} u_renpy_dissolve={} op={} op_complete={} helper_complete={} cm={}".format(
@@ -1048,7 +1048,7 @@ def _dump_phase(label, lines):
                         _dump_diss(ch, depth + 1, budget)
 
                 _dump_diss(st)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 lines.append(f"DISSOLVE dump fail: {e}")
             path = _struct_path(st)
             if path:
@@ -1112,7 +1112,7 @@ def _dump_phase(label, lines):
                 lines.append("LIVE_FORCE_DRAW empty_rt")
         else:
             lines.append(f"LIVE_FORCE_DRAW skip st={st is not None} draw={draw is not None}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         lines.append(f"LIVE_FORCE_DRAW fail: {e}")
     if live.get("all") is not None:
         lines.append("LIVE_SURFTREE all_textured (first 25):")
@@ -1157,14 +1157,14 @@ def _dump_phase(label, lines):
                 )
             dock_nodes = [n for n in tex_nodes if (n.get("oy") or 0) >= 900]
             lines.append("SURFTREE dock_band(oy>=900) n=%d" % len(dock_nodes))  # noqa: UP031
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             lines.append(f"SURFTREE walk fail: {e}")
             lines.append(traceback.format_exc()[-600:])
 
     # imagebuttons
     try:
         btns = _collect_imagebuttons()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         lines.append(f"BUTTONS fail: {e}")
         lines.append(traceback.format_exc()[-600:])
         btns = []
@@ -1193,7 +1193,7 @@ def _dump_phase(label, lines):
                         "  PIX_PRE action=%s virt_c=(%.0f,%.0f) phys_c=(%d,%d) mean_rgba=(%.1f,%.1f,%.1f,%.1f)"  # noqa: UP031
                         % (b.get("action"), vx, vy, px, py, samp[0], samp[1], samp[2], samp[3])
                     )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         lines.append(f"PIX_PRE fail: {e}")
 
     # RT sample + per-button pixel means (post force present)
@@ -1249,7 +1249,7 @@ def _dump_phase(label, lines):
                         "  PIX region=%s virt=(%d,%d) phys=(%d,%d) mean_rgba=(%.1f,%.1f,%.1f,%.1f)"  # noqa: UP031
                         % (name, vx, vy, px, py, samp[0], samp[1], samp[2], samp[3])
                     )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         lines.append(f"RT_DOCK fail: {e}")
         lines.append(traceback.format_exc()[-400:])
 
@@ -1269,14 +1269,14 @@ def _dump_phase(label, lines):
         for a in assets:
             try:
                 ok1 = renpy.loadable(a)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 ok1 = f"err:{e}"
             try:
                 ok2 = renpy.loadable(a, directory="images")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 ok2 = f"err:{e}"
             lines.append(f"LOADABLE {a} plain={ok1} images_dir={ok2}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         lines.append(f"LOADABLE batch fail: {e}")
 
     # imagemap auto resolution for one button
@@ -1287,10 +1287,10 @@ def _dump_phase(label, lines):
             for variant in ("idle", "hover", "selected_idle", "selected_hover", "insensitive"):
                 try:
                     rv = fn(auto, variant)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rv = f"err:{e}"
                 lines.append(f"AUTO_RESOLVE start {variant} -> {rv!r}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         lines.append(f"AUTO_RESOLVE fail: {e}")
 
     return btns, fs, tex_nodes
@@ -1304,13 +1304,13 @@ def _mouse_move(x, y):
         from renpy import pygame
 
         pygame.mouse.set_pos((int(x), int(y)))
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     # inject_mouse always sends button event — send motion-only via inject with button 0?
     # Use inject_mouse press=False at pos (still emits button up). Prefer host inject.
     try:
         renpy_host.inject_mouse(int(x), int(y), 0, False)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return f"fail:{e}"
     return "ok"
 
@@ -1382,7 +1382,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
@@ -1390,7 +1390,7 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -1403,12 +1403,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -1422,7 +1422,7 @@ def run():
                     state["main_menu"] = True
                     rec("main_menu at tick=%d" % i)  # noqa: UP031
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.05)
         if not state["main_menu"]:
@@ -1439,7 +1439,7 @@ def run():
             state["phases"] += 1
             state["idle_btns"] = btns0
             state["idle_focus"] = fs0
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"IDLE dump fail: {e}")
             rec(traceback.format_exc()[-1200:])
             state["error"] = f"idle_dump:{e}"
@@ -1470,14 +1470,14 @@ def run():
             # force interaction restart so hover restyle applies
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.4)
             btns1, fs1, _tex1 = _dump_phase("HOVER_EXTRA", lines)
             state["phases"] += 1
             state["hover_extra_btns"] = btns1
             state["hover_extra_focus"] = fs1
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"HOVER_EXTRA dump fail: {e}")
             rec(traceback.format_exc()[-800:])
 
@@ -1495,14 +1495,14 @@ def run():
         try:
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.4)
             btns2, fs2, _tex2 = _dump_phase("HOVER_START", lines)
             state["phases"] += 1
             state["hover_start_btns"] = btns2
             state["hover_start_focus"] = fs2
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"HOVER_START dump fail: {e}")
             rec(traceback.format_exc()[-800:])
 
@@ -1564,7 +1564,7 @@ def run():
         import renpy.main as renpy_main
 
         renpy_main.main()
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         rec(f"main exit {type(e).__name__}: {e}")
     t.join(timeout=2.0)
 
@@ -1583,12 +1583,12 @@ def run():
         Path(art_root).parent.mkdir(parents=True, exist_ok=True)
         Path(art_root).write_text(body)
         rec(f"wrote artifact {art_root}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"artifact write fail: {e}")
     try:
         sys.__stdout__.write(body[-4000:])
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     _request_quit()
     if not ok:

@@ -40,8 +40,7 @@ def pixellate(src, dst, avgwidth, avgheight, outwidth, outheight):
     sp, dp = _pixels(src), _pixels(dst)
     aw = max(1, int(avgwidth))
     ah = max(1, int(avgheight))
-    ow = max(1, int(outwidth))
-    oh = max(1, int(outheight))
+    # outwidth/outheight kept for API compat; virtual grid derives from avgwidth/avgheight
     # virtual grid
     vw = max(1, (sw + aw - 1) // aw)
     vh = max(1, (sh + ah - 1) // ah)
@@ -110,10 +109,10 @@ def linmap(src, dst, rmap, gmap, bmap, amap):
     for i in range(0, sw * sh * 4, 4):
         for c in range(4):
             v = (sp[i + c] * maps[c]) >> 8
-            dp[i + c] = 255 if v > 255 else (0 if v < 0 else v)
+            dp[i + c] = 255 if v > 255 else (max(v, 0))
 
 
-def map(src, dst, rmap, gmap, bmap, amap):  # noqa: A001 — match _renpy API
+def map(src, dst, rmap, gmap, bmap, amap):
     """256-entry LUT map per channel (bytes/bytearray/str)."""
 
     def _lut(m):

@@ -266,7 +266,7 @@ def main():
     try:
         src_w, src_h, rgba_src = _png_rgba(png)
         src_tag = "gui/frame.png"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=load_frame_png err={e} path={png}"
         out.write_text(msg + "\n")
         print("[tq_chrome_blackblocks]", msg, flush=True)
@@ -276,7 +276,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     surf = _Surf(src_w, src_h, rgba_src)
@@ -301,7 +301,7 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[tq_chrome_blackblocks]", msg, flush=True)

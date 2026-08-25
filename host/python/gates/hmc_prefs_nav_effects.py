@@ -44,11 +44,11 @@ def _log(msg):
     try:
         sys.__stdout__.write(line)
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/hmc_prefs_nav_effects.log", "a").write(msg + "\n")  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -57,7 +57,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -79,7 +79,7 @@ def _pre_main_host_stubs():
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}")
 
     try:
@@ -99,14 +99,14 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             rpg.import_as_pygame()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"import_as_pygame soft-fail: {e}")
         _log("pygame host shim ok")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame soft-fail: {e}")
 
     try:
@@ -128,10 +128,10 @@ def _pre_main_host_stubs():
             import renpy
 
             renpy.uguu = pkg
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("uguu host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}")
 
     try:
@@ -142,10 +142,10 @@ def _pre_main_host_stubs():
             import renpy as _renpy_pkg
 
             _renpy_pkg.ecsign = _ecsign
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("ecsign host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -174,12 +174,12 @@ def _force_product_redraw():
         draw.draw_screen(surftree, flip=True)
         try:
             iface.surftree = surftree
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         info["path"] = "rebuild_render_screen"
         info["root"] = type(root).__name__
         return info
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         info["error"] = f"{type(e).__name__}:{e}"
         return info
 
@@ -190,7 +190,7 @@ def _read_rt():
     pres = _force_product_redraw()
     try:
         rw, rh, rt = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return None, None, None, {"error": f"read:{e}", "present": pres}
     return rw, rh, rt, {"present": pres}
 
@@ -243,18 +243,18 @@ def _force_show_prefs(kind=None):
         action()
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return True, "Show(%r)" % (kind or "preferences")
-    except Exception as e1:  # noqa: BLE001
+    except Exception as e1:
         try:
             renpy.display.screen.show_screen("preferences", kind=kind or "sound_config")
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             return True, f"show_screen:{e1}"
-        except Exception as e2:  # noqa: BLE001
+        except Exception as e2:
             return False, f"fail:{e1}|{e2}"
 
 
@@ -270,7 +270,7 @@ def _virtual_to_window(x, y):
 
         if hasattr(renpy_host, "window_size"):
             ww, wh = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     if not ww or not wh:
         try:
@@ -278,7 +278,7 @@ def _virtual_to_window(x, y):
             phys = getattr(draw, "physical_size", None) or getattr(draw, "window_size", None)
             if phys and len(phys) >= 2:
                 ww, wh = int(phys[0]), int(phys[1])
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     if not ww or not wh:
         return int(x), int(y)
@@ -287,7 +287,7 @@ def _virtual_to_window(x, y):
         draw = renpy.display.draw
         if hasattr(draw, "untranslate_point"):
             return draw.untranslate_point(int(x), int(y))
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     sx = float(ww) / vx
     sy = float(wh) / vy
@@ -305,7 +305,7 @@ def _inject_motion(x, y):
         from renpy import pygame
 
         pygame.mouse.set_pos((int(wx), int(wy)))
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         if hasattr(renpy_host, "inject_mouse"):
@@ -316,29 +316,29 @@ def _inject_motion(x, y):
         try:
             renpy_host.inject_mouse(int(wx), int(wy), 0)
             return "inject_mouse3@%d,%d" % (wx, wy)  # noqa: UP031
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return f"inject_mouse3_fail:{e}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _err4 = f"inject_mouse4_fail:{e}"
     try:
         if hasattr(renpy_host, "inject_mouse_motion"):
             renpy_host.inject_mouse_motion(int(wx), int(wy))
             return "inject_mouse_motion"
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         import renpy
 
         try:
             renpy.display.interface.set_mouse_pos(int(x), int(y))
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             renpy.display.focus.set_focused(None, None, None)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return (_err4 + "|set_mouse_pos") if _err4 else "set_mouse_pos"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return f"fail:{e}"
 
 
@@ -352,7 +352,7 @@ def _force_icon_hover_events(tab_index):
     notes = []
     try:
         scr = renpy.display.screen.get_screen("preferences")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return [f"get_screen:{e}"]
     if scr is None:
         return ["no_screen"]
@@ -368,7 +368,7 @@ def _force_icon_hover_events(tab_index):
 
             if isinstance(d, Button):
                 buttons.append(d)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         kids = getattr(d, "children", None) or ()
         for c in kids:
@@ -385,7 +385,7 @@ def _force_icon_hover_events(tab_index):
     for b in buttons:
         try:
             getattr(b.style, "xsize", None) or getattr(b, "xsize", None)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         # style may expose xmaximum; also check render size later
         nav.append(b)
@@ -397,13 +397,13 @@ def _force_icon_hover_events(tab_index):
             act = getattr(b, "action", None)
             if act is not None and "preferences" in repr(act).lower():
                 score += 2
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             # selected flag used by prefs tabs
             if getattr(b, "selected", None) is not None:
                 score += 1
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         ranked.append((score, b))
     ranked.sort(key=lambda t: -t[0])
@@ -425,7 +425,7 @@ def _force_icon_hover_events(tab_index):
             if getattr(d, "transform_event_responder", False) or hasattr(d, "set_transform_event"):
                 d.set_transform_event("hover")
                 n += 1
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         kids = getattr(d, "children", None) or ()
         for c in kids:
@@ -440,17 +440,17 @@ def _force_icon_hover_events(tab_index):
             # Full button focus path (style prefix + transform events).
             b.focus(default=False)
             notes.append("focus[%d]=ok" % i)  # noqa: UP031
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             notes.append("focus[%d]=%s" % (i, e))  # noqa: UP031
         n = force_hover_on(b)
         notes.append("set_hover[%d]=%d" % (i, n))  # noqa: UP031
         try:
             renpy.display.render.redraw(b, 0)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     try:
         renpy.restart_interaction()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     return notes
 
@@ -472,7 +472,7 @@ def _matrix_pack_sample(node, depth=0, acc=None):
             wd = getattr(__import__("renpy", fromlist=["display"]).display, "draw", None)
             if wd is not None and hasattr(wd, "_matrix_to_floats"):
                 floats = wd._matrix_to_floats(mat)
-        except Exception:  # noqa: BLE001
+        except Exception:
             floats = None
         if floats is None:
             try:
@@ -482,7 +482,7 @@ def _matrix_pack_sample(node, depth=0, acc=None):
                     float(mat.xdz), float(mat.ydz), float(mat.zdz), float(mat.wdz),
                     float(mat.xdw), float(mat.ydw), float(mat.zdw), float(mat.wdw),
                 ]
-            except Exception:  # noqa: BLE001
+            except Exception:
                 floats = None
         # Colorize yellow: col3 (translation) ≈ (1, 0.87, 0); Identity: diag 1
         kind = "unknown"
@@ -586,7 +586,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
@@ -594,7 +594,7 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -609,12 +609,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -639,7 +639,7 @@ def run():
                 if mm:
                     rec(f"main_menu at t={time.time():.2f}")
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.1)
         else:
@@ -748,7 +748,7 @@ def run():
             rec(
                 f"tree has_image_dissolve={has_id} has_u_animation={has_anim} has_matrixcolor={has_mc}"
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"walk exc: {e}")
             rec(traceback.format_exc())
 
@@ -761,7 +761,7 @@ def run():
         rec("hover inject virtual=(%d,%d) via=%s" % (hx, hy, how))  # noqa: UP031
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             for _ in range(8):
@@ -769,15 +769,15 @@ def run():
                     renpy.display.focus.mouse_handler(
                         None, int(hx), int(hy), default=False
                     )
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
                 try:
                     renpy.restart_interaction()
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
                 _force_product_redraw()
                 time.sleep(0.04)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"hover drive soft-fail: {e}")
 
         try:
@@ -790,7 +790,7 @@ def run():
             rec("matrix_kinds_after_mouse=%s n=%d" % (kinds, len(mats)))  # noqa: UP031
             for m in mats[:12]:
                 rec("  matrix kind={} c3={}".format(m["kind"], m.get("c3")))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"matrix sample: {e}")
 
         rw2, rh2, rt2, meta2 = _read_rt()  # noqa: RUF059
@@ -845,7 +845,7 @@ def run():
                 rec("matrix_kinds_after_force=%s n=%d" % (kinds, len(mats)))  # noqa: UP031
                 for m in mats[:12]:
                     rec("  matrix kind={} c3={}".format(m["kind"], m.get("c3")))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 rec(f"matrix force sample: {e}")
             rw2, rh2, rt2, _meta2 = _read_rt()
             sx2 = float(rw2) / 1920.0 if rw2 else sx
@@ -884,12 +884,12 @@ def run():
         _inject_motion(10, 10)
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         for _ in range(4):
             try:
                 renpy.display.focus.mouse_handler(None, 10, 10, default=False)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             _force_product_redraw()
             time.sleep(0.04)
@@ -937,7 +937,7 @@ def run():
             try:
                 scr = renpy.display.screen.get_screen("preferences")
                 rec("prefs screen=%s" % (type(scr).__name__ if scr else None))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 rec(f"screen dump: {e}")
 
         state["phase"] = "done"
@@ -952,7 +952,7 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         rec(f"main exit {type(e).__name__}: {e}")
 
     selected_ok = bool(state.get("selected_ok"))

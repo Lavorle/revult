@@ -38,11 +38,11 @@ def _safe_write(msg):
     data = (msg if msg.endswith("\n") else msg + "\n").encode("utf-8", "replace")
     try:
         os.write(1, data)
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             sys.__stdout__.write(msg if msg.endswith("\n") else msg + "\n")
             sys.__stdout__.flush()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -79,7 +79,7 @@ except ComposerError as e:
     ok = False
     notes.append(f"FAIL: composer.get raised ComposerError: {e}")
     result = None
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     notes.append(f"FAIL: composer.get {type(e).__name__}: {e}")
     result = None
@@ -164,7 +164,7 @@ if result is not None and int(result.pipeline) > 0:
                 notes.append("FAIL: RT is essentially black after composed draw")
             else:
                 notes.append("draw_non_black=True")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         notes.append(f"FAIL: draw {type(e).__name__}: {e}")
 

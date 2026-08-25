@@ -150,7 +150,7 @@ try:
         w, h, rgba = _png_rgba(png)
     else:
         raise FileNotFoundError(str(png))
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     # Fallback: solid non-clear magenta full window
     w, h = 1280, 720
     rgba = bytes([200, 40, 180, 255]) * (w * h)

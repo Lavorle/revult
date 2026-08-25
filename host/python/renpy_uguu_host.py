@@ -117,7 +117,7 @@ def glGetString(*_a, **_k):
 glGetIntegerv = _noop
 
 # ptr helper used by real uguu for buffer views — host never calls real GL.
-class ptr:  # noqa: N801 — match renpy.uguu.uguu.ptr name
+class ptr:
     def __init__(self, o=None, ro=True):
         self.obj = o
 

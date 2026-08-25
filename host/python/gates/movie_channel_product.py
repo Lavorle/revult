@@ -96,7 +96,7 @@ def log(msg):
     # Prefer raw fd write — partial renpy import can hijack print → renpy.log.
     try:
         os.write(1, (f"[movie_channel_product] {msg}\n").encode("utf-8", "replace"))
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -240,7 +240,7 @@ try:
                 )
             else:
                 log("PASS AC-M5 layout render {}x{}".format(*rv_size))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             ok = False
             log(f"FAIL AC-M5 layout render exception: {type(e).__name__}: {e}")
             import traceback
@@ -249,7 +249,7 @@ try:
 
         rps.stop(CH)
 
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     log(f"FAIL exception: {type(e).__name__}: {e}")
     import traceback
@@ -261,7 +261,7 @@ out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 log(f"WROTE {out} ok={ok}")
 try:
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 if not ok:
     raise SystemExit(1)

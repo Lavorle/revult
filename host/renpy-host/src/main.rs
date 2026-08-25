@@ -178,6 +178,8 @@ fn run_product_pump(python: PythonRuntime) -> Result<i32, String> {
         benchmark_min: Duration::from_secs(u64::MAX),
         benchmark_max: Duration::ZERO,
         benchmark_count: 0,
+        benchmark_durations: Vec::new(),
+        benchmark_render_pass_total: Duration::ZERO,
     };
 
     // Mechanism 1: wait_until re-enters this EventLoop via nested pump_app_events.
@@ -242,6 +244,39 @@ fn run_product_pump(python: PythonRuntime) -> Result<i32, String> {
     // Write benchmark JSON if enabled
     if app.benchmark_frames.is_some() {
         let avg = renpy_host::calculate_avg_duration(app.benchmark_total, app.benchmark_count);
+        // 1% low: average of slowest 1% frames (ceil)
+        let one_percent_low_fps = if app.benchmark_durations.is_empty() {
+            None
+        } else {
+            let mut sorted = app.benchmark_durations.clone();
+            sorted.sort_by(|a, b| b.cmp(a)); // descending (slowest first)
+            let n = sorted.len();
+            let take = ((n as f64 * 0.01).ceil() as usize).max(1).min(n);
+            let slice = &sorted[..take];
+            let sum: Duration = slice.iter().copied().sum();
+            let avg_ns = sum.as_nanos() as f64 / take as f64;
+            if avg_ns > 0.0 {
+                Some(1e9 / avg_ns)
+            } else {
+                None
+            }
+        };
+        let render_pass_avg_ns = if app.benchmark_count > 0 {
+            Some(
+                (app.benchmark_render_pass_total.as_nanos() as f64 / app.benchmark_count as f64)
+                    as u64,
+            )
+        } else {
+            None
+        };
+        let one_low_str = match one_percent_low_fps {
+            Some(v) => format!("{:.2}", v),
+            None => "null".to_string(),
+        };
+        let render_pass_str = match render_pass_avg_ns {
+            Some(v) => v.to_string(),
+            None => "null".to_string(),
+        };
         let json = format!(
             r#"{{
   "frames": {},
@@ -249,14 +284,20 @@ fn run_product_pump(python: PythonRuntime) -> Result<i32, String> {
   "avg_frame_time_ms": {},
   "min_frame_time_ms": {},
   "max_frame_time_ms": {},
-  "total_time_sec": {}
+  "total_time_sec": {},
+  "one_percent_low_fps": {},
+  "render_pass_duration_ns": {},
+  "benchmark_render_pass_total_ns": {}
 }}"#,
             app.benchmark_count,
             app.benchmark_total.as_millis(),
             avg.as_millis(),
             app.benchmark_min.as_millis(),
             app.benchmark_max.as_millis(),
-            app.benchmark_total.as_secs_f64()
+            app.benchmark_total.as_secs_f64(),
+            one_low_str,
+            render_pass_str,
+            app.benchmark_render_pass_total.as_nanos()
         );
         let path = app.benchmark_output.as_deref().unwrap_or("benchmark.json");
         match std::fs::write(path, json) {
@@ -332,6 +373,8 @@ struct ProductApp {
     benchmark_min: Duration,
     benchmark_max: Duration,
     benchmark_count: u64,
+    benchmark_durations: Vec<Duration>,
+    benchmark_render_pass_total: Duration,
 }
 
 impl ApplicationHandler for ProductApp {
@@ -500,6 +543,8 @@ impl ApplicationHandler for ProductApp {
                                 }
                                 self.benchmark_count += 1;
                                 self.benchmark_total += elapsed;
+                                self.benchmark_durations.push(elapsed);
+                                self.benchmark_render_pass_total += elapsed;
                                 if elapsed < self.benchmark_min {
                                     self.benchmark_min = elapsed;
                                 }

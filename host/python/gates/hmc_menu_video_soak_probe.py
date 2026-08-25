@@ -46,11 +46,11 @@ def _log(msg):
         sys.__stdout__.write("[hmc_menu_video_soak] " + str(msg))
         sys.__stdout__.write(chr(10))
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/hmc_menu_video_soak_probe.log", "a").write(str(msg) + chr(10))  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -58,7 +58,7 @@ def _quit():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -77,7 +77,7 @@ def _stubs():
 
         sys.modules["renpy.audio.renpysound"] = h
         a.renpysound = h
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"sound {e}")
     try:
         import host_pygame
@@ -95,13 +95,13 @@ def _stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = scrap
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
@@ -119,7 +119,7 @@ def _stubs():
         import renpy
 
         renpy.uguu = pkg
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
@@ -128,7 +128,7 @@ def _stubs():
         import renpy
 
         renpy.ecsign = e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign {e}")
 
 
@@ -155,7 +155,7 @@ def _take_host_gaps():
         peek = getattr(renpy_host, "inter_present_gaps_ms", None)
         if peek is not None:
             return [float(x) for x in list(peek())]
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     return []
 
@@ -196,7 +196,7 @@ def _path_cache_snapshot():
     }
     try:
         from renpy.audio import renpysound_host as rps
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         snap["error"] = f"{type(e).__name__}: {e}"
         return snap
 
@@ -213,7 +213,7 @@ def _path_cache_snapshot():
                 rf = bool(rps.path_cache_ready_full(key))
                 if rf or snap["ready_full"] is None:
                     snap["ready_full"] = rf
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
     try:
@@ -224,7 +224,7 @@ def _path_cache_snapshot():
             for k, entry in cache.items():
                 try:
                     n = len(entry.get("frames") or [])
-                except Exception:  # noqa: BLE001
+                except Exception:
                     n = 0
                 if n > best_n:
                     best_n = n
@@ -239,7 +239,7 @@ def _path_cache_snapshot():
                 if snap["ready_full"] is None:
                     snap["ready_full"] = bool(entry.get("ready_full"))
                 snap["helper"] = (snap.get("helper") or "") + "+_PATH_FRAME_CACHE"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         snap["cache_error"] = f"{type(e).__name__}: {e}"
     return snap
 
@@ -269,9 +269,9 @@ def _movie_frame_index_samples(max_channels=16):
                             "total_decoded": int(total) if total is not None else None,
                         }
                     )
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     return samples
 
@@ -342,7 +342,7 @@ def _sample_window(label, seconds, poll_s=0.05):
         n0i = int(n0) if n0 is not None else None
         n1i = int(n1) if n1 is not None else None
         cache_growth = (n1i - n0i) if (n0i is not None and n1i is not None) else None
-    except Exception:  # noqa: BLE001
+    except Exception:
         cache_growth = None
 
     return {
@@ -384,13 +384,13 @@ def _rank_h(early, late):
             n_e = int((early.get("path_cache_end") or {}).get("nframes") or 0)
             n_l = int((late.get("path_cache_end") or {}).get("nframes") or 0)
             growth = n_l - n_e
-        except Exception:  # noqa: BLE001
+        except Exception:
             growth = None
     inflight_late = bool(late.get("path_cache_inflight_end"))
     n_late = late.get("path_cache_nframes_end")
     try:
         n_late_i = int(n_late) if n_late is not None else None
-    except Exception:  # noqa: BLE001
+    except Exception:
         n_late_i = None
     host_over_prod = late.get("host_frames_minus_product")
     advances = bool(late.get("frame_index_advances"))
@@ -450,7 +450,7 @@ def _rank_h(early, late):
         pp = float(late.get("product_presents") or 0)
         if pp > 0:
             ratio = hf / pp
-    except Exception:  # noqa: BLE001
+    except Exception:
         ratio = None
     if ratio is not None and ratio > 1.8 and late_bad:
         hints.append({
@@ -509,14 +509,14 @@ def probe():
         try:
             if bool(getattr(renpy.store, "main_menu", False)):
                 break
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         time.sleep(0.2)
 
     mm = False
     try:
         mm = bool(getattr(renpy.store, "main_menu", False))
-    except Exception:  # noqa: BLE001
+    except Exception:
         mm = False
     report["main_menu"] = mm
     lines.append(f"main_menu={mm}")
@@ -631,7 +631,7 @@ def main():
         try:
             import renpy_main_host
             renpy_main_host.install(renpy)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"main_host: {e}")
         try:
             import renpy.arguments
@@ -642,10 +642,10 @@ def main():
                 try:
                     renpy.arguments.register_command("run", renpy.arguments.run, True)
                     renpy.arguments.register_command("quit", renpy.arguments.quit)
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             renpy.game.args = renpy.arguments.bootstrap()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"args fail {e}")
             _quit()
             return
@@ -655,12 +655,12 @@ def main():
             renpy.main.main()
         except SystemExit:
             pass
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"main exc {e}")
             _log(traceback.format_exc())
         finally:
             _quit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"main outer exc {e}")
         _log(traceback.format_exc())
         _quit()

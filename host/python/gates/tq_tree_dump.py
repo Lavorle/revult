@@ -54,7 +54,7 @@ def summarize(node, depth=0, acc=None, budget=150):
     try:
         if (not tw or not th) and hasattr(node, "get_size"):
             tw, th = node.get_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     if not tw or not th: stats["size0"] += 1
     tex = getattr(node, "texture", None)
@@ -112,7 +112,7 @@ def hooked(self, surftree, flip=True):
                         non += 1
                 L(f"RT #{n} mean=({mr:.1f},{mg:.1f},{mb:.1f}) nonclear={non}")
             return rv
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             L(f"hook {type(e).__name__}: {e}")
             L(traceback.format_exc()[-1200:])
             return _orig(self, surftree, flip=flip)
@@ -127,7 +127,7 @@ try:
     tq.run()
 except SystemExit:
     pass
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     L(f"tq.run fail {e}")
     L(traceback.format_exc()[-1000:])
 
@@ -136,7 +136,7 @@ L(f"wrote {outp} draws={_n['i']}")
 print("ok=diag", flush=True)
 try:
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

@@ -41,11 +41,11 @@ def _log(msg):
     try:
         sys.__stdout__.write(line)
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/hmc_prefs_hover_thrash.log", "a").write(msg + "\n")  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -54,7 +54,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -75,7 +75,7 @@ def _pre_main_host_stubs():
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}")
 
     try:
@@ -95,13 +95,13 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame soft-fail: {e}")
 
     try:
@@ -123,9 +123,9 @@ def _pre_main_host_stubs():
             import renpy
 
             renpy.uguu = pkg
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}")
 
     try:
@@ -136,9 +136,9 @@ def _pre_main_host_stubs():
             import renpy as _renpy_pkg
 
             _renpy_pkg.ecsign = _ecsign
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -167,11 +167,11 @@ def _force_product_redraw():
         draw.draw_screen(surftree, flip=True)
         try:
             iface.surftree = surftree
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         info["path"] = "rebuild_render_screen"
         return info
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         info["error"] = f"{type(e).__name__}:{e}"
         return info
 
@@ -182,7 +182,7 @@ def _read_rt():
     pres = _force_product_redraw()
     try:
         rw, rh, rt = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return None, None, None, {"error": f"read:{e}", "present": pres}
     return rw, rh, rt, {"present": pres}
 
@@ -266,15 +266,15 @@ def _force_show_prefs(kind):
         renpy.display.screen.show_screen("preferences", kind=kind)
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return True, "show_screen_preferences_kind"
-    except Exception as e1:  # noqa: BLE001
+    except Exception as e1:
         try:
             renpy.store.ShowMenu("preferences")()
             renpy.display.screen.show_screen("preferences", kind=kind)
             return True, "ShowMenu+kind"
-        except Exception as e2:  # noqa: BLE001
+        except Exception as e2:
             return False, f"{e1}|{e2}"
 
 
@@ -287,21 +287,21 @@ def _inject_hover(vx, vy):
     try:
         renpy_host.inject_mouse(int(vx), int(vy), 0, False)
         how.append("inject_mouse")
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             renpy_host.inject_mouse(int(vx), int(vy), 0)
             how.append("inject_mouse3")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             how.append(f"inject_fail:{e}")
     try:
         renpy.display.focus.mouse_handler(None, int(vx), int(vy), default=False)
         how.append("mouse_handler")
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         renpy.restart_interaction()
         how.append("restart")
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     return "+".join(how)
 
@@ -348,7 +348,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
@@ -356,7 +356,7 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -371,12 +371,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -413,7 +413,7 @@ def run():
                 if mm:
                     rec(f"main_menu at t={time.time():.2f}")
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.1)
         else:
@@ -552,7 +552,7 @@ def run():
         try:
             rec("entering renpy.main.main()")
             renpy.main.main()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"main exit {type(e).__name__}: {e}")
         finally:
             if state["phase"] not in ("done", "fail"):
@@ -562,7 +562,7 @@ def run():
                         "ok=False\nphase=%s\nbroken=%d\n"  # noqa: UP031
                         % (state["phase"], state["broken"])
                     )
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             _request_quit()
 

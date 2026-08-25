@@ -51,4 +51,3 @@ def reset():
     global _pos, _buttons
     _pos = (0, 0)
     _buttons = (False, False, False)
-    return None

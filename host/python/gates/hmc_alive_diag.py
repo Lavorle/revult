@@ -40,9 +40,9 @@ def main():
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good,_,_,err = call() if name!="set_game_dir" else call()  # noqa: RUF034
+        good,_,_,err = call() if name!="set_game_dir" else call()
         # bootstrap returns (good, miss, err, extra)
-        res = call() if name=="set_game_dir" else call()  # noqa: RUF034
+        res = call() if name=="set_game_dir" else call()
         good = res[0]; err=res[2]
         _log(f"stage {name} good={good} err={err!r}")
         if not good:
@@ -51,7 +51,7 @@ def main():
     renpy.host_build=True
     try:
         import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"main_host {e}")
     try:
         import renpy.arguments
@@ -59,16 +59,16 @@ def main():
         sys.argv=[sys.argv[0] if sys.argv else "renpy-host", basedir, "run"]
         if not getattr(renpy.arguments,"commands",None):
             try: renpy.arguments.register_command("run", renpy.arguments.run, True)
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"args {e}")
     # stubs
     try:
         import renpy.audio as _ra
         import renpy.audio.renpysound_host as _rs
         sys.modules["renpy.audio.renpysound"]=_rs; _ra.renpysound=_rs
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import host_pygame
         import host_pygame.locals as _loc
@@ -79,10 +79,10 @@ def main():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.scrap=_hs
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
         try: rpg.import_as_pygame()
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception as e:  # noqa: BLE001
+        except Exception: pass
+    except Exception as e:
         _log(f"pygame {e}")
     try:
         import types
@@ -96,11 +96,11 @@ def main():
             if n.startswith("GL_") or n in ("clear_errors","get_error"):
                 setattr(pkg,n,getattr(_u,n))
         pkg.uguu=_u; pkg.gl=_u; renpy.uguu=pkg
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import renpy_ecsign_host as _e
         sys.modules["renpy.ecsign"]=_e; renpy.ecsign=_e
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
 
     # wrap draw_model to count
     counts={"draw_model":0,"draw_model_tex":0,"draw_model_dead":0,"draw_screen":0}
@@ -112,7 +112,7 @@ def main():
             try:
                 if hasattr(renpy_host,"texture_alive") and not renpy_host.texture_alive(int(texture)):
                     counts["draw_model_dead"]+=1
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         return _odm(pipeline, mesh, texture, texture1, uniforms, texture2)
     renpy_host.draw_model = wrap_dm
@@ -217,7 +217,7 @@ def main():
                 state["done"]=True
                 renpy_host.request_quit()
                 return
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 import traceback
                 _log(f"watch err {e}\n{traceback.format_exc()[-600:]}")
         renpy_host.request_quit()
@@ -225,13 +225,13 @@ def main():
     try:
         import renpy.main as m
         m.main()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"main exit {type(e).__name__}:{e}")
     _log(f"done counts={counts}")
 
 if True:
     try: main()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         import traceback
         _log(f"top {e}\n{traceback.format_exc()[-800:]}")
 

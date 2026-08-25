@@ -151,7 +151,7 @@ def main():
         else:
             lines.append("PASS: inject_key default unicode='' present")
 
-    except Exception:  # noqa: BLE001
+    except Exception:
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())

@@ -83,7 +83,7 @@ def main():
             # Nested pump so winit Resized is delivered.
             try:
                 renpy_host.pump_once(16)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
 
             d = renpy_host.poll_event()
@@ -136,7 +136,7 @@ def main():
         w1, h1 = renpy_host.window_size()
         lines.append(f"NOTE: window_size after={w1}x{h1}")
 
-    except Exception:  # noqa: BLE001
+    except Exception:
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())

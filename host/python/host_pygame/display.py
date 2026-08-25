@@ -6,7 +6,6 @@ import renpy_host  # type: ignore
 
 from .surface import Surface
 
-
 _mode = None
 
 

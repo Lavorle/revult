@@ -20,14 +20,14 @@ def _base():
 def _log(m):
     try:
         sys.__stdout__.write(f"[dc_bg] {m}\n"); sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_dc_bg_diag.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
         import renpy_host; renpy_host.request_quit()  # noqa: I001
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def _clear_falsey(n):
@@ -41,7 +41,7 @@ def _pre():
         import renpy.audio as a
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; a.renpysound=h
-    except Exception as e: _log(f"sound {e}")  # noqa: BLE001
+    except Exception as e: _log(f"sound {e}")
     try:
         import host_pygame
         import host_pygame.locals as loc
@@ -52,10 +52,10 @@ def _pre():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.scrap=scrap
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
         try: rpg.import_as_pygame()
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception as e: _log(f"pygame {e}")  # noqa: BLE001
+        except Exception: pass
+    except Exception as e: _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u; sys.modules["renpy.uguu.gl"]=u
@@ -65,12 +65,12 @@ def _pre():
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
         import renpy; renpy.uguu=pkg  # noqa: I001
-    except Exception as e: _log(f"uguu {e}")  # noqa: BLE001
+    except Exception as e: _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
         import renpy; renpy.ecsign=e  # noqa: I001
-    except Exception as e: _log(f"ecsign {e}")  # noqa: BLE001
+    except Exception as e: _log(f"ecsign {e}")
 
 def _sample_rt():
     import renpy_host
@@ -94,7 +94,7 @@ def _find_in_render(node, pred, acc=None, budget=None, depth=0, path=""):
         if pred(node):
             acc.append((path, node))
             if len(acc)>=30: return acc
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     kids=[]
     try:
@@ -105,18 +105,18 @@ def _find_in_render(node, pred, acc=None, budget=None, depth=0, path=""):
                     kids.append((c[0], "%s/c%d"%(path,i)))  # noqa: UP031
                 else:
                     kids.append((c, "%s/c%d"%(path,i)))  # noqa: UP031
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     for attr in ("cached_texture","cached_model","texture"):
         try:
             v=getattr(node,attr,None)
             if v is not None: kids.append((v, f"{path}/{attr}"))
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
     try:
         ts=getattr(node,"textures",None)
         if ts:
             for i,t in enumerate(ts):
                 kids.append((t, "%s/tex%d"%(path,i)))  # noqa: UP031
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     for k,p in kids:
         _find_in_render(k, pred, acc, budget, depth+1, p)
         if len(acc)>=30: break
@@ -132,7 +132,7 @@ def _ht_info(ht):
     try:
         import renpy_host
         alive=bool(renpy_host.texture_alive(h)) if h else False
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         alive=f"err:{e}"
     # sample pixel stash if any
     stash_ok=None
@@ -166,7 +166,7 @@ def _ht_info(ht):
                         o=i*4
                         rs+=px[o]; gs+=px[o+1]; bs+=px[o+2]; as_+=px[o+3]; cnt+=1
                     stash_ok={"mean":(rs/cnt,gs/cnt,bs/cnt,as_/cnt),"len":len(px)}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         stash_ok={"err":str(e)}
     return {"handle":h,"w":w,"h":hh,"alive":alive,"stash":stash_ok}
 
@@ -179,7 +179,7 @@ def _scan_displayables(root, needle_substrings):
         budget[0]-=1
         try:
             s=repr(d)
-        except Exception:  # noqa: BLE001
+        except Exception:
             s=type(d).__name__
         for n in needle_substrings:
             if n in s:
@@ -189,30 +189,30 @@ def _scan_displayables(root, needle_substrings):
         for attr in ("child","children","image","displayable","style"):
             try:
                 v=getattr(d,attr,None)
-            except Exception:  # noqa: BLE001, S112
+            except Exception:
                 continue
             if v is None: continue
             if attr=="children":
                 try:
                     for i,c in enumerate(list(v)[:50]):
                         walk(c, path+"/ch%d"%i, depth+1)  # noqa: UP031
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             elif attr=="style":
                 try:
                     for k in ("background","idle_background","hover_background","selected_background","child"):
                         try:
                             getattr(v,k,None) if not callable(getattr(v,k,None)) else None
-                        except Exception:  # noqa: BLE001, S110
+                        except Exception:
                             pass
                         # style properties often via index
                     # try style["background"]
                     try:
                         bg=v["background"]
                         walk(bg, path+"/style.bg", depth+1)
-                    except Exception:  # noqa: BLE001, S110
+                    except Exception:
                         pass
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             else:
                 walk(v, path+"/"+attr, depth+1)
@@ -221,7 +221,7 @@ def _scan_displayables(root, needle_substrings):
             if hasattr(d,"visit"):
                 for c in d.visit() or []:
                     walk(c, path+"/v", depth+1)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     walk(root, "root", 0)
     return hits
@@ -230,15 +230,15 @@ def _show(kind):
     import renpy
     renpy.display.screen.show_screen("preferences", kind=kind)
     try: renpy.restart_interaction()
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
 
 def _hide():
     import renpy
     for n in ("preferences","confirm","load","save","appreciation","flowchart"):
         try: renpy.store.Hide(n)()
-        except Exception:  # noqa: BLE001
+        except Exception:
             try: renpy.hide_screen(n)
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
 
 def _redraw():
     import interact_helpers as ih
@@ -258,15 +258,15 @@ def _redraw():
         def pred(n):
             return isinstance(n, HostTexture) and int(getattr(n,"w",0) or 0)>=1800
         pre=_find_in_render(st, pred)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         pre=[("err",str(e))]
     try:
         if hasattr(draw,"load_all_textures"): draw.load_all_textures(st)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return "load:"+str(e), st, pre
     draw.draw_screen(st, flip=True)
     try: iface.surftree=st
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     return "ok", st, pre
 
 def _worker():
@@ -279,7 +279,7 @@ def _worker():
         while time.time()<deadline:
             try:
                 if getattr(renpy.store,"main_menu",False): break
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
             time.sleep(0.2)
         lines.append("main_menu={}".format(getattr(renpy.store,"main_menu",None)))
 
@@ -291,14 +291,14 @@ def _worker():
             # sample center pixel
             try:
                 px = surf.get_at((sw//2, sh//2))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 px = None
             lines.append(f"im.load_surface bg size=({sw},{sh}) center={px}")
             # load_texture
             draw=renpy.display.draw
             ht=draw.load_texture(surf)
             lines.append(f"load_texture bg -> {_ht_info(ht)}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             lines.append(f"im.load_surface FAIL {e}")
 
         for kind in ("dialog_config_2","dialog_config_1","dialog_config_1"):
@@ -308,7 +308,7 @@ def _worker():
             scr=None
             try:
                 scr=renpy.display.screen.get_screen("preferences")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 lines.append(f"get_screen fail {e}")
             d_hits=[]
             if scr is not None:
@@ -316,7 +316,7 @@ def _worker():
                     # screen widget tree
                     child=getattr(scr,"child",None) or getattr(scr,"screen",None) or scr
                     d_hits=_scan_displayables(child, ["background.png","mask.png","preferences/common"])
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     d_hits=[("scan_err",str(e))]
             lines.append("KIND %s displayable_hits=%d"% (kind, len(d_hits)))  # noqa: UP031
             for h in d_hits[:12]:
@@ -366,9 +366,9 @@ def _worker():
                         renpy_host.sample_texture_count() if hasattr(renpy_host,"sample_texture_count") else "?",
                         renpy_host.texture_order_len() if hasattr(renpy_host,"texture_order_len") else "?",
                     ))
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     lines.append(f"  arena err {e}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 lines.append(f"  cache err {e}")
 
             rt=_sample_rt()
@@ -397,12 +397,12 @@ def _worker():
                     # walk for HT
                     found=_find_in_render(r, lambda n: isinstance(n, HostTexture))
                     lines.append("  solo_bg_hts=%s"%[(_ht_info(n)) for _,n in found[:3]])
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 lines.append(f"  solo_bg FAIL {e}")
 
         out.write_text("\n".join(lines)+"\n")
         _log(f"wrote {out}")
-    except Exception:  # noqa: BLE001
+    except Exception:
         tb=traceback.format_exc(); lines.append(tb); out.write_text("\n".join(lines)+"\n"); _log(tb)
     finally:
         time.sleep(0.3); _quit()
@@ -433,7 +433,7 @@ def main():
     renpy.host_build=True
     try:
         import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
-    except Exception as e: _log(f"main_host {e}")  # noqa: BLE001
+    except Exception as e: _log(f"main_host {e}")
     try:
         import renpy.arguments
         basedir=getattr(renpy.config,"basedir",None) or game
@@ -443,20 +443,20 @@ def main():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
         renpy.game.args=renpy.arguments.bootstrap()
-    except Exception as e: _log(f"args {e}")  # noqa: BLE001
+    except Exception as e: _log(f"args {e}")
     _pre()
     t=threading.Thread(target=_worker, daemon=True); t.start()
     import renpy.main as m
     try: m.main()
-    except BaseException as e: _log(f"main exit {e}")  # noqa: BLE001
+    except BaseException as e: _log(f"main exit {e}")
 
 if __name__=="__main__":
     main()
 else:
     try: main()
-    except Exception:  # noqa: BLE001
+    except Exception:
         traceback.print_exc(); _quit()
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

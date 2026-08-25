@@ -72,7 +72,7 @@ def _write(lines, ok, **extra):
 def _request_quit():
     try:
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -255,7 +255,7 @@ def _bootstrap(lines):
 
     try:
         render_mod.render_ready()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(lines, f"render_ready softfail {e}")
 
     less_updates = bool(game.less_updates)
@@ -334,7 +334,7 @@ def main():
         try:
             ow, oh, orgba, old_tag = _load_image_rgba(game_dir / "gui" / "main_menu.png")
             old_surf = _fit(VW, VH, ow, oh, orgba)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             old_tag = f"solid_red_fallback({e})"
             old_surf = _Surf(VW, VH, bytes([220, 40, 40, 255]) * (VW * VH))
         try:
@@ -342,7 +342,7 @@ def main():
                 game_dir / "images" / "bg lecturehall.jpg"
             )
             new_surf = _fit(VW, VH, nw, nh, nrgba)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             new_tag = f"solid_blue_fallback({e})"
             new_surf = _Surf(VW, VH, bytes([40, 40, 220, 255]) * (VW * VH))
 
@@ -365,13 +365,13 @@ def main():
         fade_type = type(f).__name__
         _log(lines, "Fade type={} delay={}".format(fade_type, getattr(f, "delay", None)))
         if not isinstance(f, MultipleTransition):
-            raise RuntimeError(f"Fade did not return MultipleTransition: {type(f)}")  # noqa: TRY004
+            raise RuntimeError(f"Fade did not return MultipleTransition: {type(f)}")
 
         draw = WgpuDraw()
         draw.init((VW, VH))
         try:
             draw.physical_size = renpy_host.window_size()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
         for name, st in STAGE_STS.items():
@@ -453,7 +453,7 @@ def main():
             new=new_tag,
             reason=reason,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(lines, f"exception {e}\n{traceback.format_exc()}")
         _write(
             lines,

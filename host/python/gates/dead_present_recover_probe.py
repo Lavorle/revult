@@ -141,7 +141,7 @@ try:
     if hasattr(empty, "_pixels"):
         try:
             empty._pixels = b""
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     # Surface with no fill may still have buffer; create via size and zero length path
     # by using a surface and then load with empty pad simulation.
@@ -184,7 +184,7 @@ try:
     else:
         lines.append("PASS content fill still cached")
 
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     import traceback
 

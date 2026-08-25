@@ -90,7 +90,7 @@ def main():
     draw.init((w, h))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     old = _solid_surface(w, h, (255, 0, 0, 255))
@@ -102,7 +102,7 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[dissolve_blend]", msg, flush=True)
@@ -142,7 +142,7 @@ def _harness_run_one(case):
     draw.init((w, h))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     old = _solid_surface(w, h, old_rgba)
     new = _solid_surface(w, h, new_rgba)

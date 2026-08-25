@@ -104,7 +104,7 @@ def _make_glyphs(font: FTFont, s: str):
                 else:
                     box = font._font.getbbox(ch)
                     adv = float(box[2] - box[0]) if box else adv
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         g.advance = adv
         g.width = adv

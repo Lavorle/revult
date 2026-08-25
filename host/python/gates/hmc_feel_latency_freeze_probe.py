@@ -27,18 +27,18 @@ def _log(msg):
         sys.__stdout__.write("[hmc_feel_latency] " + str(msg))
         sys.__stdout__.write(chr(10))
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         open("/tmp/hmc_feel_latency_freeze_probe.log", "a").write(str(msg) + chr(10))  # noqa: SIM115
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def _quit():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def _clear_falsey(name):
@@ -54,7 +54,7 @@ def _stubs():
 
         sys.modules["renpy.audio.renpysound"] = h
         a.renpysound = h
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"sound {e}")
     try:
         import host_pygame
@@ -72,13 +72,13 @@ def _stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = scrap
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
@@ -96,7 +96,7 @@ def _stubs():
         import renpy
 
         renpy.uguu = pkg
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
@@ -105,7 +105,7 @@ def _stubs():
         import renpy
 
         renpy.ecsign = e
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign {e}")
 
 def _product_presents():
@@ -124,7 +124,7 @@ def _screen_live(name):
     import renpy
     try:
         return renpy.display.screen.get_screen(name) is not None
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
 def _target_ready(kind):
@@ -164,7 +164,7 @@ def _wait_first_interactive(target_kind, t_action, timeout_s=5.0, stall_s=2.0):
             if (now - last_progress_t) >= stall_s:
                 stall = True
             time.sleep(0.002)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             crash_exc = f"{type(e).__name__}: {e}"
             break
     elapsed = (time.monotonic() - t0) * 1000.0
@@ -192,7 +192,7 @@ def _take_host_gaps():
         peek = getattr(renpy_host, "inter_present_gaps_ms", None)
         if peek is not None:
             return [float(x) for x in list(peek())]
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     return []
 
@@ -257,7 +257,7 @@ def _force_redraw():
         if iface is not None:
             iface.force_redraw = True
             iface.restart_interaction = True
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def _show_prefs(kind="sound_config"):
@@ -266,21 +266,21 @@ def _show_prefs(kind="sound_config"):
         renpy.display.screen.show_screen("preferences", kind=kind)
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _force_redraw()
         return True, "show_screen"
-    except Exception as e1:  # noqa: BLE001
+    except Exception as e1:
         try:
             renpy.store.ShowMenu("preferences")()
             renpy.display.screen.show_screen("preferences", kind=kind)
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             _force_redraw()
             return True, "ShowMenu"
-        except Exception as e2:  # noqa: BLE001
+        except Exception as e2:
             return False, f"fail:{e1}/{e2}"
 
 def _hide_prefs():
@@ -289,11 +289,11 @@ def _hide_prefs():
         renpy.display.screen.hide_screen("preferences")
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _force_redraw()
         return True, "hide_screen"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return False, str(e)
 
 def _show_confirm():
@@ -308,11 +308,11 @@ def _show_confirm():
         )
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _force_redraw()
         return True, "show_screen"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return False, str(e)
 
 def _hide_confirm():
@@ -321,11 +321,11 @@ def _hide_confirm():
         renpy.display.screen.hide_screen("confirm")
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _force_redraw()
         return True, "hide_screen"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return False, str(e)
 
 def _attempt_take_focuses_repro():
@@ -341,7 +341,7 @@ def _attempt_take_focuses_repro():
         try:
             renpy.display.focus.take_focuses()
             result["steps"].append("take_focuses:ok")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             result["crash"] = True
             result["error"] = f"{type(e).__name__}: {e}"
             result["steps"].append("take_focuses:CRASH")
@@ -355,13 +355,13 @@ def _attempt_take_focuses_repro():
             try:
                 renpy.display.focus.take_focuses()
                 result["steps"].append("cycle%d_take_focuses:ok" % i)  # noqa: UP031
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 result["crash"] = True
                 result["error"] = f"{type(e).__name__}: {e}"
                 result["steps"].append("cycle%d_take_focuses:CRASH" % i)  # noqa: UP031
                 result["traceback"] = traceback.format_exc()
                 return result
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         result["crash"] = True
         result["error"] = f"{type(e).__name__}: {e}"
         result["traceback"] = traceback.format_exc()
@@ -387,7 +387,7 @@ def probe():
         try:
             if bool(getattr(renpy.store, "main_menu", False)):
                 break
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         time.sleep(0.2)
     mm = bool(getattr(renpy.store, "main_menu", False))
@@ -557,7 +557,7 @@ def main():
         try:
             import renpy_main_host
             renpy_main_host.install(renpy)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"main_host: {e}")
         try:
             import renpy.arguments
@@ -568,10 +568,10 @@ def main():
                 try:
                     renpy.arguments.register_command("run", renpy.arguments.run, True)
                     renpy.arguments.register_command("quit", renpy.arguments.quit)
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             renpy.game.args = renpy.arguments.bootstrap()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"args fail {e}")
             _quit()
             return
@@ -581,12 +581,12 @@ def main():
             renpy.main.main()
         except SystemExit:
             pass
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"main exc {e}")
             _log(traceback.format_exc())
         finally:
             _quit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"main outer exc {e}")
         _log(traceback.format_exc())
         _quit()

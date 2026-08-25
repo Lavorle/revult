@@ -56,7 +56,7 @@ def work():
             try:
                 if bool(getattr(renpy.store, "main_menu", False)):
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.05)
         time.sleep(0.4)
@@ -82,7 +82,7 @@ def work():
         try:
             renpy.game.interface.force_redraw = True
             renpy.exports.restart_interaction()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             result["notes"].append(f"restart soft {e!r}")
         time.sleep(0.8)
         for _ in range(20):
@@ -97,7 +97,7 @@ def work():
         size_ok = w1 > w0 or h1 > h0
         result["notes"].append(f"dark0={dark0} dark1={dark1} size_ok={size_ok}")
         result["ok"] = bool(dark0 and dark1 and size_ok)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         result["notes"].append(f"EXCEPTION {e!r}")
         result["notes"].append(traceback.format_exc())
     finally:
@@ -108,7 +108,7 @@ t.start()
 try:
     import renpy.main as m
     m.main()
-except BaseException as e:  # noqa: BLE001
+except BaseException as e:
     result["notes"].append(f"main exit {type(e).__name__}")
 stop.set()
 out = base/"host"/"target"/"gate-overlay_after_resize_probe.txt"

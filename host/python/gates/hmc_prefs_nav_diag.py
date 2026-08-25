@@ -23,14 +23,14 @@ def _base():
 def _log(m):
     try:
         sys.__stdout__.write(f"[diag] {m}\n"); sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_prefs_diag.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
         import renpy_host; renpy_host.request_quit()  # noqa: I001
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def run():
@@ -57,7 +57,7 @@ def run():
     renpy.host_build = True
     try:
         import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"main_host {e}")
     import renpy.arguments
     basedir = str(base/"host/playtests/HuangmeiC")
@@ -66,22 +66,22 @@ def run():
         if not getattr(renpy.arguments, "commands", None):
             renpy.arguments.register_command("run", renpy.arguments.run, True)
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"args {e}")
     # stubs
     try:
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h
         renpy.audio.renpysound=h
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import host_pygame
         import host_pygame.locals as loc
@@ -90,8 +90,8 @@ def run():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.import_as_pygame()
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
+    except Exception: pass
 
     def dump_disp(d, depth=0, path="", acc=None, budget=None):
         if acc is None: acc=[]
@@ -148,39 +148,39 @@ def run():
             try:
                 if getattr(renpy.store,"main_menu",None):
                     break
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
             time.sleep(0.1)
         _log("main_menu ok models={}".format(getattr(renpy.display.render,"models",None)))
         # Check dissolve_transform exists in store
         try:
             dt = getattr(renpy.store, "dissolve_transform", None)
             _log(f"store.dissolve_transform={dt!r} type={type(dt).__name__ if dt else None}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"store.dissolve_transform err {e}")
         # uniforms registered?
         try:
             import renpy.display.transform as tf
             _log("transform.uniforms has u_animation={} u_transition={} all={}".format(
                 "u_animation" in tf.uniforms, "u_transition" in tf.uniforms, sorted(tf.uniforms)[:30]))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"uniforms err {e}")
         # shader_part
         try:
             from renpy.gl2.gl2shadercache import shader_part
             _log("shader_part image_dissolve={} keys_sample={}".format(
                 "image_dissolve" in shader_part, [k for k in shader_part if "dissolve" in k or "matrix" in k][:20]))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"shader_part err {e}")
 
         # Show preferences
         try:
             renpy.store.Show("preferences", kind="sound_config")()
             renpy.restart_interaction()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"Show fail {e}")
             try:
                 renpy.display.screen.show_screen("preferences", kind="sound_config")
-            except Exception as e2:  # noqa: BLE001
+            except Exception as e2:
                 _log(f"show_screen fail {e2}")
         time.sleep(0.5)
         for _ in range(5):
@@ -195,7 +195,7 @@ def run():
                         st=renpy.display.render.render_screen(root,w,h)
                         renpy.display.draw.draw_screen(st, flip=True)
                         iface.surftree=st
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 _log(f"redraw {e}")
             time.sleep(0.05)
 
@@ -205,7 +205,7 @@ def run():
         try:
             scope = getattr(scr, "scope", None) or {}
             _log("scope.kind={!r} keys={}".format(scope.get("kind"), list(scope.keys())[:20] if isinstance(scope,dict) else None))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"scope err {e}")
         try:
             raw = getattr(scr, "raw_child", None) or getattr(scr, "child", None)
@@ -214,7 +214,7 @@ def run():
             for ln in lines[:120]:
                 _log("D "+ln)
             _log("displayable dump n=%d" % len(lines))  # noqa: UP031
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"dump err {e}")
             _log(traceback.format_exc())
 
@@ -232,7 +232,7 @@ def run():
             # force update
             try:
                 dt._update(0.5, 0.5, 179, 64)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 _log(f"dt._update {e}")
             try:
                 rv = renpy.display.render.render(dt, 179, 64, 0.5, 0.5)
@@ -252,10 +252,10 @@ def run():
                         getattr(ch,"shaders",None),
                         len(getattr(ch,"children",None) or ()),
                         x,y))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 _log(f"dt.render FAIL {e}")
                 _log(traceback.format_exc())
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"dt call FAIL {e}")
             _log(traceback.format_exc())
 
@@ -289,7 +289,7 @@ def run():
                     name,
                     rs/ns if ns else 0, gs/ns if ns else 0, bs/ns if ns else 0,
                     ys/float(ns) if ns else -1, ns, (x0,y0,x1,y1)))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"rt scan {e}")
 
         time.sleep(0.2)
@@ -299,7 +299,7 @@ def run():
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         _log(f"main exit {e}")
 
 if __name__=="__main__":

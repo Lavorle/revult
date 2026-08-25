@@ -90,7 +90,7 @@ try:
     d.draw_model_mesh(mesh_quad, texture=tex)
     renpy_host.end_frame_present()
     wgpu_ok = True
-except Exception as e:  # pragma: no cover - defensive  # noqa: BLE001
+except Exception as e:  # pragma: no cover - defensive
     wgpu_ok = False
     wgpu_err = repr(e)
 else:

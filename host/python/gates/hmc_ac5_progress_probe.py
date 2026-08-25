@@ -52,7 +52,7 @@ def _log(msg):
     try:
         sys.__stdout__.write(line)
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     for p in (
         "/tmp/hmc_ac5_progress_probe.log",
@@ -61,7 +61,7 @@ def _log(msg):
         try:
             Path(p).parent.mkdir(parents=True, exist_ok=True)
             open(p, "a").write(msg + "\n")  # noqa: SIM115
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -70,7 +70,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -92,7 +92,7 @@ def _pre_main_host_stubs():
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"renpysound soft-fail: {e}")
 
     try:
@@ -112,14 +112,14 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             rpg.import_as_pygame()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"import_as_pygame soft-fail: {e}")
         _log("pygame host shim ok")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame soft-fail: {e}")
 
     try:
@@ -141,10 +141,10 @@ def _pre_main_host_stubs():
             import renpy
 
             renpy.uguu = pkg
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("uguu host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu soft-fail: {e}")
 
     try:
@@ -155,10 +155,10 @@ def _pre_main_host_stubs():
             import renpy as _renpy_pkg
 
             _renpy_pkg.ecsign = _ecsign
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log("ecsign host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -167,7 +167,7 @@ def _sample_rt():
 
     try:
         rw, rh, rt = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {"ok": False, "error": f"read_rt:{e}"}
     if not rw or not rh or not rt:
         return {"ok": False, "error": "empty_rt"}
@@ -222,7 +222,7 @@ def _product_present():
 
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         ready, why, iface = ih.interface_ready()
         if not ready or iface is None:
@@ -239,15 +239,15 @@ def _product_present():
         try:
             if hasattr(draw, "load_all_textures"):
                 draw.load_all_textures(st)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return {"error": f"prepare:{e}"}
         draw.draw_screen(st, flip=True)
         try:
             iface.surftree = st
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return {"path": "rebuild_present"}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {"error": f"{type(e).__name__}:{e}"}
 
 
@@ -256,7 +256,7 @@ def _get_screen(name):
         import renpy
 
         return renpy.display.screen.get_screen(name)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -322,7 +322,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     try:
@@ -330,7 +330,7 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"main_host: {e}")
 
     try:
@@ -343,12 +343,12 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
         rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
@@ -364,7 +364,7 @@ def run():
                     state["first_focus_s"] = time.time() - t_wait0
                     rec("main_menu at tick=%d first_focus_s=%.3f" % (i, state["first_focus_s"]))  # noqa: UP031
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.05)
         if not state["main_menu"]:
@@ -383,7 +383,7 @@ def run():
             if td is not None:
                 state["t_decode"] = float(td)
                 rec(f"t_decode={td}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"t_decode soft: {e}")
 
         time.sleep(1.5)
@@ -405,12 +405,12 @@ def run():
                         can = bool(can_load(quit_slot))
                     else:
                         rec("can_load unavailable; continue treated absent")
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"can_load err: {e}")
             state["continue_can_load"] = can
             state["continue_present"] = can
             rec(f"continue present={can} quit_slot={quit_slot!r}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             rec(f"continue check: {e}")
             state["continue_present"] = False
 
@@ -421,7 +421,7 @@ def run():
             renpy.store.ShowMenu("load")()
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             opened = False
             for j in range(40):
@@ -444,14 +444,14 @@ def run():
             # Return
             try:
                 renpy.store.Return()()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 try:
                     renpy.display.screen.hide_screen("load")
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.6)
             # Wait main_menu again
@@ -460,7 +460,7 @@ def run():
                     rec("back to main_menu after load")
                     break
                 time.sleep(0.1)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             state["errors"].append(f"load:{e}")
             rec(f"load exc: {e}")
             rec(traceback.format_exc())
@@ -476,7 +476,7 @@ def run():
                 renpy.store.Start()()
                 via = "Start()"
                 rec("invoked Start()")
-            except Exception as e1:  # noqa: BLE001
+            except Exception as e1:
                 rec(f"Start() fail: {e1} — try inject Enter")
                 try:
                     K_RETURN = 13
@@ -490,7 +490,7 @@ def run():
                             break
                     if not left:
                         via = "inject_key_Enter_no_leave"
-                except Exception as e2:  # noqa: BLE001
+                except Exception as e2:
                     via = f"fail:{e1}|{e2}"
                     state["errors"].append(f"start:{via}")
 
@@ -500,7 +500,7 @@ def run():
                     if not bool(getattr(renpy.store, "main_menu", True)):
                         left = True
                         break
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
                 time.sleep(0.1)
             state["start_left"] = left
@@ -512,7 +512,7 @@ def run():
                 try:
                     ctx = renpy.game.context()
                     rec("context.current={!r}".format(getattr(ctx, "current", None)))
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     rec(f"context soft: {e}")
                 # Sample RT is not featureless black (no wipe)
                 rt = _sample_rt()
@@ -526,7 +526,7 @@ def run():
                 state["post_start_rt_ok"] = bool(rt.get("ok"))
             else:
                 state["errors"].append("start_did_not_leave_main_menu")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             state["errors"].append(f"start:{e}")
             rec(f"start exc: {e}")
             rec(traceback.format_exc())
@@ -543,7 +543,7 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         rec(f"main exit {type(e).__name__}: {e}")
 
     main_ok = bool(state["main_menu"])
@@ -584,18 +584,18 @@ def run():
     text = "\n".join(body) + "\n"
     try:
         out.write_text(text)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         rec(f"gate write fail: {e}")
     rec(
         f"wrote {out!s} ok={ok} load={load_ok} start={start_ok}"
     )
     try:
         Path("/tmp/huangmeic-ab/ac5-progress-gate.txt").write_text(text)
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         _request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 

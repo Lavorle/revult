@@ -84,7 +84,7 @@ def _request_quit():
         import renpy_host  # type: ignore
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -286,7 +286,7 @@ def _prepare_run_args(base: Path):
         try:
             renpy.arguments.register_command("run", renpy.arguments.run, True)
             renpy.arguments.register_command("quit", renpy.arguments.quit)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     args = renpy.arguments.bootstrap()
     renpy.game.args = args
@@ -301,7 +301,7 @@ def _pre_main_host_stubs(log: list) -> None:
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _append_log(log, "renpysound rebound to host")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"renpysound rebound soft-fail: {e}")
 
     try:
@@ -318,9 +318,9 @@ def _pre_main_host_stubs(log: list) -> None:
             rpg.constants = host_pygame.constants
         try:
             rpg.import_as_pygame()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _append_log(log, f"import_as_pygame soft-fail: {e}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"pygame.constants soft-fail: {e}")
 
     try:
@@ -339,7 +339,7 @@ def _pre_main_host_stubs(log: list) -> None:
         pkg.uguu = _uguu
         pkg.gl = _uguu
         _append_log(log, "uguu host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"uguu stub soft-fail: {type(e).__name__}: {e}")
 
     try:
@@ -350,10 +350,10 @@ def _pre_main_host_stubs(log: list) -> None:
             import renpy as _renpy_pkg
 
             _renpy_pkg.ecsign = _ecsign
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _append_log(log, "ecsign host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"ecsign soft-fail: {e}")
 
 
@@ -395,7 +395,7 @@ def _probe0_main_menu(rgba, rw, rh, log: list) -> dict:
     mean = nb.get("mean_rgb") or (0, 0, 0)
     try:
         mr, mg, mb = float(mean[0]), float(mean[1]), float(mean[2])
-    except Exception:  # noqa: BLE001
+    except Exception:
         mr = mg = mb = 0.0
     var = float(nb.get("variance") or 0.0)
     featureless_black = (
@@ -440,7 +440,7 @@ def _read_l0_state(log: list) -> dict:
         import renpy
 
         out["less_updates"] = bool(getattr(renpy.config, "less_updates", False))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"less_updates read soft-fail: {e}")
     try:
         import renpy
@@ -454,11 +454,11 @@ def _read_l0_state(log: list) -> dict:
             try:
                 d = info()
                 out["models"] = bool(d.get("models")) if isinstance(d, dict) else None
-            except Exception:  # noqa: BLE001
+            except Exception:
                 out["models"] = getattr(draw, "models", None)
         else:
             out["models"] = getattr(draw, "models", None) if draw is not None else None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"models read soft-fail: {e}")
     try:
         import renpy
@@ -468,7 +468,7 @@ def _read_l0_state(log: list) -> dict:
             out["transitions_pref"] = int(prefs.transitions)
             # Explicit: we never assign 0 in this gate.
             out["transitions_forced_zero"] = False
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"transitions_pref read soft-fail: {e}")
     _append_log(
         log,
@@ -524,7 +524,7 @@ def _draw_product_frame_chrome(log: list) -> dict:
         if iface is not None:
             try:
                 ih._ensure_interface_started(iface)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 out["error"] = f"start:{type(e).__name__}:{e}"
 
         draw = getattr(getattr(renpy, "display", None), "draw", None)
@@ -536,7 +536,7 @@ def _draw_product_frame_chrome(log: list) -> dict:
         # Real product Frame displayable (confirm chrome borders).
         try:
             borders = imagelike.Borders(LEFT, TOP, RIGHT, BOTTOM)
-        except Exception:  # noqa: BLE001
+        except Exception:
             borders = None
 
         if borders is not None:
@@ -551,10 +551,10 @@ def _draw_product_frame_chrome(log: list) -> dict:
             # Invalidate so we get a fresh render each capture.
             try:
                 renpy.display.render.redraw(frame_d, 0)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             frame_rv = render_mod.render(frame_d, DST_W, DST_H, 0, 0)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             out["error"] = (out.get("error") or "") + f";frame_render:{type(e).__name__}:{e}"
             _append_log(log, f"Frame.render failed: {e}")
             return out
@@ -567,7 +567,7 @@ def _draw_product_frame_chrome(log: list) -> dict:
                 int(getattr(frame_rv, "height", 0) or 0),
             )
             out["frame_rv_children"] = len(list(getattr(frame_rv, "children", []) or []))
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
         # Compose over a dark solid full-window background so outside samples are stable.
@@ -583,7 +583,7 @@ def _draw_product_frame_chrome(log: list) -> dict:
             root.blit(bg_rv, (0, 0))
             root.blit(frame_rv, (OX, OY))
             out["path"] = "product_Frame_render+Solid_bg"
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             # Fall back: draw frame alone (outside may be clear).
             root = frame_rv
             out["path"] = "product_Frame_render_alone"
@@ -593,20 +593,20 @@ def _draw_product_frame_chrome(log: list) -> dict:
         # Draw through product WgpuDraw (same instance as main-menu stack).
         try:
             renpy_host.reset_present_stats()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             draw.draw_screen(root, flip=True)
         except TypeError:
             draw.draw_screen(root)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             out["error"] = (out.get("error") or "") + f";draw:{type(e).__name__}:{e}"
             _append_log(log, f"draw_screen failed: {e}")
             return out
 
         try:
             rw, rh, rgba = renpy_host.read_game_rt_rgba()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             out["error"] = (out.get("error") or "") + f";read_rt:{type(e).__name__}:{e}"
             return out
 
@@ -681,7 +681,7 @@ def _draw_product_frame_chrome(log: list) -> dict:
             ),
         )
         return out
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         out["error"] = f"{type(e).__name__}: {e}"
         out["traceback"] = traceback.format_exc()
         _append_log(log, f"chrome draw fatal: {out['error']}")
@@ -709,7 +709,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             OrigInterface.draw_screen(self, root_widget, fullscreen_video, draw)
             try:
                 in_mm = bool(ih.in_main_menu())
-            except Exception:  # noqa: BLE001
+            except Exception:
                 in_mm = bool(state.get("in_main_menu"))
             state["in_main_menu"] = in_mm
             state["draw_count"] = int(state.get("draw_count") or 0) + 1
@@ -771,7 +771,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             )
             state["transitions_pref"] = tp
             state["transitions_forced_zero"] = False
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             state["prefs_error"] = f"{type(e).__name__}: {e}"
             _append_log(log, f"prefs_error={state['prefs_error']}")
 
@@ -791,11 +791,11 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
         def _force_short_timeout(secs: float = 0.08) -> None:
             try:
                 iface.timeout(float(secs))
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             try:
                 renpy.exports.timeout(float(secs))
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
 
         def _force_product_present() -> dict:
@@ -812,7 +812,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                         out["interface_start"] = start_detail
                         if not ok_start:
                             out["error"] = f"start:{start_detail}"
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e:
                         out["error"] = f"start:{type(e).__name__}:{e}"
                 draw = getattr(getattr(_renpy, "display", None), "draw", None)
                 out["draw_source"] = type(draw).__name__ if draw is not None else "None"
@@ -824,7 +824,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                             out["presented"] = True
                             out["path"] = f"product_surftree:{type(surftree).__name__}"
                             return out
-                        except Exception as e:  # noqa: BLE001
+                        except Exception as e:
                             out["error"] = f"surftree:{type(e).__name__}:{e}"
 
                     root = None
@@ -835,7 +835,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                     if root is None:
                         try:
                             root = ih._rebuild_product_root(iface2)
-                        except Exception as e:  # noqa: BLE001
+                        except Exception as e:
                             out["error"] = (out.get("error") or "") + f";rebuild:{type(e).__name__}:{e}"
 
                     if root is not None and hasattr(iface2, "draw_screen"):
@@ -850,9 +850,9 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                                 out["presented"] = True
                                 out["path"] = f"product_draw_root:{type(root).__name__}"
                                 return out
-                            except Exception as e:  # noqa: BLE001
+                            except Exception as e:
                                 out["error"] = (out.get("error") or "") + f";root:{type(e).__name__}:{e}"
-                        except Exception as e:  # noqa: BLE001
+                        except Exception as e:
                             out["error"] = (out.get("error") or "") + f";iface:{type(e).__name__}:{e}"
 
                 pres = ih.ensure_frame_present(force=True)
@@ -861,7 +861,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 out["draw_source"] = pres.get("draw_source") or out["draw_source"]
                 if pres.get("error"):
                     out["error"] = (out.get("error") or "") + f";{pres.get('error')}"
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 out["error"] = f"{type(e).__name__}: {e}"
             return out
 
@@ -878,7 +878,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                     pref = _force_product_present()
                     state["product_present_attempt"] = pref
                     _append_log(log, f"product_present_attempt={pref}")
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     state["product_present_attempt_error"] = f"{type(e).__name__}: {e}"
 
                 # Ownership + main-menu frame (Probe0 source).
@@ -913,7 +913,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                             state.get("present_path"),
                         ),
                     )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     state["main_menu_capture_error"] = f"{type(e).__name__}: {e}"
                     _append_log(log, f"main_menu capture error: {state['main_menu_capture_error']}")
 
@@ -942,11 +942,11 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                         state["frame_w"] = int(fw)
                         state["frame_h"] = int(fh)
                         state["nav"] = _analyze_nav(rgba_mm, int(fw), int(fh), log)
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e:
                         state["nav"] = {"nav_ok": False, "error": f"{type(e).__name__}: {e}"}
                         _append_log(log, f"nav analyze fail: {state['nav']['error']}")
 
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 state["capture_error"] = f"{type(e).__name__}: {e}"
                 state["capture_tb"] = traceback.format_exc()
                 _append_log(log, f"capture_error={state['capture_error']}")
@@ -959,7 +959,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             in_mm = False
             try:
                 in_mm = bool(ih.in_main_menu())
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 state["in_main_menu_error"] = f"{type(e).__name__}: {e}"
             state["in_main_menu"] = in_mm
             if in_mm and not state.get("main_menu_logged"):
@@ -993,7 +993,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
 
             try:
                 in_mm = bool(ih.in_main_menu())
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             state["in_main_menu"] = in_mm
 
@@ -1013,7 +1013,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 if not state.get("capture_attempted"):
                     try:
                         state["in_main_menu"] = bool(ih.in_main_menu())
-                    except Exception:  # noqa: BLE001, S110
+                    except Exception:
                         pass
                     _do_capture(f"ncap_n{n}")
                 raise HostStop(
@@ -1124,14 +1124,14 @@ def run() -> None:
             meta["ok"] = False
             _write_report(base, meta, log)
             state["report_written"] = True
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
     atexit.register(_atexit_report)
 
     try:
         import renpy_host  # noqa: F401
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"FATAL no renpy_host: {e}")
         meta["notes"] = "must run under renpy-host embed"
         meta["traceback"] = traceback.format_exc()
@@ -1142,7 +1142,7 @@ def run() -> None:
 
     try:
         import bootstrap as boot
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _append_log(log, f"FATAL import bootstrap: {e}")
         meta["traceback"] = traceback.format_exc()
         meta["elapsed_secs"] = round(time.monotonic() - t0, 3)
@@ -1182,14 +1182,14 @@ def run() -> None:
             logdir = main_mod.path_to_logdir(basedir)
             renpy.config.logdir = logdir
             os.makedirs(logdir, 0o777, exist_ok=True)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _append_log(log, f"logdir soft-fail: {e}")
 
         args = _prepare_run_args(base)
         _append_log(log, f"args command={getattr(args, 'command', None)}")
         try:
             renpy.importer.init_importer()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _append_log(log, f"importer soft-fail: {e}")
 
         _pre_main_host_stubs(log)
@@ -1197,7 +1197,7 @@ def run() -> None:
             renpy.config.performance_test = False
             renpy.config.has_music = False
             renpy.config.main_menu_music = None
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
         _install_hooks(state, log, max_interacts)
@@ -1222,13 +1222,13 @@ def run() -> None:
             _append_log(log, f"HostStop {hs.stage}: {hs.detail}")
         except SystemExit as se:
             _append_log(log, f"SystemExit {se}")
-        except BaseException as e:  # noqa: BLE001
+        except BaseException as e:
             tb = traceback.format_exc()
             state["run_error"] = f"{type(e).__name__}: {e}"
             _append_log(log, f"run BaseException: {state['run_error']}")
             meta["traceback"] = tb
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         meta["traceback"] = traceback.format_exc()
         _append_log(log, f"FATAL {type(e).__name__}: {e}")
     finally:
@@ -1250,7 +1250,7 @@ def run() -> None:
             import renpy.loader as _loader
 
             loadable_main_menu = bool(_loader.loadable("gui/main_menu.png"))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             loadable_err = f"{type(e).__name__}: {e}"
         _append_log(
             log,

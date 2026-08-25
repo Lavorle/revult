@@ -100,7 +100,7 @@ def log(msg):
     lines.append(msg)
     try:
         os.write(1, (f"[hmc_menu_video_product] {msg}\n").encode("utf-8", "replace"))
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -158,7 +158,7 @@ try:
             try:
                 rps.maybe_warm_menu_video()
                 log("maybe_warm_menu_video() invoked")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 warn(f"maybe_warm_menu_video raised: {type(e).__name__}: {e}")
         else:
             warn("maybe_warm_menu_video helper not present yet")
@@ -200,7 +200,7 @@ try:
         # Snapshot clock before play (should stay 0 / not advance mid-decode).
         try:
             pos_before = float(renpy_host.video_clock_pos(CH))
-        except Exception:  # noqa: BLE001
+        except Exception:
             pos_before = None
         t_play0 = time.monotonic()
         rps.play(CH, file=None, name=name, relative_volume=0.0)
@@ -226,7 +226,7 @@ try:
                     rps._ensure_video_frames(CH, block=False)
                 if hasattr(rps, "_maybe_arm_clock"):
                     rps._maybe_arm_clock(CH)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             first_surf = rps.read_video(CH)
             ch_now = rps._channels.get(CH, {})
@@ -270,14 +270,14 @@ try:
                     if rps.path_cache_ready_full(path):
                         full_ok = True
                         break
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             if _has_helper("path_cache_frame_count"):
                 try:
                     if int(rps.path_cache_frame_count(path)) >= 360:
                         full_ok = True
                         break
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             ch_live = rps._channels.get(CH, {})
             if len(ch_live.get("frames") or []) >= 360:
@@ -292,7 +292,7 @@ try:
                 # Drive presentation so frame_index advances like the product path.
                 rps.read_video(CH)
                 idx_samples.append(int(rps._channels.get(CH, {}).get("frame_index") or 0))
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.05)
         wait_full_elapsed = time.monotonic() - t_wait0
@@ -308,7 +308,7 @@ try:
             # One more present sample after full bind.
             rps.read_video(CH)
             idx_samples.append(int(rps._channels.get(CH, {}).get("frame_index") or 0))
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
         # AC-F3 / "video moves": frame_index must advance during wait when the
@@ -342,7 +342,7 @@ try:
                 if pc_n > nframes:
                     log("channel nframes=%d path_cache_frame_count=%d (use path cache)" % (nframes, pc_n))  # noqa: UP031
                     nframes = pc_n
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         decode_fps = float(ch.get("decode_fps") or os.environ.get("RENPY_HOST_MOVIE_FPS") or 0)
         decode_w = ch.get("decode_w")
@@ -375,7 +375,7 @@ try:
             try:
                 ready_full = bool(rps.path_cache_ready_full(path))
                 log(f"path_cache_ready_full={ready_full}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 warn(f"path_cache_ready_full raised: {e}")
         elif "ready_full" in ch:
             ready_full = bool(ch.get("ready_full"))
@@ -392,7 +392,7 @@ try:
         # play itself blocked long AND the clock already ran for ~that wall.
         try:
             pos_after_play = float(renpy_host.video_clock_pos(CH))
-        except Exception:  # noqa: BLE001
+        except Exception:
             pos_after_play = None
         log(
             f"clock pos_before={pos_before} pos_after_play={pos_after_play} play_wall={t_play:.3f} wait_full={wait_full_elapsed:.3f}"
@@ -477,7 +477,7 @@ try:
                 try:
                     empty_presents = int(rps.empty_movie_presents())
                     log("empty_movie_presents=%d" % empty_presents)  # noqa: UP031
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     warn(f"empty_movie_presents raised: {e}")
             elif "empty_movie_presents" in ch0:
                 empty_presents = int(ch0.get("empty_movie_presents") or 0)
@@ -505,14 +505,14 @@ try:
             try:
                 path_cache_hit = bool(rps.path_cache_has_frames(path))
                 log(f"path_cache_has_frames(before stop)={path_cache_hit}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 warn(f"path_cache_has_frames raised: {e}")
         elif _has_helper("path_cache_frame_count"):
             try:
                 pc_n = int(rps.path_cache_frame_count(path))
                 path_cache_hit = pc_n >= 360
                 log("path_cache_frame_count(before stop)=%d" % pc_n)  # noqa: UP031
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 warn(f"path_cache_frame_count raised: {e}")
 
         rps.stop(CH)
@@ -528,14 +528,14 @@ try:
             try:
                 survived = bool(rps.path_cache_has_frames(path))
                 log(f"path_cache_has_frames(after stop)={survived}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 warn(f"path_cache_has_frames after stop raised: {e}")
         elif _has_helper("path_cache_frame_count"):
             try:
                 pc_n2 = int(rps.path_cache_frame_count(path))
                 survived = pc_n2 >= max(1, frames_before_stop)
                 log("path_cache_frame_count(after stop)=%d" % pc_n2)  # noqa: UP031
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 warn(f"path_cache_frame_count after stop raised: {e}")
         else:
             # No public path-cache API yet: re-play and check whether frames
@@ -605,7 +605,7 @@ try:
 
         rps.stop(CH)
 
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     log(f"FAIL exception: {type(e).__name__}: {e}")
     import traceback
@@ -640,12 +640,12 @@ try:
     }
     out_json.write_text(json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8")
     log(f"WROTE {out_json} ok={ok}")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     log(f"WARN product json write failed: {e}")
 log(f"WROTE {out} ok={ok}")
 try:
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 if not ok:
     raise SystemExit(1)

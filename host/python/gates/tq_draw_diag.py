@@ -120,7 +120,7 @@ def _count_prepared(node, stats=None, budget=400, seen=None):
         if nid in seen:
             return stats
         seen.add(nid)
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     stats["nodes"] += 1
     if getattr(node, "mesh", None):
@@ -140,7 +140,7 @@ def _count_prepared(node, stats=None, budget=400, seen=None):
         try:
             if int(getattr(node, "handle", 0) or 0) > 0:
                 stats["host_tex_leaves"] += 1
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     kids = getattr(node, "children", None) or []
     blits = getattr(node, "blits", None) or []
@@ -170,7 +170,7 @@ def _pre_main_host_stubs():
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         log("renpysound rebound to host")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log(f"renpysound rebound soft-fail: {e}")
 
     try:
@@ -187,9 +187,9 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.import_as_pygame()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"import_as_pygame soft-fail: {e}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log(f"pygame.constants soft-fail: {e}")
 
     try:
@@ -208,7 +208,7 @@ def _pre_main_host_stubs():
         pkg.uguu = _uguu
         pkg.gl = _uguu
         log("uguu host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log(f"uguu stub soft-fail: {type(e).__name__}: {e}")
 
     try:
@@ -219,10 +219,10 @@ def _pre_main_host_stubs():
             import renpy as _renpy_pkg
 
             _renpy_pkg.ecsign = _ecsign
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         log("ecsign host stub installed")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log(f"ecsign soft-fail: {e}")
 
 
@@ -289,12 +289,12 @@ try:
     logdir = main_mod.path_to_logdir(basedir)
     renpy.config.logdir = logdir
     os.makedirs(logdir, 0o777, exist_ok=True)
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     log(f"logdir soft-fail: {e}")
 
 try:
     renpy.importer.init_importer()
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     log(f"importer soft-fail: {e}")
 
 _pre_main_host_stubs()
@@ -303,7 +303,7 @@ try:
     renpy.config.performance_test = False
     renpy.config.has_music = False
     renpy.config.main_menu_music = None
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 from renpy.wgpu import draw as wdraw
@@ -329,7 +329,7 @@ def draw_screen_hook(self, surftree, flip=True):
             try:
                 self._ensure_pipes()
                 self.load_all_textures(surftree)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log(f"prepare fail: {type(e).__name__}: {e}")
             log(f"--- draw_screen #{n} POST-prepare ---")
             for s in _summarize(surftree):
@@ -346,7 +346,7 @@ def draw_screen_hook(self, surftree, flip=True):
                     len(getattr(self, "texture_cache", {})),
                 )
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"summarize fail: {type(e).__name__}: {e}")
     try:
         rv = _orig_draw(self, surftree, flip=flip)
@@ -371,7 +371,7 @@ def draw_screen_hook(self, surftree, flip=True):
                 log(
                     f"RT empty after #{n}: {w}x{h} bytes={0 if not rgba else len(rgba)}"
                 )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"readback fail: {e}")
     return rv
 
@@ -424,7 +424,7 @@ try:
     log("main returned normally")
 except HostStop as e:
     log(f"HostStop: {e}")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     log(f"main exception: {type(e).__name__}: {e}")
     log(traceback.format_exc()[-2000:])
 
@@ -447,7 +447,7 @@ outp.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 log(f"wrote {outp}")
 try:
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

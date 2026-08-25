@@ -113,7 +113,7 @@ def main():
     draw.init((w, h))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     # Nested Render trees (NOT Surfaces) as dissolve children → forces RTT.
@@ -128,7 +128,7 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[dissolve_product_rtt]", msg, flush=True)
@@ -165,7 +165,7 @@ def _harness_run_one(case):
     draw.init((w, h))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     old = _scene_render(w, h, (255, 0, 0, 255))
     new = _scene_render(w, h, (0, 0, 255, 255))

@@ -47,7 +47,7 @@ def set_mode(mode):
 
 def put_data(data_dict):
     """Accept multi-MIME clipboard dict; no system clipboard on host."""
-    return None
+    return
 
 
 def get_data(mime_type):

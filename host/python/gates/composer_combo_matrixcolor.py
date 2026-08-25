@@ -37,11 +37,11 @@ def _safe_write(msg):
     data = (msg if msg.endswith("\n") else msg + "\n").encode("utf-8", "replace")
     try:
         os.write(1, data)
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             sys.__stdout__.write(msg if msg.endswith("\n") else msg + "\n")
             sys.__stdout__.flush()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -72,7 +72,7 @@ except ComposerError as e:
     ok = False
     notes.append(f"FAIL: compose raised: {e}")
     result = None
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     notes.append(f"FAIL: compose {type(e).__name__}: {e}")
     result = None
@@ -172,7 +172,7 @@ if result is not None and int(result.pipeline) > 0:
         if not mae_ok:
             ok = False
             notes.append("FAIL: MAE golden")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         notes.append(f"FAIL: draw/mae {type(e).__name__}: {e}")
 

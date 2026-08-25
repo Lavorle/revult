@@ -138,12 +138,20 @@ elif total and frames:
 else:
     fps = 0
     avg_ns = 0
-print(f"{fps:.2f} {avg_ns} {frames} {total}")
+# New fields from main.rs bench JSON (may be null)
+one_low = j.get("one_percent_low_fps")
+render_ns = j.get("render_pass_duration_ns")
+# Normalize: bench writes number or null; ensure python prints "null" or number
+one_low_str = "null" if one_low is None else str(float(one_low))
+render_str = "null" if render_ns is None else str(int(render_ns))
+print(f"{fps:.2f} {avg_ns} {frames} {total} {one_low_str} {render_str}")
 PY
 )
   FPS=$(echo "$PY_OUT" | awk '{print $1}')
   AVG_NS=$(echo "$PY_OUT" | awk '{print $2}')
   FRAMES=$(echo "$PY_OUT" | awk '{print $3}')
+  ONE_LOW=$(echo "$PY_OUT" | awk '{print $5}')
+  RENDER_NS=$(echo "$PY_OUT" | awk '{print $6}')
   # Threshold: 60 fps
   PASS=$(python3 -c "import sys; fps=float(sys.argv[1]); print('true' if fps>=60 else 'false')" "$FPS")
   if [[ "$PASS" == "true" ]]; then
@@ -164,9 +172,9 @@ PY
   "measurement_status": "MEASURED",
   "release_evidence_eligible": $REL,
   "average_fps": $FPS,
-  "one_percent_low_fps": null,
+  "one_percent_low_fps": $ONE_LOW,
   "frame_presentation_time_ns": $AVG_NS,
-  "render_pass_duration_ns": null,
+  "render_pass_duration_ns": $RENDER_NS,
   "pass_status": "$PSTATUS",
   "notes": [
     "Measured via cargo run --benchmark (host native).",
@@ -181,7 +189,7 @@ PY
   "benchmark_source": "$BENCH_JSON"
 }
 EOF2
-  echo "Wrote MEASURED metrics to $OUT (fps=$FPS avg_ns=$AVG_NS eligible=$REL status=$PSTATUS)"
+  echo "Wrote MEASURED metrics to $OUT (fps=$FPS avg_ns=$AVG_NS one_low=$ONE_LOW render_ns=$RENDER_NS eligible=$REL status=$PSTATUS)"
   exit 0
 fi
 

@@ -24,12 +24,12 @@ print("has gl2mesh2", hasattr(renpy.gl2, "gl2mesh2"))
 try:
     import renpy.gl2.gl2mesh2 as m
     print("import ok", m, m.Mesh2)
-except Exception:  # noqa: BLE001
+except Exception:
     traceback.print_exc()
 try:
     import renpy.gl2.gl2mesh as m2
     print("gl2mesh", m2, dir(m2)[:20])
-except Exception:  # noqa: BLE001
+except Exception:
     traceback.print_exc()
 # package path
 print("gl2 __path__", getattr(renpy.gl2, "__path__", None))

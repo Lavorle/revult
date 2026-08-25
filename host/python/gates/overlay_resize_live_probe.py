@@ -59,7 +59,7 @@ def worker():
             try:
                 if bool(getattr(__import__('renpy').store, 'main_menu', False)):
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             time.sleep(0.05)
         time.sleep(0.5)
@@ -82,7 +82,7 @@ def worker():
             import renpy
             renpy.game.interface.force_redraw = True
             renpy.exports.restart_interaction()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             lines.append(f"restart {e!r}")
         time.sleep(1.0)
         for _ in range(30):
@@ -100,7 +100,7 @@ def worker():
         ok = bool(dark0 and dark1 and size_ok)
         if not dark1:
             lines.append("FAIL overlay not dark full-height after resize")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         lines.append(f"EXCEPTION {e!r}")
         lines.append(traceback.format_exc())
@@ -127,9 +127,9 @@ try:
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         lines.append(f"main {type(e).__name__}")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     lines.append(f"boot EXC {e!r}")
     lines.append(traceback.format_exc())

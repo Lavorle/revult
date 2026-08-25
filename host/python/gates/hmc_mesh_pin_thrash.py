@@ -34,7 +34,7 @@ def _log(m):
     try:
         sys.__stdout__.write(f"[mesh_pin] {m}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_mesh_pin_thrash.log", "a").write(m + "\n")  # noqa: SIM115
 
@@ -44,7 +44,7 @@ def _quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -173,13 +173,13 @@ def main():
         lines.append(f"ok={ok}")
         _log(lines[-1])
         out.write_text("\n".join(lines) + "\n")
-    except Exception:  # noqa: BLE001
+    except Exception:
         tb = traceback.format_exc()
         lines.append("EXCEPTION\n" + tb)
         lines.append("ok=False")
         try:
             out.write_text("\n".join(lines) + "\n")
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         _log(tb)
     finally:

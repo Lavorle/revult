@@ -97,7 +97,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     # 16x16 source: magenta border, cyan 4x4 center (rows/cols 6..9).
@@ -123,7 +123,7 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[frame_scale]", msg, flush=True)

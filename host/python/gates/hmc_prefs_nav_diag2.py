@@ -23,14 +23,14 @@ def _base():
 def _log(m):
     try:
         sys.__stdout__.write(f"[diag2] {m}\n"); sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_prefs_diag2.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
         import renpy_host; renpy_host.request_quit()  # noqa: I001
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def walk_rt(node, depth=0, path="", acc=None, budget=None):
@@ -88,7 +88,7 @@ def run():
     renpy.host_build = True
     try:
         import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"main_host {e}")
     import renpy.arguments
     basedir = str(base/"host/playtests/HuangmeiC")
@@ -97,18 +97,18 @@ def run():
         if not getattr(renpy.arguments, "commands", None):
             renpy.arguments.register_command("run", renpy.arguments.run, True)
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"args {e}")
     try:
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; renpy.audio.renpysound=h
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import renpy_uguu_host as u; sys.modules["renpy.uguu.uguu"]=u  # noqa: I001
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import renpy_ecsign_host as e; sys.modules["renpy.ecsign"]=e  # noqa: I001
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     try:
         import host_pygame
         import host_pygame.locals as loc
@@ -117,20 +117,20 @@ def run():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.import_as_pygame()
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
+    except Exception: pass
 
     def probe():
         deadline=time.time()+40
         while time.time()<deadline:
             try:
                 if getattr(renpy.store,"main_menu",None): break
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
             time.sleep(0.1)
         _log("main_menu models={}".format(getattr(renpy.display.render,"models",None)))
         try:
             renpy.store.Show("preferences", kind="sound_config")()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"Show {e}")
         time.sleep(0.6)
         # redraw
@@ -145,7 +145,7 @@ def run():
                     st=renpy.display.render.render_screen(root,w,h)
                     renpy.display.draw.draw_screen(st, flip=True)
                     iface.surftree=st
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 _log(f"redraw {e}")
             time.sleep(0.05)
 
@@ -238,7 +238,7 @@ def run():
                     renpy_host.begin_frame()
                     try:
                         draw._draw_node(rv, 462+179*4, 47)  # sound_config pos
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e:
                         _log(f"draw_node exc {e}")
                         _log(traceback.format_exc())
                     renpy_host.end_frame_present()
@@ -256,14 +256,14 @@ def run():
                     _log("solo_draw tab sound mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d" % (  # noqa: UP031
                         rs/n if n else 0, gs/n if n else 0, bs/n if n else 0,
                         ys/float(n) if n else -1, n))
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     _log(f"render/draw FAIL {e}")
                     _log(traceback.format_exc())
 
         # matrixcolor pack check for Identity
         try:
             pass
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             # IdentityMatrix
@@ -276,7 +276,7 @@ def run():
             draw = renpy.display.draw
             _log(f"pack Identity {draw._matrix_to_floats(im)[:8]}")
             _log(f"pack Colorize {draw._matrix_to_floats(cm)[:8]}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"matrix pack {e}")
             _log(traceback.format_exc())
 
@@ -287,7 +287,7 @@ def run():
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:  # noqa: BLE001
+    except BaseException as e:
         _log(f"main exit {e}")
 
 run()

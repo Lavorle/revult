@@ -109,7 +109,7 @@ def _present(draw, tree):
         draw.draw_screen(tree, flip=True)
         try:
             renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     w, h, rgba = renpy_host.read_game_rt_rgba()
     assert w > 0 and h > 0 and len(rgba) == w * h * 4, (w, h, len(rgba))
@@ -165,7 +165,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     # text_config numbers

@@ -56,14 +56,14 @@ try:
     pkg.uguu = _uguu
     pkg.gl = _uguu
     log("uguu ok")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     log(f"uguu fail {e}")
 
 try:
     import renpy_ecsign_host as _ec
     sys.modules["renpy.common.ecsign"] = _ec
     log("ecsign ok")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     log(f"ecsign fail {e}")
 
 class HostStop(BaseException):
@@ -146,7 +146,7 @@ def hooked(self, surftree, flip=True):
                     log(f"RT #{n}: {w}x{h} mean=({mr:.1f},{mg:.1f},{mb:.1f}) nonclear_samples={non}")
                 else:
                     log(f"RT empty #{n}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log(f"RT fail {e}")
             return rv
         return _orig(self, surftree, flip=flip)
@@ -187,7 +187,7 @@ except HostStop as hs:
     log(f"HostStop {hs.stage} {hs.detail}")
 except SystemExit as se:
     log(f"SystemExit {se}")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     log(f"main fail {type(e).__name__}: {e}")
     log(traceback.format_exc()[-1500:])
 

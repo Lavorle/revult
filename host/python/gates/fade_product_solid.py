@@ -32,7 +32,7 @@ except ImportError:
 import renpy_host  # type: ignore
 
 _base = Path(os.environ.get("RENPY_HOST_BASE") or str(Path.cwd()))
-if not (_base / "renpy").is_dir():  # noqa: SIM102
+if not (_base / "renpy").is_dir():
     # host/ cwd → parent
     if (_base.parent / "renpy").is_dir():
         _base = _base.parent
@@ -61,7 +61,7 @@ def _write(lines, ok, **extra):
 def _request_quit():
     try:
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -233,7 +233,7 @@ def _bootstrap(lines):
 
     try:
         render_mod.render_ready()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(lines, f"render_ready softfail {e}")
 
     return (
@@ -300,7 +300,7 @@ def main():
         try:
             ow, oh, orgba, old_tag = _load_image_rgba(game_dir / "gui" / "main_menu.png")
             old_surf = _fit(VW, VH, ow, oh, orgba)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             old_tag = f"solid_red_fallback({e})"
             old_surf = _Surf(VW, VH, bytes([220, 40, 40, 255]) * (VW * VH))
         try:
@@ -308,7 +308,7 @@ def main():
                 game_dir / "images" / "bg lecturehall.jpg"
             )
             new_surf = _fit(VW, VH, nw, nh, nrgba)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             new_tag = f"solid_blue_fallback({e})"
             new_surf = _Surf(VW, VH, bytes([40, 40, 220, 255]) * (VW * VH))
 
@@ -325,7 +325,7 @@ def main():
         draw.init((VW, VH))
         try:
             draw.physical_size = renpy_host.window_size()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         # Solid.render needs renpy.display.draw.draw_to_virt
         import renpy.display as renpy_display
@@ -335,7 +335,7 @@ def main():
         f0 = Fade(0.5, 0.0, 0.5, old_widget=old, new_widget=new, widget=solid_black)
         _log(lines, "fade0 type={} delay={}".format(type(f0).__name__, getattr(f0, "delay", None)))
         if not isinstance(f0, MultipleTransition):
-            raise RuntimeError("Fade hold0 not MultipleTransition")  # noqa: TRY004
+            raise RuntimeError("Fade hold0 not MultipleTransition")
 
         stages0 = {
             "st0": 0.0,
@@ -421,7 +421,7 @@ def main():
             soft_hold01=soft_hold01,
             reason=reason,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(lines, f"EXCEPTION {e}")
         _log(lines, traceback.format_exc())
         _write(lines, False, reason=f"exception:{e}")

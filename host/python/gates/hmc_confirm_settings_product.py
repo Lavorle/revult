@@ -84,12 +84,12 @@ def _log(message):
     try:
         sys.__stdout__.write(f"[confirm_settings] {message}\n")
         sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         with _artifact().with_suffix(".log").open("a", encoding="utf-8") as stream:
             stream.write(message + "\n")
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -109,7 +109,7 @@ def _quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -126,7 +126,7 @@ def _pre():
 
         sys.modules["renpy.audio.renpysound"] = sound
         audio.renpysound = sound
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"sound prelude: {e}")
 
     try:
@@ -146,9 +146,9 @@ def _pre():
         pygame.scrap = scrap
         try:
             pygame.import_as_pygame()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"pygame prelude: {e}")
 
     try:
@@ -167,7 +167,7 @@ def _pre():
         import renpy
 
         renpy.uguu = package
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"uguu prelude: {e}")
 
     try:
@@ -177,7 +177,7 @@ def _pre():
         import renpy
 
         renpy.ecsign = ecsign
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"ecsign prelude: {e}")
 
 
@@ -215,10 +215,10 @@ def _hide_transients():
     for name in TRANSIENT_SCREENS:
         try:
             renpy.display.screen.hide_screen(name)
-        except Exception:  # noqa: BLE001
+        except Exception:
             try:
                 renpy.store.Hide(name)()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
 
     focus = renpy.display.focus
@@ -230,20 +230,20 @@ def _hide_transients():
         if call is not None:
             try:
                 call(*args)
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
     for name in ("tooltip", "last_tooltip", "override"):
         try:
             setattr(focus, name, None)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
     try:
         renpy.store.preferences_hint.hide_hint()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     try:
         renpy.restart_interaction()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     ih.pump_ms(120)
     return {
@@ -260,19 +260,19 @@ def _show_prefs(kind):
         renpy.display.screen.show_screen("preferences", kind=kind)
         try:
             renpy.restart_interaction()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         return True, "show_screen_preferences_kind"
-    except Exception as first:  # noqa: BLE001
+    except Exception as first:
         try:
             renpy.store.ShowMenu("preferences")()
             renpy.display.screen.show_screen("preferences", kind=kind)
             try:
                 renpy.restart_interaction()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
             return True, f"ShowMenu+kind:{first}"
-        except Exception as second:  # noqa: BLE001
+        except Exception as second:
             return False, f"fail:{first}/{second}"
 
 
@@ -382,7 +382,7 @@ def _present():
             "ownership_ok": ownership_ok,
             "panels": panels,
         }
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {
             "ok": False,
             "status": f"{type(e).__name__}:{e}",
@@ -401,7 +401,7 @@ def _action_meta(action, mapping, allowed):
         return meta
     try:
         values = vars(action)
-    except Exception:  # noqa: BLE001
+    except Exception:
         values = {}
     meta["mapping_match"] = any(value is mapping for value in values.values())
     if not meta["mapping_match"]:
@@ -410,7 +410,7 @@ def _action_meta(action, mapping, allowed):
                 if getattr(action, name) is mapping:
                     meta["mapping_match"] = True
                     break
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
     for value in values.values():
         if value == "save":
@@ -527,7 +527,7 @@ def _exercise(kind, mapping_name, allowed, originals):
 
         try:
             renpy.pygame.mouse.set_pos((px, py))
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         renpy_host.inject_mouse(px, py, 0, False)
         result["move_only_injected"] = True
@@ -648,7 +648,7 @@ def _worker():
         lines.extend((f"classification={classification}", f"ok={ok}"))
         _write_report(out, lines)
         _log(f"wrote {out} ok={ok} classification={classification}")
-    except Exception:  # noqa: BLE001
+    except Exception:
         lines.append("EXCEPTION " + json.dumps(traceback.format_exc()))
         lines.extend(("classification=other:gate_exception", "ok=False"))
         _write_report(out, lines)
@@ -658,7 +658,7 @@ def _worker():
             _restore(originals)
         try:
             _hide_transients()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         if trace_module is not None and trace_original is not None:
             trace_module._ui_trace_once = trace_original
@@ -672,7 +672,7 @@ def main():
         out = _artifact(base)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.with_suffix(".log").write_text("start\n", encoding="utf-8")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"artifact validation failed: {e}")
         _quit()
         return
@@ -712,7 +712,7 @@ def main():
             import renpy_main_host
 
             renpy_main_host.install(renpy)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(f"main_host: {e}")
         try:
             import renpy.arguments
@@ -724,10 +724,10 @@ def main():
                 try:
                     renpy.arguments.register_command("run", renpy.arguments.run, True)
                     renpy.arguments.register_command("quit", renpy.arguments.quit)
-                except Exception:  # noqa: BLE001, S110
+                except Exception:
                     pass
             renpy.game.args = renpy.arguments.bootstrap()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _fail(out, "other:arguments_bootstrap", {"error": str(e)})
             _quit()
             return
@@ -738,9 +738,9 @@ def main():
 
         try:
             renpy_main.main()
-        except BaseException as e:  # noqa: BLE001
+        except BaseException as e:
             _log(f"main exit {type(e).__name__}:{e}")
-    except Exception:  # noqa: BLE001
+    except Exception:
         _fail(out, "other:main_exception", {"traceback": traceback.format_exc()})
         _log(traceback.format_exc())
         _quit()

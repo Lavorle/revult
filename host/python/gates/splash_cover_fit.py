@@ -44,7 +44,7 @@ def log(msg):
     lines.append(msg)
     try:
         os.write(1, (f"[splash_cover_fit] {msg}\n").encode("utf-8", "replace"))
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -181,7 +181,7 @@ try:
     # (dest size path only needs HostTexture size + full UV, not pixel content)
     try:
         handle = renpy_host.create_texture_rgba(4, 4, bytes([255, 0, 0, 255] * 16))
-    except Exception:  # noqa: BLE001
+    except Exception:
         handle = 1
     ht = HostTexture(handle, 3840, 2160)  # full rect by default
     parent = FakeRender(1920, 1080)
@@ -243,7 +243,7 @@ try:
     draw.init((VW, VH))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
     surf = Surface((TW, TH))
@@ -285,7 +285,7 @@ try:
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         ok = False
         log(f"FAIL read_game_rt_rgba: {e}")
         rw = rh = 0
@@ -339,10 +339,10 @@ try:
     try:
         if handle and handle > 1:
             renpy_host.destroy_texture(handle)
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     ok = False
     log(f"FAIL exception: {type(e).__name__}: {e}")
     import traceback
@@ -354,7 +354,7 @@ out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 log(f"WROTE {out} ok={ok}")
 try:
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 if not ok:
     raise SystemExit(1)

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import io
 import os
-from typing import Optional, Union
 
 
 def _as_bytes(data) -> bytes:
@@ -44,9 +43,9 @@ class IOStream(io.RawIOBase):
         self,
         filelike=b"",
         mode: str = "rb",
-        base: Optional[int] = None,
-        length: Optional[int] = None,
-        name: Optional[str] = None,
+        base: int | None = None,
+        length: int | None = None,
+        name: str | None = None,
     ):
         super().__init__()
         self.mode = mode or "rb"
@@ -107,9 +106,9 @@ class IOStream(io.RawIOBase):
         self,
         path: str,
         mode: str,
-        base: Optional[int],
-        length: Optional[int],
-        name: Optional[str],
+        base: int | None,
+        length: int | None,
+        name: str | None,
     ) -> None:
         self.name = name if name is not None else path
         # Always open binary for image/asset loads; honor 'b' if present.
@@ -131,14 +130,14 @@ class IOStream(io.RawIOBase):
     # --- classmethods (classic API) -----------------------------------------
 
     @staticmethod
-    def from_buffer(buffer, mode: str = "rb", name: Optional[str] = None) -> "IOStream":
+    def from_buffer(buffer, mode: str = "rb", name: str | None = None) -> IOStream:
         rv = IOStream(None, mode=mode, name=name)
         rv._data = bytearray(_as_bytes(buffer))
         rv._pos = 0
         return rv
 
     @staticmethod
-    def from_split(a, b, name: Optional[str] = None) -> "IOStream":
+    def from_split(a, b, name: str | None = None) -> IOStream:
         def _read_all(part) -> bytes:
             if part is None:
                 return b""
@@ -200,8 +199,7 @@ class IOStream(io.RawIOBase):
             self._pos = len(self._data) + int(offset)
         else:
             raise ValueError(f"invalid whence: {whence}")
-        if self._pos < 0:
-            self._pos = 0
+        self._pos = max(self._pos, 0)
         return self._pos
 
     def read(self, n: int = -1) -> bytes:  # type: ignore[override]

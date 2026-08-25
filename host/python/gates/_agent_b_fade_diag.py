@@ -155,7 +155,7 @@ style_mod.styles[("default",)] = default
 disp_mod.default_style = default
 try:
     render_mod.render_ready()
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     log(f"render_ready soft {e}")
 
 # also try to set draw so Solid.solid_texture works
@@ -163,7 +163,7 @@ draw = WgpuDraw()
 draw.init((VW, VH))
 try:
     draw.physical_size = renpy_host.window_size()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 import renpy.display
 
@@ -259,7 +259,7 @@ for hold in (0.0, 0.1):
         # prepare and inspect slots
         try:
             draw._invalidate_prepared(rv)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         draw.load_all_textures(rv)
         cm = getattr(dissolve_node, 'cached_model', None)
@@ -334,7 +334,7 @@ out.write_text("\n".join(lines)+"\n")
 log("WROTE "+str(out))
 try:
     renpy_host.request_quit()
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

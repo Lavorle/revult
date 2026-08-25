@@ -50,21 +50,21 @@ renpy.host_build = True
 try:
     import renpy_main_host
     renpy_main_host.install(renpy)
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 try:
     import renpy.audio as _ra
     import renpy.audio.renpysound_host as _rs
     sys.modules["renpy.audio.renpysound"] = _rs
     _ra.renpysound = _rs
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 import renpy.arguments
 
 sys.argv = [sys.argv[0] if sys.argv else "h", str(base/"the_question"), "run"]
 try:
     renpy.arguments.register_command("run", renpy.arguments.run, True)
-except Exception:  # noqa: BLE001, S110
+except Exception:
     pass
 renpy.game.args = renpy.arguments.bootstrap()
 
@@ -79,7 +79,7 @@ def watch():
                 seen["main_menu"] = True
                 renpy_host.request_quit()
                 return
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         time.sleep(0.05)
     renpy_host.request_quit()
@@ -89,7 +89,7 @@ t.start()
 try:
     import renpy.main as m
     m.main()
-except BaseException as e:  # noqa: BLE001
+except BaseException as e:
     print("exit", type(e).__name__, e)
 stop.set()
 ok = seen["main_menu"]

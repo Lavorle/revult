@@ -93,7 +93,7 @@ def _write(lines, ok, **extra):
 def _request_quit():
     try:
         renpy_host.request_quit()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -276,7 +276,7 @@ def _bootstrap(lines):
 
     try:
         render_mod.render_ready()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(lines, f"render_ready softfail {e}")
 
     less_updates = bool(game.less_updates)
@@ -360,7 +360,7 @@ def main():
         try:
             ow, oh, orgba, old_tag = _load_image_rgba(game_dir / "gui" / "main_menu.png")
             old_surf = _fit(VW, VH, ow, oh, orgba)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             old_tag = f"solid_red_fallback({e})"
             old_surf = _Surf(VW, VH, bytes([220, 40, 40, 255]) * (VW * VH))
         try:
@@ -368,7 +368,7 @@ def main():
                 game_dir / "images" / "bg lecturehall.jpg"
             )
             new_surf = _fit(VW, VH, nw, nh, nrgba)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             new_tag = f"solid_blue_fallback({e})"
             new_surf = _Surf(VW, VH, bytes([40, 40, 220, 255]) * (VW * VH))
 
@@ -385,14 +385,14 @@ def main():
         draw.init((VW, VH))
         try:
             draw.physical_size = renpy_host.window_size()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         try:
             import renpy.display as renpy_display
 
             renpy_display.draw = draw
             _log(lines, "renpy.display.draw = WgpuDraw (product Solid path enabled)")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(lines, f"renpy.display.draw install softfail {e}")
 
         # Prefer product Solid black (00definitions.rpy Fade default widget).
@@ -410,7 +410,7 @@ def main():
             black_widget = solid
             widget_kind = "Solid_reverse" if has_reverse else "Solid"
             _log(lines, f"Solid probe ok reverse={has_reverse} size={probe.get_size()}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _log(lines, f"Solid widget softfail ({e}); using BlackFill")
             black_widget = BlackFill()
             widget_kind = "BlackFill"
@@ -431,7 +431,7 @@ def main():
             f"Fade type={fade_type} delay={fade_delay} hold={HOLD_T} widget={widget_kind}",
         )
         if not isinstance(f, MultipleTransition):
-            raise RuntimeError(f"Fade did not return MultipleTransition: {type(f)}")  # noqa: TRY004
+            raise RuntimeError(f"Fade did not return MultipleTransition: {type(f)}")
         # hold=0 → delay should be OUT+IN = 1.0
         if fade_delay is not None and abs(float(fade_delay) - (OUT_T + IN_T)) > 1e-6:
             _log(lines, f"WARN unexpected delay={fade_delay} expected={OUT_T + IN_T}")
@@ -582,7 +582,7 @@ def main():
             F3="in_brightens+no_thrash_flicker",
             F4="not_this_gate(see_dissolve/ac_live)",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(lines, f"exception {e}\n{traceback.format_exc()}")
         _write(
             lines,

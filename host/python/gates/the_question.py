@@ -57,7 +57,7 @@ if str(gates) not in sys.path:
 err = None
 try:
     runpy.run_path(str(bootstrap), run_name="__the_question_gate__")
-except BaseException as e:  # noqa: BLE001
+except BaseException as e:
     err = e
 
 # Alias report for the_question gate consumers.

@@ -20,14 +20,14 @@ def _base():
 def _log(m):
     try:
         sys.__stdout__.write(f"[dc_spatial] {m}\n"); sys.__stdout__.flush()
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     open("/tmp/hmc_dc_spatial.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
         import renpy_host; renpy_host.request_quit()  # noqa: I001
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 def _clear_falsey(n):
@@ -41,7 +41,7 @@ def _pre():
         import renpy.audio as a
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; a.renpysound=h
-    except Exception as e: _log(f"sound {e}")  # noqa: BLE001
+    except Exception as e: _log(f"sound {e}")
     try:
         import host_pygame
         import host_pygame.locals as loc
@@ -52,10 +52,10 @@ def _pre():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.scrap=scrap
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
         try: rpg.import_as_pygame()
-        except Exception: pass  # noqa: BLE001, S110
-    except Exception as e: _log(f"pygame {e}")  # noqa: BLE001
+        except Exception: pass
+    except Exception as e: _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u; sys.modules["renpy.uguu.gl"]=u
@@ -65,12 +65,12 @@ def _pre():
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
         import renpy; renpy.uguu=pkg  # noqa: I001
-    except Exception as e: _log(f"uguu {e}")  # noqa: BLE001
+    except Exception as e: _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
         import renpy; renpy.ecsign=e  # noqa: I001
-    except Exception as e: _log(f"ecsign {e}")  # noqa: BLE001
+    except Exception as e: _log(f"ecsign {e}")
 
 def _sample_regions():
     import renpy_host
@@ -113,7 +113,7 @@ def _sample_regions():
         path="/tmp/hmc_dc_spatial_{}.png".format(os.environ.get("DC_KIND","x"))
         im.save(path)
         out["png"]=path
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         out["png_err"]=str(e)
     return out
 
@@ -130,11 +130,11 @@ def _redraw():
     draw=renpy.display.draw
     try:
         if hasattr(draw,"load_all_textures"): draw.load_all_textures(st)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return "load:"+str(e), st
     draw.draw_screen(st, flip=True)
     try: iface.surftree=st
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     return "ok", st
 
 def _walk_bg(node, budget=None, acc=None, depth=0):
@@ -155,17 +155,17 @@ def _walk_bg(node, budget=None, acc=None, depth=0):
         if ch:
             for c in ch:
                 kids.append(c[0] if isinstance(c,(list,tuple)) and c else c)
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     for attr in ("cached_texture","cached_model","texture"):
         try:
             v=getattr(node,attr,None)
             if v is not None: kids.append(v)
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
     try:
         ts=getattr(node,"textures",None)
         if ts:
             for t in ts: kids.append(t)  # noqa: PERF402
-    except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass
     for k in kids: _walk_bg(k, budget, acc, depth+1)
     return acc
 
@@ -174,18 +174,18 @@ def _show(kind):
     try:
         renpy.display.screen.show_screen("preferences", kind=kind)
         try: renpy.restart_interaction()
-        except Exception: pass  # noqa: BLE001, S110
+        except Exception: pass
         return True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _log(f"show fail {e}"); return False
 
 def _hide():
     import renpy
     for n in ("preferences","confirm","load","save","appreciation","flowchart"):
         try: renpy.store.Hide(n)()
-        except Exception:  # noqa: BLE001
+        except Exception:
             try: renpy.hide_screen(n)
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
 
 def _worker():
     out=_base()/"host"/"target"/"gate-hmc_dc_spatial.txt"
@@ -196,7 +196,7 @@ def _worker():
         while time.time()<deadline:
             try:
                 if getattr(renpy.store,"main_menu",False): break
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
             time.sleep(0.2)
         lines.append("main_menu={}".format(getattr(renpy.store,"main_menu",None)))
         # order: dialog_config_2 FIRST, then dialog_config_1, then dialog_config_1 again
@@ -218,7 +218,7 @@ def _worker():
             _log("  full={} panel_c={}".format(reg.get("full"), reg.get("panel_c")))
         out.write_text("\n".join(lines)+"\n")
         _log(f"wrote {out}")
-    except Exception:  # noqa: BLE001
+    except Exception:
         tb=traceback.format_exc(); lines.append(tb); out.write_text("\n".join(lines)+"\n"); _log(tb)
     finally:
         time.sleep(0.3); _quit()
@@ -250,7 +250,7 @@ def main():
     renpy.host_build=True
     try:
         import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
-    except Exception as e: _log(f"main_host {e}")  # noqa: BLE001
+    except Exception as e: _log(f"main_host {e}")
     try:
         import renpy.arguments
         basedir=getattr(renpy.config,"basedir",None) or game
@@ -260,14 +260,14 @@ def main():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception: pass  # noqa: BLE001, S110
+            except Exception: pass
         renpy.game.args=renpy.arguments.bootstrap()
-    except Exception as e: _log(f"args {e}")  # noqa: BLE001
+    except Exception as e: _log(f"args {e}")
     _pre()
     t=threading.Thread(target=_worker, daemon=True); t.start()
     import renpy.main as m
     try: m.main()
-    except BaseException as e: _log(f"main exit {e}")  # noqa: BLE001
+    except BaseException as e: _log(f"main exit {e}")
 
 if __name__=="__main__":
     main()

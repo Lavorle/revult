@@ -1,9 +1,9 @@
 # renpy-host (Linux MVP)
 
-Rust host for Ren'Py on the **wgpu + Vulkan** product path. Authority plan:
-`.omc/plans/consensus-wgpu-native-vulkan-rewrite.md` (§4.1.1 Pump ADR, §4.9 build matrix, Phase 0–9).
+[![host](https://github.com/Lavorle/revult/actions/workflows/host.yml/badge.svg)](https://github.com/Lavorle/revult/actions/workflows/host.yml) — Tier1+2 (fmt/check/test 34 + 8/8 + ruff + phase1)
 
-This document is the **Phase 0 §4.9 deliverable**. Keep it current as the host build evolves.
+Rust host for Ren'Py on the **wgpu + Vulkan** product path. Authority plan:
+
 
 ---
 

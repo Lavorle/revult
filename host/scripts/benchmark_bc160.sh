@@ -175,10 +175,12 @@ PY
   "one_percent_low_fps": $ONE_LOW,
   "frame_presentation_time_ns": $AVG_NS,
   "render_pass_duration_ns": $RENDER_NS,
+  "render_pass_cpu_proxy": true,
   "pass_status": "$PSTATUS",
   "notes": [
     "Measured via cargo run --benchmark (host native).",
-    "Frames=$FRAMES source=$BENCH_JSON"
+    "Frames=$FRAMES source=$BENCH_JSON",
+    "render_pass cpu_proxy (wgpu TIMESTAMP_QUERY not wired; Instant proxy, see main.rs benchmark_render_pass_total)"
   ],
   "optional_gate": {
     "ran": $([[ "$RUN_GATE" -eq 1 ]] && echo true || echo false),
@@ -189,7 +191,7 @@ PY
   "benchmark_source": "$BENCH_JSON"
 }
 EOF2
-  echo "Wrote MEASURED metrics to $OUT (fps=$FPS avg_ns=$AVG_NS one_low=$ONE_LOW render_ns=$RENDER_NS eligible=$REL status=$PSTATUS)"
+  echo "Wrote MEASURED metrics to $OUT (fps=$FPS avg_ns=$AVG_NS one_low=$ONE_LOW render_ns=$RENDER_NS cpu_proxy=true eligible=$REL status=$PSTATUS)"
   exit 0
 fi
 

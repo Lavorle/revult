@@ -5,6 +5,55 @@ Changelog (Ren'Py 7.x-)
 *There is also a list of* :doc:`incompatible changes <incompatible>`
 
 
+.. _renpy-8.99.99:
+
+8.99.99 — wgpu-host v0.6.0 (Linux Vulkan MVP)
+============================================
+
+This is the Ren'Py **wgpu-host** product track (``host/renpy-host`` + ``renpy/wgpu``)
+that replaces SDL3/GL with ``winit + wgpu Vulkan`` on Linux. The SDL reference
+tree remains buildable; the host artifact never links ``libSDL*`` (``ldd`` gate).
+
+Host Build
+----------
+
+* Rust host ``renpy-host`` embeds CPython via PyO3, owns the ``winit`` loop
+  (``ApplicationHandler`` + ``pump_app_events`` nested ``host.wait_until`` per
+  :doc:`host README <../../host/README>` §6) and forces ``wgpu Backends::VULKAN``.
+* ``cargo fmt`` 0, ``cargo check -D warnings`` 0, ``cargo test`` 34,
+  release binary 13MB ``ldd``-clean, ``RUST_LOG=info`` shows
+  ``backend=Vulkan`` (RADV NAVI12).
+
+WGSL / Shaders
+--------------
+
+* New ``renpy.wgpu.shaders.register_wgsl_shader`` with ``NativeShaderComposer``
+  (Rust ``shader.rs``) + ``naga 24.0.0`` line:col validation. ``tex_count<=3``,
+  uniform layout conflicts and ``atomic`` parts are enforced.
+* ``renpy.register_shader`` / ``register_textshader`` on host soft-stubs
+  (mirrors into ``register_wgsl_shader`` when available) so
+  ``_shaders.rpym`` + ``00style.rpy`` can complete. See
+  :doc:`WGSL migration <../../doc/wgsl_shader_migration>` for the full table
+  (``renpy.texture`` / ``solid`` / ``dissolve`` / ``blur`` / ``matrixcolor`` /
+  ``mask`` / ``live2d.*``).
+
+Golden / CI
+-----------
+
+* ``testcases/wgpu_golden`` G01–G08 **8/8** via ``host/scripts/runner/parent_runner.py``
+  (6-field envelope), ``golden_mae`` pure fail-closed, MAE ≤2/255 max 16.
+  ``G02_text`` / ``G06_live2d`` single-point resigned with verifier.
+* ``.github/workflows/host.yml`` locks Tier1+2 (fmt/check/test/8/8/ruff/phase1) on
+  ``ubuntu-latest`` + ``mesa-vulkan-drivers`` (lavapipe). BC-160 bench is local
+  release evidence (``bc160_perf_metrics.v1.json`` MEASURED 2870fps,
+  ``one_percent_low_fps`` 870, ``render_pass_duration_ns`` 348394).
+
+Incompatible
+------------
+
+* ``register_shader`` GLSL is not auto-translated on host; use ``register_wgsl_shader``.
+* ``WGPU_BACKEND`` must remain unset; host forces Vulkan.
+
 .. _renpy-8.6.0:
 
 8.6.0

@@ -287,7 +287,8 @@ fn run_product_pump(python: PythonRuntime) -> Result<i32, String> {
   "total_time_sec": {},
   "one_percent_low_fps": {},
   "render_pass_duration_ns": {},
-  "benchmark_render_pass_total_ns": {}
+  "benchmark_render_pass_total_ns": {},
+  "render_pass_cpu_proxy": true
 }}"#,
             app.benchmark_count,
             app.benchmark_total.as_millis(),

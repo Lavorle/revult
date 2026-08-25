@@ -1855,6 +1855,7 @@ dependencies = [
  "cpal",
  "env_logger",
  "log",
+ "naga",
  "pollster",
  "pyo3",
  "raw-window-handle",

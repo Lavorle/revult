@@ -24,3 +24,4 @@ log = { workspace = true }
 env_logger = { workspace = true }
 cpal = { workspace = true }
 sha1 = { workspace = true }
+naga = { workspace = true }

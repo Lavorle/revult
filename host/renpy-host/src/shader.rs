@@ -471,7 +471,7 @@ impl NativeShaderComposer {
 
         let wgsl = emit_wgsl(tex_count, &uniform_layout_id, &v_hooks, &f_hooks);
         validate_wgsl_syntax(&wgsl)?;
-
+        validate_wgsl_with_naga(&wgsl)?;
         let key = self.compute_cache_key(&effect_parts);
 
         if std::env::var("RENPY_HOST_DUMP_WGSL").ok().as_deref() == Some("1") {
@@ -614,6 +614,52 @@ pub fn validate_wgsl_syntax(source: &str) -> Result<(), ShaderError> {
         )));
     }
 
+    Ok(())
+}
+
+/// Direct naga validation for a complete WGSL module.
+///
+/// Parses `source` with `naga::front::wgsl::parse_str` and then validates the
+/// resulting IR with `naga::valid::Validator`.  Only intended for full
+/// `wgsl_source` modules (as emitted by `emit_wgsl` / `NativeShaderComposer::compose`);
+/// snippet bodies (hook fragments) are *not* valid WGSL modules and must not be
+/// passed here — they continue to use the lightweight `validate_wgsl_syntax` only.
+pub fn validate_wgsl_with_naga(source: &str) -> Result<(), ShaderError> {
+    let module = naga::front::wgsl::parse_str(source).map_err(|e| {
+        if let Some(loc) = e.location(source) {
+            ShaderError::InvalidSyntax(format!(
+                "naga parse error at line {}:{}: {}",
+                loc.line_number,
+                loc.line_position,
+                e.message()
+            ))
+        } else {
+            let diag = e.emit_to_string(source);
+            ShaderError::InvalidSyntax(format!(
+                "naga parse error: {} -- {}",
+                e.message(),
+                diag.lines().next().unwrap_or("").trim()
+            ))
+        }
+    })?;
+    let mut validator = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    );
+    validator.validate(&module).map_err(|e| {
+        if let Some(loc) = e.location(source) {
+            ShaderError::InvalidSyntax(format!(
+                "naga validation error at line {}:{}: {}",
+                loc.line_number, loc.line_position, e
+            ))
+        } else {
+            let diag = e.emit_to_string(source);
+            ShaderError::InvalidSyntax(format!(
+                "naga validation error: {e} -- {}",
+                diag.lines().next().unwrap_or("").trim()
+            ))
+        }
+    })?;
     Ok(())
 }
 

@@ -68,10 +68,8 @@ class RttPoolMixin:
                 hard_w = max(lw, dw, 1)
             if hard_h < 1:
                 hard_h = max(lh, dh, 1)
-            if w > hard_w:
-                w = hard_w
-            if h > hard_h:
-                h = hard_h
+            w = min(w, hard_w)
+            h = min(h, hard_h)
         except Exception:
             w = min(w, 1920)
             h = min(h, 1080)

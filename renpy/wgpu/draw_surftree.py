@@ -12,18 +12,18 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+from collections.abc import Sequence  # noqa: F401
 from typing import TYPE_CHECKING
 
-import os  # noqa: F401
-from typing import Any, Optional, Sequence  # noqa: F401
 from .draw_debug import (  # noqa: F401
     _UI_TRACE_LOGGED,
+    _host_draw_fail,
     _phase0_due_dissolve,
     _phase0_log,
     _ui_trace_once,
-    _host_draw_fail,
 )
-from .host_texture import HostTexture  # noqa: F401
+from .host_texture import HostTexture
 
 if TYPE_CHECKING:
     from .host_texture import HostTexture
@@ -326,7 +326,7 @@ class SurftreeMixin:
         except Exception:
             pass
 
-    def _host_tex_uv(self, ht: "HostTexture"):
+    def _host_tex_uv(self, ht: HostTexture):
         """Mesh UVs (u0, v_bottom, u1, v_top) for a HostTexture sub-rect.
 
         Full texture (x,y,w,h)=(0,0,width,height) → (0, 1, 1, 0).
@@ -340,7 +340,7 @@ class SurftreeMixin:
         v_top = float(ht.y) / ph
         return u0, v_bottom, u1, v_top
 
-    def _host_tex_is_full(self, ht: "HostTexture") -> bool:
+    def _host_tex_is_full(self, ht: HostTexture) -> bool:
         return (
             ht.x == 0
             and ht.y == 0

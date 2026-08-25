@@ -16,7 +16,6 @@ import os
 import sys
 import threading
 import time as _time
-from typing import Optional
 
 # Centralized env helper — use host_bridge.host_env_bool when available so
 # all RENPY_HOST_* bool reads go through one site (bridge). Fallback keeps
@@ -33,7 +32,7 @@ except Exception:  # pragma: no cover - import fallback for bare import
 _DRAW_SCREEN_LOCK = None  # type: Optional[threading.RLock]
 
 
-def _draw_screen_lock() -> "threading.RLock":
+def _draw_screen_lock() -> threading.RLock:
     global _DRAW_SCREEN_LOCK
     lock = _DRAW_SCREEN_LOCK
     if lock is None:
@@ -187,23 +186,23 @@ def _host_draw_fail(where: str, exc: BaseException) -> None:
 
 __all__ = [
     "_DRAW_SCREEN_LOCK",
-    "_draw_screen_lock",
     "_HOST_DRAW_FAIL_LOGGED",
-    "_UI_TRACE_LOGGED",
-    "_PHASE0_LAST_DISSOLVE_T",
-    "_PHASE0_LAST_WRITE_T",
-    "_PHASE0_LAST_FRAME_T",
     "_PHASE0_DISSOLVE_INTERVAL",
-    "_PHASE0_WRITE_INTERVAL",
     "_PHASE0_FRAME_INTERVAL",
+    "_PHASE0_LAST_DISSOLVE_T",
+    "_PHASE0_LAST_FRAME_T",
     "_PHASE0_LAST_GENERIC",
-    "_phase0_signals_enabled",
-    "_phase0_log",
+    "_PHASE0_LAST_WRITE_T",
+    "_PHASE0_WRITE_INTERVAL",
+    "_UI_TRACE_LOGGED",
+    "_draw_screen_lock",
+    "_host_draw_fail",
     "_phase0_due",
     "_phase0_due_dissolve",
-    "_phase0_due_write",
     "_phase0_due_frame",
+    "_phase0_due_write",
+    "_phase0_log",
+    "_phase0_signals_enabled",
     "_safe_print",
     "_ui_trace_once",
-    "_host_draw_fail",
 ]

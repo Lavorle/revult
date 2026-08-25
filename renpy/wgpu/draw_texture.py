@@ -1,9 +1,19 @@
 """draw_texture — texture/cache mixin extracted from draw.py."""
 from __future__ import annotations
-import os, sys, time as _time
-from typing import Any, Optional, Sequence
-from .draw_debug import _DRAW_SCREEN_LOCK, _draw_screen_lock, _HOST_DRAW_FAIL_LOGGED, _UI_TRACE_LOGGED, _PHASE0_LAST_DISSOLVE_T, _PHASE0_LAST_WRITE_T, _PHASE0_LAST_FRAME_T, _PHASE0_DISSOLVE_INTERVAL, _PHASE0_WRITE_INTERVAL, _PHASE0_FRAME_INTERVAL, _PHASE0_LAST_GENERIC, _phase0_signals_enabled, _phase0_log, _phase0_due, _phase0_due_dissolve, _phase0_due_write, _phase0_due_frame, _safe_print, _ui_trace_once, _host_draw_fail
+
+import os
+import time as _time
+
+from .draw_debug import (
+    _UI_TRACE_LOGGED,
+    _host_draw_fail,
+    _phase0_due_write,
+    _phase0_log,
+    _phase0_signals_enabled,
+    _ui_trace_once,
+)
 from .host_texture import HostTexture, _surf_fingerprint
+
 
 class TextureMixin:
     texture_cache: dict
@@ -202,7 +212,7 @@ class TextureMixin:
             except Exception:
                 pass
             try:
-                import renpy.display.im as im  # type: ignore
+                from renpy.display import im  # type: ignore
                 cache = getattr(im, "cache", None)
                 if cache is not None:
                     try:
@@ -261,7 +271,7 @@ class TextureMixin:
 
     def _recover_pixels_for_dead_handle(self, old, cur, ht):
         try:
-            import renpy.display.im as im  # type: ignore
+            from renpy.display import im  # type: ignore
         except Exception:
             return None
         cache = getattr(im, "cache", None)
@@ -639,7 +649,7 @@ class TextureMixin:
 
     def kill_textures(self):
         try:
-            import renpy.display.im as im
+            from renpy.display import im
             im.cache.clear()
         except Exception:
             pass

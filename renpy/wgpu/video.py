@@ -34,7 +34,8 @@ import os
 import shutil
 import subprocess
 from collections import deque
-from typing import Callable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
+
 
 class FrameBag(list):
     """RGBA frame list that can carry absolute decode counters.
@@ -69,7 +70,7 @@ def _set_abs_total(frames, n: int) -> None:
     except Exception:
         pass
     try:
-        setattr(frames, "_abs_total", n)
+        frames._abs_total = n
     except Exception:
         pass
 
@@ -108,7 +109,7 @@ _CHUNK_TIMEOUT_FLOOR_S = 30.0
 _CHUNK_TIMEOUT_PER_FRAME_S = 0.15
 
 
-def _solid_frame(width: int, height: int, rgba: Tuple[int, int, int, int]) -> bytes:  # type: ignore - shim retained (smoke init)
+def _solid_frame(width: int, height: int, rgba: tuple[int, int, int, int]) -> bytes:  # type: ignore - shim retained (smoke init)
     r, g, b, a = rgba
     return bytes([r, g, b, a]) * (width * height)
 
@@ -128,7 +129,7 @@ def _gradient_frame(width: int, height: int, t: float) -> bytes:  # type: ignore
     return bytes(out)
 
 
-def synthetic_frames(width: int, height: int, count: int) -> List[bytes]:  # type: ignore - shim retained (ffmpeg fallback)
+def synthetic_frames(width: int, height: int, count: int) -> list[bytes]:  # type: ignore - shim retained (ffmpeg fallback)
     """Generate `count` RGBA frames of size width×height."""
     if count <= 0:
         return []
@@ -183,7 +184,7 @@ def _media_is_native_size(path: str, width: int, height: int) -> bool:
     cache = getattr(_media_is_native_size, "_cache", None)
     if cache is None:
         cache = {}
-        setattr(_media_is_native_size, "_cache", cache)
+        _media_is_native_size._cache = cache
     if key in cache:
         return cache[key]
     ok = False
@@ -222,11 +223,11 @@ def _media_is_native_size(path: str, width: int, height: int) -> bool:
 
 
 
-def _split_raw_rgba(data: bytes, width: int, height: int, max_frames: int) -> List[bytes]:
+def _split_raw_rgba(data: bytes, width: int, height: int, max_frames: int) -> list[bytes]:
     raw_size = width * height * 4
     if raw_size <= 0 or len(data) < raw_size:
         return []
-    frames: List[bytes] = []
+    frames: list[bytes] = []
     for off in range(0, len(data) - raw_size + 1, raw_size):
         frames.append(data[off : off + raw_size])
         if len(frames) >= max_frames:
@@ -241,7 +242,7 @@ def _decode_ffmpeg_chunk(
     start_frame: int,
     n_frames: int,
     fps: float,
-) -> List[bytes]:
+) -> list[bytes]:
     """Decode one RGBA chunk starting at start_frame (in output fps units).
 
     Uses ``-ss`` before ``-i`` for fast input seek, then scale+fps resample
@@ -330,11 +331,11 @@ def _stream_ffmpeg_remaining(
     height: int,
     max_frames: int,
     fps: float,
-    all_frames: List[bytes],
-    on_chunk: Optional[Callable[[List[bytes]], None]],
+    all_frames: list[bytes],
+    on_chunk: Callable[[list[bytes]], None] | None,
     publish_every: int,
-    kickstart: Optional[int] = None,
-) -> List[bytes]:
+    kickstart: int | None = None,
+) -> list[bytes]:
     """Continue decode from absolute total via ffmpeg.
 
     For large frames (1080p RGBA) default to **file-backed** decode under
@@ -646,8 +647,8 @@ def decode_frames_ffmpeg(
     height: int,
     max_frames: int = 8,
     fps: float = 10.0,
-    on_chunk: Optional[Callable[[List[bytes]], None]] = None,
-) -> List[bytes]:
+    on_chunk: Callable[[list[bytes]], None] | None = None,
+) -> list[bytes]:
     """
     Decode up to `max_frames` RGBA frames from `path` via the ffmpeg CLI.
 
@@ -669,7 +670,7 @@ def decode_frames_ffmpeg(
 
     chunk_size = _chunk_frame_budget()
     kickstart = _kickstart_frame_budget()
-    all_frames: List[bytes] = FrameBag()
+    all_frames: list[bytes] = FrameBag()
 
     if on_chunk is not None and max_frames >= 1:
         # Frame0 fast path — scale-only, no fps filter (reliable single frame).
@@ -710,8 +711,8 @@ def decode_frames_ffmpeg_progressive(
     height: int,
     max_frames: int = 8,
     fps: float = 10.0,
-    on_chunk: Optional[Callable[[List[bytes]], None]] = None,
-) -> List[bytes]:
+    on_chunk: Callable[[list[bytes]], None] | None = None,
+) -> list[bytes]:
     """Alias of :func:`decode_frames_ffmpeg` for progressive warm call sites.
 
     Prefer this name in path-cache warm code when the intent is frame0-first
@@ -731,11 +732,11 @@ def continue_frames_ffmpeg(
     path: str,
     width: int,
     height: int,
-    all_frames: List[bytes],
+    all_frames: list[bytes],
     max_frames: int,
     fps: float = 10.0,
-    on_chunk: Optional[Callable[[List[bytes]], None]] = None,
-) -> List[bytes]:
+    on_chunk: Callable[[list[bytes]], None] | None = None,
+) -> list[bytes]:
     """Append frames to an existing progressive list via a single ``-ss`` stream.
 
     Used by staged warm → full continue so the host does **not** re-decode
@@ -849,7 +850,7 @@ def play_movie_smoke(  # type: ignore - shim retained (gate smoke)
     width: int = 64,
     height: int = 64,
     frame_count: int = 8,
-    media_path: Optional[str] = None,
+    media_path: str | None = None,
     channel: int = 0,
     frame_ms: int = 20,
 ) -> dict:
@@ -860,7 +861,7 @@ def play_movie_smoke(  # type: ignore - shim retained (gate smoke)
     synthetic gradient frames. Returns a status dict for gate scripts.
     """
     source = "synthetic"
-    frames: List[bytes] = []
+    frames: list[bytes] = []
     if media_path:
         frames = decode_frames_ffmpeg(
             media_path, width, height, max_frames=frame_count

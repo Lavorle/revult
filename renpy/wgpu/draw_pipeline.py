@@ -1,9 +1,10 @@
 """draw_pipeline — pipeline/uniform/draw_* mixin extracted from draw.py."""
 from __future__ import annotations
-import os, sys, time as _time
-from typing import Any, Optional, Sequence
-from .draw_debug import _DRAW_SCREEN_LOCK, _draw_screen_lock, _HOST_DRAW_FAIL_LOGGED, _UI_TRACE_LOGGED, _PHASE0_LAST_DISSOLVE_T, _PHASE0_LAST_WRITE_T, _PHASE0_LAST_FRAME_T, _PHASE0_DISSOLVE_INTERVAL, _PHASE0_WRITE_INTERVAL, _PHASE0_FRAME_INTERVAL, _PHASE0_LAST_GENERIC, _phase0_signals_enabled, _phase0_log, _phase0_due, _phase0_due_dissolve, _phase0_due_write, _phase0_due_frame, _safe_print, _ui_trace_once, _host_draw_fail
+
+from collections.abc import Sequence
+
 from .host_texture import HostTexture
+
 
 class PipelineMixin:
     _solid_pipe: object
@@ -161,7 +162,7 @@ class PipelineMixin:
         return int(self._tex_pipe if has_texture else self._solid_pipe)
 
 
-    def _matrix_to_floats(self, matrix) -> Optional[list]:
+    def _matrix_to_floats(self, matrix) -> list | None:
         """Extract 16 column-major floats from a Ren'Py Matrix or sequence."""
         if matrix is None:
             return None
@@ -192,7 +193,7 @@ class PipelineMixin:
             return None
 
 
-    def _pack_uniforms(self, uniforms, shaders) -> Optional[list]:
+    def _pack_uniforms(self, uniforms, shaders) -> list | None:
         """Pack product dict uniforms into the host 16-float blob.
 
         Layouts match arena WGSL Params:
@@ -288,16 +289,14 @@ class PipelineMixin:
     # --- Phase 5 transition helpers (exercise host pipelines) -----------------
 
 
-    def draw_textured(self, texture: int, mesh: Optional[int] = None):
-        import renpy_host  # type: ignore  # via host_bridge
+    def draw_textured(self, texture: int, mesh: int | None = None):
 
         self._ensure_pipes()
         self._dm(self._tex_pipe, mesh or self._quad_mesh, texture)
 
 
-    def draw_dissolve(self, texture: int, mesh: Optional[int] = None):
+    def draw_dissolve(self, texture: int, mesh: int | None = None):
         """Draw with renpy.dissolve pipeline (alpha from vertex color / tex)."""
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         self._dm(self._dissolve_pipe, mesh or self._quad_mesh, texture)
@@ -307,10 +306,9 @@ class PipelineMixin:
         self,
         texture: int,
         blur_log2: float = 2.0,
-        mesh: Optional[int] = None,
+        mesh: int | None = None,
     ):
         """Draw with renpy.blur pipeline; uniforms[0] = blur_log2."""
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         u = [float(blur_log2)] + [0.0] * 15
@@ -323,10 +321,9 @@ class PipelineMixin:
         self,
         texture: int,
         matrix: Sequence[float],
-        mesh: Optional[int] = None,
+        mesh: int | None = None,
     ):
         """Draw with renpy.matrixcolor; matrix is 16 floats (column-major 4x4)."""
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         u = list(matrix)[:16]
@@ -343,11 +340,10 @@ class PipelineMixin:
         mask: int,
         mult: float = 1.0,
         offset: float = 0.0,
-        mesh: Optional[int] = None,
+        mesh: int | None = None,
         alpha_only: bool = False,
     ):
         """Draw dual-tex mask (or alpha_mask if alpha_only)."""
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         pipe = self._alpha_mask_pipe if alpha_only else self._mask_pipe
@@ -360,7 +356,7 @@ class PipelineMixin:
     def create_mesh(
         self,
         vertices: Sequence[float],
-        indices: Optional[Sequence[int]] = None,
+        indices: Sequence[int] | None = None,
     ) -> int:
         """
         Upload a mesh buffer to GpuArena.
@@ -382,16 +378,15 @@ class PipelineMixin:
     def draw_model_mesh(
         self,
         mesh: int,
-        texture: Optional[int] = None,
-        pipeline: Optional[int] = None,
-        uniforms: Optional[Sequence[float]] = None,
+        texture: int | None = None,
+        pipeline: int | None = None,
+        uniforms: Sequence[float] | None = None,
     ) -> None:
         """
         Draw an uploaded mesh via the primary draw_model path.
 
         texture=None → solid pipeline; otherwise textured (or explicit pipeline).
         """
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         if pipeline is None:
@@ -408,11 +403,10 @@ class PipelineMixin:
         model_size: Sequence[float] = (1.0, 1.0),
         ppu: float = 1.0,
         offset: Sequence[float] = (0.0, 0.0),
-        mesh: Optional[int] = None,
+        mesh: int | None = None,
         inverted: bool = False,
     ):
         """Draw with live2d.mask / live2d.inverted_mask (mask UV from pos*ppu+offset)."""
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         pipe = (
@@ -433,10 +427,9 @@ class PipelineMixin:
         texture: int,
         multiply: Sequence[float] = (1.0, 1.0, 1.0, 1.0),
         screen: Sequence[float] = (0.0, 0.0, 0.0, 0.0),
-        mesh: Optional[int] = None,
+        mesh: int | None = None,
     ):
         """Draw with live2d.colors (multiply then screen blend)."""
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         m = list(multiply)[:4]
@@ -451,9 +444,8 @@ class PipelineMixin:
         )
 
 
-    def draw_live2d_flip(self, texture: int, mesh: Optional[int] = None):
+    def draw_live2d_flip(self, texture: int, mesh: int | None = None):
         """Draw with live2d.flip_texture (V flip)."""
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         self._dm(

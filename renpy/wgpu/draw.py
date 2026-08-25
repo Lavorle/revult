@@ -11,49 +11,46 @@ Phase 8: create_mesh upload + draw_model_mesh for assimp/procedural models.
 from __future__ import annotations
 
 import os
-import sys
-import threading
-import time as _time
-from typing import Any, Optional, Sequence
+from typing import Any
 
 # --- P0 decomposition: re-exports keep pickle/import compat ---
 # HostTexture + fingerprint moved to host_texture.py; debug helpers to
 # draw_debug.py (with generic _phase0_due); RTT pool to rtt_pool.py.
 from .draw_debug import (  # noqa: F401
     _DRAW_SCREEN_LOCK,
-    _draw_screen_lock,
     _HOST_DRAW_FAIL_LOGGED,
-    _UI_TRACE_LOGGED,
-    _PHASE0_LAST_DISSOLVE_T,
-    _PHASE0_LAST_WRITE_T,
-    _PHASE0_LAST_FRAME_T,
     _PHASE0_DISSOLVE_INTERVAL,
-    _PHASE0_WRITE_INTERVAL,
     _PHASE0_FRAME_INTERVAL,
+    _PHASE0_LAST_DISSOLVE_T,
+    _PHASE0_LAST_FRAME_T,
     _PHASE0_LAST_GENERIC,
-    _phase0_signals_enabled,
-    _phase0_log,
+    _PHASE0_LAST_WRITE_T,
+    _PHASE0_WRITE_INTERVAL,
+    _UI_TRACE_LOGGED,
+    _draw_screen_lock,
+    _host_draw_fail,
     _phase0_due,
     _phase0_due_dissolve,
-    _phase0_due_write,
     _phase0_due_frame,
+    _phase0_due_write,
+    _phase0_log,
+    _phase0_signals_enabled,
     _safe_print,
     _ui_trace_once,
-    _host_draw_fail,
 )
+from .draw_model import ModelMixin
+from .draw_pipeline import PipelineMixin
+from .draw_screen import ScreenMixin
+from .draw_surftree import SurftreeMixin
+from .draw_texture import TextureMixin
+from .draw_traversal import TraversalMixin
+from .draw_walk import WalkMixin
 from .host_texture import HostTexture, _surf_fingerprint  # noqa: F401
 from .rtt_pool import RttPoolMixin
-from .draw_surftree import SurftreeMixin  # noqa: F401
-from .draw_traversal import TraversalMixin  # noqa: F401
-from .draw_model import ModelMixin  # noqa: F401
-from .draw_walk import WalkMixin  # noqa: F401
-from .draw_texture import TextureMixin  # noqa: F401
-from .draw_screen import ScreenMixin  # noqa: F401
-from .draw_pipeline import PipelineMixin  # noqa: F401
 
 # host_bridge single-point import (optional; fallback to direct import)
 try:
-    from .host_bridge import renpy_host as _host_bridge  # noqa: F401
+    from .host_bridge import renpy_host as _host_bridge
 except Exception:  # pragma: no cover
     _host_bridge = None  # type: ignore
 
@@ -243,7 +240,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         self.drawable_viewport = (0, 0, dw, dh)
         self.draw_per_virt = float(dw) / float(vw)
         try:
-            import renpy.display.render as render
+            from renpy.display import render
 
             self.virt_to_draw = render.Matrix2D(self.draw_per_virt, 0, 0, self.draw_per_virt)
             self.draw_to_virt = render.Matrix2D(1.0 / self.draw_per_virt, 0, 0, 1.0 / self.draw_per_virt)
@@ -407,8 +404,9 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
           4. ``update(force=True)`` refreshes draw_per_virt when chrome already matches.
         """
         try:
-            import renpy  # type: ignore
             import renpy_host  # type: ignore
+
+            import renpy  # type: ignore
 
             prefs = renpy.game.preferences
             want_fs = bool(getattr(prefs, "fullscreen", False))
@@ -503,7 +501,6 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         """
         key = id(surf)
         self.texture_cache.pop(key, None)
-        return None
 
     def get_physical_size(self):
         return self.physical_size
@@ -562,7 +559,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
 
     def get_mouse_pos(self):
         try:
-            import renpy.pygame as pygame
+            from renpy import pygame
 
             x, y = pygame.mouse.get_pos()
             return self.translate_point(x, y)
@@ -571,7 +568,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
 
     def set_mouse_pos(self, x, y):
         try:
-            import renpy.pygame as pygame
+            from renpy import pygame
 
             px, py = self.untranslate_point(x, y)
             pygame.mouse.set_pos((px, py))
@@ -586,6 +583,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         """
         try:
             import renpy_host  # type: ignore
+
             from renpy.pygame.surface import Surface
 
             w, h, rgba = renpy_host.read_game_rt_rgba()

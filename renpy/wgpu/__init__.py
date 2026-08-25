@@ -1,21 +1,20 @@
 # renpy.wgpu — host renderer package (WgpuDraw + model helpers + composer).
 
-from .draw import WgpuDraw
-from . import model
-from . import composer
+from . import composer, model
 from .composer import (
     ComposerError,
     ComposerResult,
     WgslShaderCache,
     get_shader_cache,
 )
+from .draw import WgpuDraw
 
 __all__ = [
-    "WgpuDraw",
-    "model",
-    "composer",
     "ComposerError",
     "ComposerResult",
+    "WgpuDraw",
     "WgslShaderCache",
+    "composer",
     "get_shader_cache",
+    "model",
 ]

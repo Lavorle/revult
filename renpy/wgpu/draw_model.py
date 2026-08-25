@@ -1,32 +1,30 @@
 """draw_model - model-leaf emit + node helpers (mixin)."""
 from __future__ import annotations
 
-import os
-from typing import Any, Optional, Sequence
-
 from .draw_debug import (  # noqa: F401
     _DRAW_SCREEN_LOCK,
-    _draw_screen_lock,
     _HOST_DRAW_FAIL_LOGGED,
-    _UI_TRACE_LOGGED,
-    _PHASE0_LAST_DISSOLVE_T,
-    _PHASE0_LAST_WRITE_T,
-    _PHASE0_LAST_FRAME_T,
     _PHASE0_DISSOLVE_INTERVAL,
-    _PHASE0_WRITE_INTERVAL,
     _PHASE0_FRAME_INTERVAL,
+    _PHASE0_LAST_DISSOLVE_T,
+    _PHASE0_LAST_FRAME_T,
     _PHASE0_LAST_GENERIC,
-    _phase0_signals_enabled,
-    _phase0_log,
+    _PHASE0_LAST_WRITE_T,
+    _PHASE0_WRITE_INTERVAL,
+    _UI_TRACE_LOGGED,
+    _draw_screen_lock,
+    _host_draw_fail,
     _phase0_due,
     _phase0_due_dissolve,
-    _phase0_due_write,
     _phase0_due_frame,
+    _phase0_due_write,
+    _phase0_log,
+    _phase0_signals_enabled,
     _safe_print,
     _ui_trace_once,
-    _host_draw_fail,
 )
-from .host_texture import HostTexture  # noqa: F401
+from .host_texture import HostTexture
+
 
 class ModelMixin:
     # Expected attributes on the concrete WgpuDraw (type hints only)
@@ -38,7 +36,6 @@ class ModelMixin:
 
     def _draw_model_like(self, node, ox=0.0, oy=0.0):
         """Emit one draw_model for a Model-like / textured leaf."""
-        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
 
@@ -489,7 +486,6 @@ class ModelMixin:
         ``_host_tex_uv`` / ``_host_tex_is_full``. Doing so made Frame stretch
         sample wrong UVs (ClampToEdge edge-fill looked like a solid-tile pass).
         """
-        import renpy_host  # type: ignore  # via host_bridge
 
         # _resolve_texture_full already runs class-(b) dead-handle recovery.
         ht = self._resolve_texture_full(tex)

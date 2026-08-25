@@ -10,7 +10,7 @@ so that `cargo test` parity and offline lint both pass.
 from __future__ import annotations
 
 import hashlib
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from renpy.wgpu import shaders as _shaders
 
@@ -133,8 +133,7 @@ def _resolve_layout(
         tc = int(ir.get("tex_count") or 0)
         if tc < 0 or tc > 3:
             raise FallbackComposerError(f"{name!r} has illegal tex_count={tc}")
-        if tc > tex_count:
-            tex_count = tc
+        tex_count = max(tex_count, tc)
         part_layout = str(ir.get("uniform_layout_id") or _UNIFORM_NONE)
         if part_layout == _UNIFORM_NONE:
             continue
@@ -192,17 +191,7 @@ struct Params {
     col3: vec4<f32>,
 };"""
         )
-    elif uniform_layout_id == _UNIFORM_PARAMS16:
-        chunks.append(
-            """\
-struct Params {
-    data0: vec4<f32>,
-    data1: vec4<f32>,
-    data2: vec4<f32>,
-    data3: vec4<f32>,
-};"""
-        )
-    elif has_uniforms:
+    elif uniform_layout_id == _UNIFORM_PARAMS16 or has_uniforms:
         chunks.append(
             """\
 struct Params {

@@ -12,8 +12,8 @@ Vertex layout (matches GpuArena::create_mesh):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
 
 # Tight mesh blob for iostream bridge demos / future file loads.
 # Layout: magic "RPYM" + u32le n_verts + u32le n_idx
@@ -25,8 +25,8 @@ MESH_MAGIC = b"RPYM"
 class MeshData:
     """CPU-side mesh ready for GpuArena upload."""
 
-    vertices: List[float]
-    indices: Optional[List[int]] = None
+    vertices: list[float]
+    indices: list[int] | None = None
 
     @property
     def vertex_count(self) -> int:
@@ -46,7 +46,7 @@ def _v(
     g: float = 1.0,
     b: float = 1.0,
     a: float = 1.0,
-) -> List[float]:
+) -> list[float]:
     return [float(x), float(y), float(u), float(v), float(r), float(g), float(b), float(a)]
 
 
@@ -104,7 +104,7 @@ def procedural_cube_isometric(
 
     # 7 unique corners used by the three faces (center of front-bottom is origin).
     # Origin at cube center projected.
-    def p(i: float, j: float, k: float) -> Tuple[float, float]:
+    def p(i: float, j: float, k: float) -> tuple[float, float]:
         # i: right axis, j: up, k: left axis
         x = cx + i * ex + k * zx
         y = cy + i * ey + j * uy + k * zy
@@ -127,13 +127,13 @@ def procedural_cube_isometric(
     G = p(0, 0, 0)
     H = p(0, 0, 1)
 
-    verts: List[float] = []
-    indices: List[int] = []
+    verts: list[float] = []
+    indices: list[int] = []
 
     def add_face(
-        corners: Sequence[Tuple[float, float]],
+        corners: Sequence[tuple[float, float]],
         color: Sequence[float],
-        uvs: Sequence[Tuple[float, float]] = ((0, 1), (1, 1), (1, 0), (0, 0)),
+        uvs: Sequence[tuple[float, float]] = ((0, 1), (1, 1), (1, 0), (0, 0)),
     ) -> None:
         base = len(verts) // 8
         r, g, b, a = (list(color) + [1, 1, 1, 1])[:4]
@@ -174,7 +174,7 @@ def mesh_from_blob(data: bytes) -> MeshData:
     n_f = n_v * 8
     verts = list(struct.unpack_from(f"<{n_f}f", data, off))
     off += n_f * 4
-    indices: Optional[List[int]] = None
+    indices: list[int] | None = None
     if n_i:
         indices = list(struct.unpack_from(f"<{n_i}I", data, off))
     return MeshData(vertices=verts, indices=indices)
@@ -229,7 +229,7 @@ def destroy_mesh(handle: int) -> None:
     renpy_host.destroy_mesh(int(handle))
 
 
-def draw_solid_model(mesh: int, pipeline: Optional[int] = None) -> None:
+def draw_solid_model(mesh: int, pipeline: int | None = None) -> None:
     """draw_model solid path (no texture)."""
     import renpy_host  # type: ignore
 
@@ -240,7 +240,7 @@ def draw_solid_model(mesh: int, pipeline: Optional[int] = None) -> None:
 def draw_textured_model(
     mesh: int,
     texture: int,
-    pipeline: Optional[int] = None,
+    pipeline: int | None = None,
 ) -> None:
     """draw_model textured path."""
     import renpy_host  # type: ignore

@@ -43,4 +43,4 @@ def get_host():
     return renpy_host
 
 
-__all__ = ["renpy_host", "host_env_bool", "get_host"]
+__all__ = ["get_host", "host_env_bool", "renpy_host"]

@@ -12,8 +12,8 @@ Fallback 抽至 composer_fallback.py，主文件保持清晰分层与异常分�
 from __future__ import annotations
 
 import warnings
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 from renpy.wgpu import shaders as _shaders
 
@@ -325,9 +325,9 @@ class WgslShaderCache:
             except (ImportError, AttributeError):
                 # host compose unavailable but get_or_compile succeeded — derive via fallback normalize
                 from renpy.wgpu.composer_fallback import (
+                    _ensure_builtins,
                     _normalize_partnames,
                     _resolve_effect_parts,
-                    _ensure_builtins,
                 )
 
                 _ensure_builtins()
@@ -338,9 +338,9 @@ class WgslShaderCache:
             except Exception as e:
                 _log_residual(f"effect_parts derive residual: {e}")
                 from renpy.wgpu.composer_fallback import (
+                    _ensure_builtins,
                     _normalize_partnames,
                     _resolve_effect_parts,
-                    _ensure_builtins,
                 )
 
                 _ensure_builtins()
@@ -378,7 +378,6 @@ class WgslShaderCache:
             pass
         except Exception as e:
             _log_residual(f"WgslShaderCache.get host residual: {e}")
-            pass
 
         # ---- fallback offline path ----
         try:
@@ -520,7 +519,6 @@ def create_pipeline_from_parts(
         pass
     except Exception as e:
         _log_residual(f"create_pipeline_from_parts host residual: {e}")
-        pass
 
     res = get_shader_cache().get(partnames, hard_fail=True, has_texture=has_texture)
     if res is None:

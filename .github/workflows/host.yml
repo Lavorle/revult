@@ -36,7 +36,7 @@ jobs:
       - name: Install Python tools
         run: |
           python -m pip install --upgrade pip
-          pip install ruff
+          pip install ruff Pillow
           ruff --version
           python --version
           cargo --version

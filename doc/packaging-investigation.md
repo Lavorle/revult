@@ -29,19 +29,21 @@
 
 **renpy-build (C) deferred to Phase 9 strip**: only after SDL tree is deleted can `renpy-build` stop assuming SDL; until then it would fight dual-tree.
 
-## 4. Next steps (for E)
+## 4. Next steps (for E — DONE 78b21d7b4)
 
-- [ ] `host/scripts/build_appimage.sh --check` (dry-run, no network): verifies `ldd` no SDL, `VULKAN` backend log, `libpython` path, size budget.
-- [ ] `sdist` manifest: ensure `host/python` shims are included, `src/Setup` excludes `sdl3` when `RENPY_HOST_BUILD=1`.
-- [ ] Artifact naming: `renpy-host-<rev>-bc160-measured.tar.gz` + `bc160_perf_metrics.v1.json` + `release_acceptance.v1.json` SHA256 bundle.
+- [x] `host/scripts/build_appimage.sh --check` (dry-run, no network): verifies `ldd` no SDL, `VULKAN` backend log, `libpython` path, size budget. — `host/scripts/build_appimage.sh` green, `host/README.md §Packaging --check`
+- [x] `sdist` manifest: ensure `host/python` shims are included, `src/Setup` excludes `sdl3` when `RENPY_HOST_BUILD=1`. — `host/scripts/build_sdist_manifest.sh --check` green (164 host/python + 19 renpy/wgpu), `setup.py` gating deferred to Phase 9 per §3 C
+- [x] Artifact naming: `renpy-host-<rev>-bc160-measured.tar.gz` + `bc160_perf_metrics.v1.json` + `release_acceptance.v1.json` SHA256 bundle. — `build_sdist_manifest.sh` probes `renpy-host-78b21d7b4-bc160-measured.tar.gz` pattern + `release_acceptance.v1.json` digest
 
-## 5. Verification (D2)
+## 5. Verification (D2 + E1 --check)
 
 ```bash
 test -f doc/packaging-investigation.md
 grep -q "AppImage" doc/packaging-investigation.md
 grep -q "sdist" doc/packaging-investigation.md
 grep -q "renpy-build" doc/packaging-investigation.md
+bash host/scripts/build_appimage.sh --check
+bash host/scripts/build_sdist_manifest.sh --check
 ```
 
 ## 6. Notes

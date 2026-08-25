@@ -384,7 +384,7 @@ Artifacts: `host/target/gate-g0N.txt`, baselines under `testcases/wgpu_golden/G0
 - [x] Dual-tree: **do not delete** SDL/GL source tree — strip is host-artifact only
 - [x] Shader migration docs current: `doc/wgsl_shader_migration.md`
 
-**Release evidence (rebound to HEAD 9f62ab39c, 2026-08-25):** `release_acceptance.v1.json PASS` + `product_acceptance.v1.json PASS` (evidence_revision 9f62ab39c), `bc160_perf_metrics.v1.json MEASURED 2994.77fps 1800 frames eligible true` (host/target/), `cargo test 34`, `ruff renpy/wgpu 0 + host/python/gates 0 bulk narrow`, `phase1_gates 0`. Full digest: `.omc/artifacts/release_artifacts.sha256`. See `CHANGELOG.md` wgpu-host v0.6.0 and `.omc/artifacts/release_acceptance.v1.json`.
+**Release evidence (rebound to HEAD 78b21d7b4, 2026-08-25):** `release_acceptance.v1.json PASS` + `product_acceptance.v1.json PASS` (evidence_revision 78b21d7b4), `bc160_perf_metrics.v1.json MEASURED 2262.28fps 1800 frames 830.91 1%low render_pass 5098ns TIMESTAMP_QUERY true eligible true` (host/target/), `cargo test 34`, `ruff renpy/wgpu 0 + host/python/gates 0 (per-file-ignores)`, `phase1_gates 0`. Full digest: `.omc/artifacts/release_artifacts.sha256`. See `CHANGELOG.md` wgpu-host v0.6.0 and `.omc/artifacts/release_acceptance.v1.json`.
 
 ```bash
 # Fresh verify at any HEAD (Phase 1 replica):
@@ -395,6 +395,15 @@ bash host/scripts/run_golden_tests.sh   # 8/8 via parent_runner
 ruff check ../renpy/wgpu ../host/python/gates
 bash host/scripts/phase1_gates.sh
 python3 host/scripts/build_release_acceptance.py --out ../.omc/artifacts/release_acceptance.v1.json
+```
+
+### Packaging --check (E1 dry-run, no network)
+
+```bash
+# AppImage dry-run: ldd no SDL + libpython + WGPU_BACKEND unset + backend Vulkan + size <220MB
+bash host/scripts/build_appimage.sh --check
+# sdist manifest dry-run: host/python + renpy/wgpu inclusion probe
+bash host/scripts/build_sdist_manifest.sh --check
 ```
 ### Migration / AC8
 

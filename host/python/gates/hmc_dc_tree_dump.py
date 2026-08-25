@@ -3,8 +3,13 @@
 Finds 1849x846 Renders and logs children sizes / reverse / HT / mesh.
 Also captures exceptions during render of kind screens alone.
 """
-import os, sys, threading, time, traceback
+import os
+import sys
+import threading
+import time
+import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -18,15 +23,15 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[dc_tree] %s\n" % m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[dc_tree] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_dc_tree_dump.log", "a").write(m + "\n")
+    open("/tmp/hmc_dc_tree_dump.log", "a").write(m + "\n")  # noqa: SIM115
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()
-    except Exception:
+        import renpy_host; renpy_host.request_quit()  # noqa: I001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _clear_falsey(n):
@@ -37,12 +42,15 @@ def _clear_falsey(n):
 def _pre():
     import types
     try:
-        import renpy.audio.renpysound_host as h, renpy.audio as a
+        import renpy.audio as a
+        import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"] = h; a.renpysound = h
-    except Exception as e:
-        _log("sound %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"sound {e}")
     try:
-        import host_pygame, host_pygame.locals as loc, host_pygame.scrap as scrap
+        import host_pygame
+        import host_pygame.locals as loc
+        from host_pygame import scrap
         if not hasattr(host_pygame, "constants"):
             host_pygame.constants = loc
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
@@ -52,11 +60,11 @@ def _pre():
         if not hasattr(rpg, "constants"):
             rpg.constants = host_pygame.constants
         try: rpg.scrap = scrap
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
         try: rpg.import_as_pygame()
-        except Exception: pass
-    except Exception as e:
-        _log("pygame %s" % e)
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"] = u; sys.modules["renpy.uguu.gl"] = u
@@ -66,15 +74,15 @@ def _pre():
             if n.startswith("GL_") or n in ("clear_errors", "get_error"):
                 setattr(pkg, n, getattr(u, n))
         pkg.uguu = u; pkg.gl = u
-        import renpy; renpy.uguu = pkg
-    except Exception as e:
-        _log("uguu %s" % e)
+        import renpy; renpy.uguu = pkg  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"] = e
-        import renpy; renpy.ecsign = e
-    except Exception as e:
-        _log("ecsign %s" % e)
+        import renpy; renpy.ecsign = e  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign {e}")
 
 def _node_brief(n, depth=0):
     from renpy.wgpu.draw import HostTexture
@@ -84,7 +92,7 @@ def _node_brief(n, depth=0):
     try:
         if hasattr(n, "get_size"):
             w, h = n.get_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     mesh = getattr(n, "mesh", None)
     rev = getattr(n, "reverse", None)
@@ -92,7 +100,7 @@ def _node_brief(n, depth=0):
     if rev is not None:
         try:
             rev_s = (float(getattr(rev, "xdx", 1)), float(getattr(rev, "ydy", 1)))
-        except Exception:
+        except Exception:  # noqa: BLE001
             rev_s = "?"
     ct = getattr(n, "cached_texture", None)
     cm = getattr(n, "cached_model", None)
@@ -142,17 +150,17 @@ def _walk_dump(node, acc, depth=0, path="", budget=None, max_depth=12, max_acc=2
                     child = c[0]
                     xo = c[1] if len(c) > 1 else 0
                     yo = c[2] if len(c) > 2 else 0
-                    kids.append((child, "%s/c%d@%s,%s" % (path, i, xo, yo)))
+                    kids.append((child, "%s/c%d@%s,%s" % (path, i, xo, yo)))  # noqa: UP031
                 else:
-                    kids.append((c, "%s/c%d" % (path, i)))
-    except Exception:
+                    kids.append((c, "%s/c%d" % (path, i)))  # noqa: UP031
+    except Exception:  # noqa: BLE001, S110
         pass
     for attr in ("cached_texture", "cached_model"):
         try:
             v = getattr(node, attr, None)
             if v is not None:
-                kids.append((v, "%s/%s" % (path, attr)))
-        except Exception:
+                kids.append((v, f"{path}/{attr}"))
+        except Exception:  # noqa: BLE001, S110
             pass
     for k, p in kids:
         _walk_dump(k, acc, depth + 1, p, budget, max_depth, max_acc)
@@ -170,12 +178,12 @@ def _find_sized(node, tw, th, acc=None, budget=None, depth=0, path=""):
     try:
         if hasattr(node, "get_size"):
             w, h = node.get_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         if w is not None and h is not None and abs(float(w) - tw) < 1 and abs(float(h) - th) < 1:
             acc.append((path, node))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     kids = []
     try:
@@ -183,17 +191,17 @@ def _find_sized(node, tw, th, acc=None, budget=None, depth=0, path=""):
         if ch:
             for i, c in enumerate(ch):
                 if isinstance(c, (list, tuple)) and c:
-                    kids.append((c[0], "%s/c%d" % (path, i)))
+                    kids.append((c[0], "%s/c%d" % (path, i)))  # noqa: UP031
                 else:
-                    kids.append((c, "%s/c%d" % (path, i)))
-    except Exception:
+                    kids.append((c, "%s/c%d" % (path, i)))  # noqa: UP031
+    except Exception:  # noqa: BLE001, S110
         pass
     for attr in ("cached_texture", "cached_model"):
         try:
             v = getattr(node, attr, None)
             if v is not None:
-                kids.append((v, "%s/%s" % (path, attr)))
-        except Exception:
+                kids.append((v, f"{path}/{attr}"))
+        except Exception:  # noqa: BLE001, S110
             pass
     for k, p in kids:
         _find_sized(k, tw, th, acc, budget, depth + 1, p)
@@ -203,18 +211,20 @@ def _hide():
     import renpy
     for n in ("preferences", "confirm", "load", "save", "appreciation", "flowchart"):
         try: renpy.store.Hide(n)()
-        except Exception:
+        except Exception:  # noqa: BLE001
             try: renpy.hide_screen(n)
-            except Exception: pass
+            except Exception: pass  # noqa: BLE001, S110
 
 def _show(kind):
     import renpy
     renpy.display.screen.show_screen("preferences", kind=kind)
     try: renpy.restart_interaction()
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
 
 def _redraw():
-    import renpy, interact_helpers as ih
+    import interact_helpers as ih
+
+    import renpy
     ready, why, iface = ih.interface_ready()
     if not ready:
         return "iface:" + why, None
@@ -226,11 +236,11 @@ def _redraw():
     try:
         if hasattr(draw, "load_all_textures"):
             draw.load_all_textures(st)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return "load:" + str(e), st
     draw.draw_screen(st, flip=True)
     try: iface.surftree = st
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
     return "ok", st
 
 def _sample_rt():
@@ -266,36 +276,36 @@ def _render_kind_alone(kind):
     """Render only the kind screen (dialog_config_*) without full preferences chrome."""
     import renpy
     try:
-        d = renpy.display.screen.get_screen_displayable(kind) if hasattr(renpy.display.screen, "get_screen_displayable") else None
-    except Exception:
-        d = None
+        renpy.display.screen.get_screen_displayable(kind) if hasattr(renpy.display.screen, "get_screen_displayable") else None
+    except Exception:  # noqa: BLE001, S110
+        pass
     try:
         # Use ScreenDisplayable via show or by constructing from screen
         scr = renpy.display.screen.ScreenDisplayable(
             renpy.display.screen.get_screen_variant(kind) if hasattr(renpy.display.screen, "get_screen_variant") else renpy.display.screen.get_screen(kind),
             kind, "screens", {}, {},
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # Fallback: show_screen transient and grab
         try:
             renpy.display.screen.show_screen(kind)
             try: renpy.restart_interaction()
-            except Exception: pass
+            except Exception: pass  # noqa: BLE001, S110
             time.sleep(0.1)
             sd = renpy.display.screen.get_screen(kind)
             r = renpy.display.render.render(sd, 1920, 1080, 0, 0)
             return "via_show", r, None
-        except Exception as e2:
-            return "fail", None, "%s / %s" % (e, e2)
+        except Exception as e2:  # noqa: BLE001
+            return "fail", None, f"{e} / {e2}"
     try:
         # Force update
         try:
             scr.update()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return "update_fail", None, str(e)
         r = renpy.display.render.render(scr, 1920, 1080, 0, 0)
         return "ok", r, None
-    except Exception as e:
+    except Exception:  # noqa: BLE001
         return "render_fail", None, traceback.format_exc()
 
 def _dump_screen_widgets(kind):
@@ -307,10 +317,10 @@ def _dump_screen_widgets(kind):
         if scr is None:
             return ["no preferences screen"]
         # ScreenDisplayable has .child after update, and widgets dict
-        lines.append("scr type=%s child=%s" % (type(scr).__name__, type(getattr(scr, "child", None)).__name__))
+        lines.append("scr type={} child={}".format(type(scr).__name__, type(getattr(scr, "child", None)).__name__))
         widgets = getattr(scr, "widgets", None) or getattr(scr, "widget_properties", None)
         if isinstance(widgets, dict):
-            lines.append("widgets keys sample=%s" % list(widgets.keys())[:20])
+            lines.append(f"widgets keys sample={list(widgets.keys())[:20]}")
         # visit children
         def walk_d(d, path, depth, budget):
             if d is None or budget[0] <= 0 or depth > 25:
@@ -321,7 +331,7 @@ def _dump_screen_widgets(kind):
             rep = ""
             try:
                 rep = repr(d)[:160]
-            except Exception:
+            except Exception:  # noqa: BLE001
                 rep = t
             if any(s in rep for s in ("background.png", "mask.png", "1849", "preferences_layout", "dialog_config")):
                 interesting = True
@@ -334,38 +344,38 @@ def _dump_screen_widgets(kind):
                         ysz = xs.ysize if hasattr(xs, "ysize") else xs["ysize"]
                         if xsz == 1849 or ysz == 846:
                             interesting = True
-                            rep += " style_size=(%s,%s)" % (xsz, ysz)
-                    except Exception:
+                            rep += f" style_size=({xsz},{ysz})"
+                    except Exception:  # noqa: BLE001, S110
                         pass
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             if interesting or depth <= 2:
-                lines.append("  d%s %s %s" % (path, t, rep[:180]))
+                lines.append(f"  d{path} {t} {rep[:180]}")
             # children
             try:
                 if hasattr(d, "visit"):
                     for i, c in enumerate(d.visit() or []):
-                        walk_d(c, path + "/v%d" % i, depth + 1, budget)
-            except Exception:
+                        walk_d(c, path + "/v%d" % i, depth + 1, budget)  # noqa: UP031
+            except Exception:  # noqa: BLE001, S110
                 pass
             try:
                 ch = getattr(d, "children", None)
                 if ch:
                     for i, c in enumerate(list(ch)[:40]):
-                        walk_d(c, path + "/c%d" % i, depth + 1, budget)
-            except Exception:
+                        walk_d(c, path + "/c%d" % i, depth + 1, budget)  # noqa: UP031
+            except Exception:  # noqa: BLE001, S110
                 pass
             for attr in ("child", "displayable"):
                 try:
                     v = getattr(d, attr, None)
                     if v is not None:
                         walk_d(v, path + "/" + attr, depth + 1, budget)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
         budget = [2000]
         walk_d(scr, "", 0, budget)
-    except Exception:
-        lines.append("dump_widgets exc %s" % traceback.format_exc())
+    except Exception:  # noqa: BLE001
+        lines.append(f"dump_widgets exc {traceback.format_exc()}")
     return lines
 
 def _worker():
@@ -379,45 +389,45 @@ def _worker():
             try:
                 if getattr(renpy.store, "main_menu", False):
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             time.sleep(0.2)
-        lines.append("main_menu=%s" % getattr(renpy.store, "main_menu", None))
+        lines.append("main_menu={}".format(getattr(renpy.store, "main_menu", None)))
         try:
-            lines.append("brightness=%s" % getattr(renpy.store.persistent, "preferences_brightness", None))
-        except Exception as e:
-            lines.append("brightness err %s" % e)
+            lines.append("brightness={}".format(getattr(renpy.store.persistent, "preferences_brightness", None)))
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"brightness err {e}")
 
         # Solo render background + layout fixed
         try:
             bg = renpy.easy.displayable("gui/preferences/common/background.png")
             rbg = renpy.display.render.render(bg, 1849, 846, 0, 0)
-            lines.append("solo_bg size=%s nch=%s ctex=%s" % (
+            lines.append("solo_bg size={} nch={} ctex={}".format(
                 rbg.get_size(),
                 len(getattr(rbg, "children", []) or []),
                 type(getattr(rbg, "cached_texture", None)).__name__,
             ))
             for i, c in enumerate(list(getattr(rbg, "children", []) or [])[:4]):
                 child = c[0] if isinstance(c, (list, tuple)) else c
-                lines.append("  solo_bg child%d %s" % (i, _node_brief(child)))
-        except Exception:
-            lines.append("solo_bg EXC %s" % traceback.format_exc())
+                lines.append("  solo_bg child%d %s" % (i, _node_brief(child)))  # noqa: UP031
+        except Exception:  # noqa: BLE001
+            lines.append(f"solo_bg EXC {traceback.format_exc()}")
 
         for kind in ("dialog_config_2", "dialog_config_1", "dialog_config_1"):
             _hide(); time.sleep(0.15)
             try:
                 _show(kind)
-            except Exception as e:
-                lines.append("KIND %s show_fail %s" % (kind, e))
+            except Exception as e:  # noqa: BLE001
+                lines.append(f"KIND {kind} show_fail {e}")
                 continue
             time.sleep(0.25)
 
             # Widget tree
-            lines.append("KIND %s widgets:" % kind)
+            lines.append(f"KIND {kind} widgets:")
             lines.extend(_dump_screen_widgets(kind)[:40])
 
             rd, st = _redraw()
-            lines.append("KIND %s redraw=%s" % (kind, rd))
+            lines.append(f"KIND {kind} redraw={rd}")
             rt = _sample_rt()
             lines.append("  rt %s" % {k: (tuple(round(x, 1) for x in v["mean"]), round(v["dark"], 3))
                                       for k, v in rt.items() if isinstance(v, dict) and "mean" in v})
@@ -427,21 +437,21 @@ def _worker():
 
             # Find 1849x846 nodes
             found = _find_sized(st, 1849, 846)
-            lines.append("  nodes_1849x846=%d" % len(found))
+            lines.append("  nodes_1849x846=%d" % len(found))  # noqa: UP031
             for p, n in found[:6]:
-                lines.append("  N1849 path=%s brief=%s" % (p, _node_brief(n)))
+                lines.append(f"  N1849 path={p} brief={_node_brief(n)}")
                 # dump children of this node
                 ch = getattr(n, "children", None) or []
-                lines.append("    nchildren=%d" % len(ch))
+                lines.append("    nchildren=%d" % len(ch))  # noqa: UP031
                 for i, c in enumerate(list(ch)[:12]):
                     child = c[0] if isinstance(c, (list, tuple)) else c
                     off = (c[1], c[2]) if isinstance(c, (list, tuple)) and len(c) > 2 else None
-                    lines.append("    ch%d off=%s %s" % (i, off, _node_brief(child)))
+                    lines.append("    ch%d off=%s %s" % (i, off, _node_brief(child)))  # noqa: UP031
                     # one more level if HostTexture missing
                     sub = getattr(child, "children", None) or []
                     for j, s in enumerate(list(sub)[:6]):
                         sc = s[0] if isinstance(s, (list, tuple)) else s
-                        lines.append("      ch%d.%d %s" % (i, j, _node_brief(sc)))
+                        lines.append("      ch%d.%d %s" % (i, j, _node_brief(sc)))  # noqa: UP031
 
             # Also find any HT near 1849
             big = []
@@ -449,14 +459,14 @@ def _worker():
                 if isinstance(n, HostTexture):
                     ww, hh = int(n.w), int(n.h)
                     if ww >= 1000 or hh >= 700:
-                        big.append((ww, hh, int(n.handle)))
+                        big.append((ww, hh, int(n.handle)))  # noqa: B023
                 return False
             # reuse walk
             budget = [4000]
             def walk(n, depth=0):
-                if n is None or budget[0] <= 0 or depth > 40:
+                if n is None or budget[0] <= 0 or depth > 40:  # noqa: B023
                     return
-                budget[0] -= 1
+                budget[0] -= 1  # noqa: B023
                 pred_big(n)
                 try:
                     ch = getattr(n, "children", None)
@@ -464,41 +474,41 @@ def _worker():
                         for c in ch:
                             child = c[0] if isinstance(c, (list, tuple)) else c
                             walk(child, depth + 1)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
                 for attr in ("cached_texture", "cached_model"):
                     try:
                         v = getattr(n, attr, None)
                         if v is not None:
                             walk(v, depth + 1)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
             walk(st)
-            lines.append("  big_hts=%s" % big[:20])
+            lines.append(f"  big_hts={big[:20]}")
 
             # Top-level children of root surftree
-            lines.append("  root_brief=%s" % _node_brief(st))
+            lines.append(f"  root_brief={_node_brief(st)}")
             ch = getattr(st, "children", None) or []
-            lines.append("  root_nch=%d" % len(ch))
+            lines.append("  root_nch=%d" % len(ch))  # noqa: UP031
             for i, c in enumerate(list(ch)[:16]):
                 child = c[0] if isinstance(c, (list, tuple)) else c
                 off = (c[1], c[2]) if isinstance(c, (list, tuple)) and len(c) > 2 else None
-                lines.append("  root_ch%d off=%s %s" % (i, off, _node_brief(child)))
+                lines.append("  root_ch%d off=%s %s" % (i, off, _node_brief(child)))  # noqa: UP031
 
             # Shallow interesting dump
             acc = []
             _walk_dump(st, acc, max_depth=6, max_acc=80)
-            lines.append("  dump_n=%d" % len(acc))
+            lines.append("  dump_n=%d" % len(acc))  # noqa: UP031
             for p, b in acc[:50]:
                 if b.get("w") and b.get("h") and (b["w"] >= 500 or b["h"] >= 500 or b.get("ht") or b.get("rev")):
-                    lines.append("  D %s %s" % (p, b))
+                    lines.append(f"  D {p} {b}")
 
-            _log("KIND %s nodes1849=%d big=%s rt=%s" % (kind, len(found), big[:5], lines[-10]))
+            _log("KIND %s nodes1849=%d big=%s rt=%s" % (kind, len(found), big[:5], lines[-10]))  # noqa: UP031
 
             # Also try rendering dialog_config_1 screen alone via use
             try:
                 # Direct displayable path: renpy.display.screen.ScreenDisplayable
-                sd = renpy.display.screen.get_screen(kind)
+                renpy.display.screen.get_screen(kind)
                 # kind is not a top-level shown screen - it's used inside preferences
                 # Build via renpy.show_screen of the kind itself if possible
                 try:
@@ -508,23 +518,23 @@ def _worker():
                         renpy.display.screen.get_screen(kind), 1920, 1080, 0, 0
                     )
                     f2 = _find_sized(sk, 1849, 846)
-                    lines.append("  alone_kind_show nodes1849=%d size=%s nch=%s" % (
+                    lines.append("  alone_kind_show nodes1849=%d size=%s nch=%s" % (  # noqa: UP031
                         len(f2), sk.get_size() if hasattr(sk, "get_size") else None,
                         len(getattr(sk, "children", []) or [])))
                     for p, n in f2[:3]:
-                        lines.append("    alone %s %s" % (p, _node_brief(n)))
+                        lines.append(f"    alone {p} {_node_brief(n)}")
                         for i, c in enumerate(list(getattr(n, "children", []) or [])[:6]):
                             child = c[0] if isinstance(c, (list, tuple)) else c
-                            lines.append("      ch%d %s" % (i, _node_brief(child)))
+                            lines.append("      ch%d %s" % (i, _node_brief(child)))  # noqa: UP031
                     renpy.hide_screen(kind)
-                except Exception as e:
-                    lines.append("  alone_kind_show fail %s" % e)
-            except Exception as e:
-                lines.append("  alone err %s" % e)
+                except Exception as e:  # noqa: BLE001
+                    lines.append(f"  alone_kind_show fail {e}")
+            except Exception as e:  # noqa: BLE001
+                lines.append(f"  alone err {e}")
 
         out.write_text("\n".join(lines) + "\n")
-        _log("wrote %s" % out)
-    except Exception:
+        _log(f"wrote {out}")
+    except Exception:  # noqa: BLE001
         tb = traceback.format_exc()
         lines.append(tb)
         out.write_text("\n".join(lines) + "\n")
@@ -546,23 +556,23 @@ def main():
     for p in (str(base / "host" / "python" / "gates"), str(base / "host" / "python")):
         if p not in sys.path:
             sys.path.insert(0, p)
-    open("/tmp/hmc_dc_tree_dump.log", "w").write("start\n")
-    import renpy_host, bootstrap as boot
+    open("/tmp/hmc_dc_tree_dump.log", "w").write("start\n")  # noqa: SIM115
+    import bootstrap as boot
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        _log("stage %s good=%s err=%r" % (name, good, err))
+        good, _miss, err, _extra = call()
+        _log(f"stage {name} good={good} err={err!r}")
         if not good:
             _quit(); return
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)
-    except Exception as e:
-        _log("main_host %s" % e)
+        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"main_host {e}")
     try:
         import renpy.arguments
         basedir = getattr(renpy.config, "basedir", None) or game
@@ -572,26 +582,26 @@ def main():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:
-        _log("args %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"args {e}")
     _pre()
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:
-        _log("main exit %s" % e)
+    except BaseException as e:  # noqa: BLE001
+        _log(f"main exit {e}")
 
 if __name__ == "__main__":
     main()
 else:
     try:
         main()
-    except Exception:
+    except Exception:  # noqa: BLE001
         traceback.print_exc()
         _quit()
 

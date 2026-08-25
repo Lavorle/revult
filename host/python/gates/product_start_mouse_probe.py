@@ -1,6 +1,10 @@
 """Inject mouse click on main-menu Start region; assert leave main_menu."""
-import os, sys, time, threading, traceback
+import os
+import sys
+import threading
+import time
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -14,15 +18,15 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[start-mouse] %s\n" % m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[start-mouse] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _request_quit():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def run():
@@ -42,34 +46,34 @@ def run():
     if gates not in sys.path:
         sys.path.insert(0, gates)
 
-    import renpy_host
     import bootstrap as boot
+    import renpy_host
     for name, call in (("import_renpy", boot.stage_import_renpy), ("import_all", boot.stage_import_all)):
-        good, miss, err, extra = call() if name != "import_all" else call()
-        rec("%s good=%s err=%r" % (name, good, err))
+        good, miss, err, extra = call() if name != "import_all" else call()  # noqa: RUF034, RUF059
+        rec(f"{name} good={good} err={err!r}")
         if not good:
             raise RuntimeError(err)
-    good, miss, err, extra = boot.stage_set_game_dir(base)
-    rec("set_game_dir good=%s" % good)
+    good, _miss, err, _extra = boot.stage_set_game_dir(base)
+    rec(f"set_game_dir good={good}")
     import renpy
     renpy.host_build = True
     try:
         import renpy_main_host
         renpy_main_host.install(renpy)
-    except Exception as e:
-        rec("main_host: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        rec(f"main_host: {e}")
     try:
-        import renpy.audio.renpysound_host as _rs
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs
         sys.modules["renpy.audio.renpysound"] = _rs
         _ra.renpysound = _rs
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu"] = u
         sys.modules["renpy.uguu.uguu"] = u
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     import renpy.arguments
@@ -77,7 +81,7 @@ def run():
     sys.argv = [sys.argv[0] if sys.argv else "renpy-host", basedir, "run"]
     try:
         renpy.arguments.register_command("run", renpy.arguments.run, True)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     renpy.game.args = renpy.arguments.bootstrap()
 
@@ -91,7 +95,7 @@ def run():
                 return
             try:
                 mm = bool(getattr(renpy.store, "main_menu", False))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 mm = False
             if mm:
                 break
@@ -102,8 +106,8 @@ def run():
             result["phys"] = getattr(draw, "physical_size", None)
             result["dpv"] = getattr(draw, "draw_per_virt", None)
             result["focus"] = str(renpy.display.focus.get_focused())
-        except Exception as e:
-            result["focus"] = "err:%s" % e
+        except Exception as e:  # noqa: BLE001
+            result["focus"] = f"err:{e}"
         # Click several points along left nav (Start is top button)
         pts = [(180, 220), (160, 250), (200, 280), (140, 200), (220, 240),
                (100, 300), (180, 350), (180, 400)]
@@ -113,15 +117,15 @@ def run():
             try:
                 renpy_host.inject_mouse(x, y, 1, True)
                 renpy_host.inject_mouse(x, y, 1, False)
-            except Exception as e:
-                rec("inject fail %s" % e)
+            except Exception as e:  # noqa: BLE001
+                rec(f"inject fail {e}")
             time.sleep(0.15)
             try:
                 if not bool(getattr(renpy.store, "main_menu", True)):
                     result["left"] = True
-                    rec("left main_menu after click %s,%s" % (x, y))
+                    rec(f"left main_menu after click {x},{y}")
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         # fallback Enter
         if not result["left"]:
@@ -135,7 +139,7 @@ def run():
                         result["left"] = True
                         rec("left via Enter")
                         break
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
         time.sleep(0.3)
         _request_quit()
@@ -145,20 +149,20 @@ def run():
     try:
         import renpy.main as renpy_main
         renpy_main.main()
-    except BaseException as e:
-        rec("main exit %s: %s" % (type(e).__name__, e))
+    except BaseException as e:  # noqa: BLE001
+        rec(f"main exit {type(e).__name__}: {e}")
     stop.set()
     try:
         result["mm"] = bool(getattr(renpy.store, "main_menu", None))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
-    rec("result=%s" % result)
+    rec(f"result={result}")
     ok = result["left"]
-    body = ("ok=%s\n" % ok) + "\n".join(lines) + "\n"
+    body = (f"ok={ok}\n") + "\n".join(lines) + "\n"
     out.write_text(body)
     try:
         sys.__stdout__.write(body); sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     _request_quit()
     if not ok:

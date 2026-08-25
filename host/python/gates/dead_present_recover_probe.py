@@ -11,6 +11,7 @@ Note: host run_file prepends imports, so no __future__ here.
 """
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -21,7 +22,8 @@ except ImportError:
 
 import renpy_host
 from renpy.pygame.surface import Surface
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import WgpuDraw
 
 base = Path(os.environ.get("RENPY_HOST_BASE", "."))
 out = base / "host" / "target" / "gate-dead_present_recover_probe.txt"
@@ -84,7 +86,7 @@ try:
     s.fill((200, 40, 40, 255))
     ht = draw.load_texture(s)
     h0 = int(ht.handle)
-    lines.append("upload handle=%s stash=%s" % (h0, h0 in draw._handle_pixels))
+    lines.append(f"upload handle={h0} stash={h0 in draw._handle_pixels}")
     if h0 <= 0 or h0 not in draw._handle_pixels:
         ok = False
         lines.append("FAIL no pixel stash after load_texture")
@@ -94,7 +96,7 @@ try:
     draw.draw_screen(root, flip=True)
     w, h, rgba = renpy_host.read_game_rt_rgba()
     m0 = mean_rgb(rgba, w, h)
-    lines.append("before_kill mean=%.1f alive=%s" % (m0, renpy_host.texture_alive(h0)))
+    lines.append(f"before_kill mean={m0:.1f} alive={renpy_host.texture_alive(h0)}")
     if m0 < 20:
         ok = False
         lines.append("FAIL before_kill too dark (draw failed)")
@@ -103,8 +105,7 @@ try:
     draw.kill_textures()
     alive_after = bool(renpy_host.texture_alive(h0))
     lines.append(
-        "after_kill alive=%s stash_keys=%s ht.handle=%s"
-        % (alive_after, len(draw._handle_pixels), ht.handle)
+        f"after_kill alive={alive_after} stash_keys={len(draw._handle_pixels)} ht.handle={ht.handle}"
     )
     if alive_after:
         ok = False
@@ -123,8 +124,7 @@ try:
     h1 = int(ht.handle)
     alive1 = bool(renpy_host.texture_alive(h1)) if h1 > 0 else False
     lines.append(
-        "after_recover mean=%.1f handle=%s->%s alive=%s remap=%s"
-        % (m1, h0, h1, alive1, draw._handle_remap.get(h0))
+        f"after_recover mean={m1:.1f} handle={h0}->{h1} alive={alive1} remap={draw._handle_remap.get(h0)}"
     )
     if m1 < 20:
         ok = False
@@ -141,7 +141,7 @@ try:
     if hasattr(empty, "_pixels"):
         try:
             empty._pixels = b""
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     # Surface with no fill may still have buffer; create via size and zero length path
     # by using a surface and then load with empty pad simulation.
@@ -164,8 +164,7 @@ try:
     in_cache = any(h == ht_e1.handle for _fp, h in draw.texture_cache.values())
     # Because empty_pad_input=True non-transient, must NOT be in texture_cache
     lines.append(
-        "empty_pad handle=%s in_texture_cache=%s empty_flag_path=ok"
-        % (ht_e1.handle, in_cache)
+        f"empty_pad handle={ht_e1.handle} in_texture_cache={in_cache} empty_flag_path=ok"
     )
     if in_cache:
         ok = False
@@ -178,21 +177,21 @@ try:
     filled.fill((10, 200, 10, 255))
     ht_f = draw.load_texture(filled)
     in_cache_f = any(h == ht_f.handle for _fp, h in draw.texture_cache.values())
-    lines.append("content_fill handle=%s in_texture_cache=%s" % (ht_f.handle, in_cache_f))
+    lines.append(f"content_fill handle={ht_f.handle} in_texture_cache={in_cache_f}")
     if not in_cache_f:
         ok = False
         lines.append("FAIL content fill not cached")
     else:
         lines.append("PASS content fill still cached")
 
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
     import traceback
 
-    lines.append("EXC %s" % e)
+    lines.append(f"EXC {e}")
     lines.append(traceback.format_exc())
 
-lines.append("ok=%s" % ok)
+lines.append(f"ok={ok}")
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text("\n".join(lines) + "\n")
 print("\n".join(lines))

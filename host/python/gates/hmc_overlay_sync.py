@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone regression gate for HuangmeiC host-overlay synchronization."""
+"""Standalone regression gate for HuangmeiC host-overlay synchronization."""  # noqa: EXE001
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 # --- harness (thin wrapper, original logic preserved) ---
 try:
@@ -70,8 +70,7 @@ def run_sync(
         ],
         env=env,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=10,
         check=False,
     )
@@ -134,8 +133,7 @@ declare -F _sync_host_overlay >/dev/null
         ["bash", "--noprofile", "--norc", "-c", probe],
         env={**os.environ, "HMC_SYNC_SCRIPT": str(script)},
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=10,
         check=False,
     )
@@ -294,7 +292,7 @@ def main() -> int:
         for name, test in tests:
             try:
                 test()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 print(f"FAIL {name}: {type(exc).__name__}: {exc}", file=sys.stderr)
                 return 1
             print(f"PASS {name}")

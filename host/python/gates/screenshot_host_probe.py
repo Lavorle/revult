@@ -1,8 +1,12 @@
 """Screenshot clipboard + reverse dest sizing for overlay/typewriter."""
-import os, sys, traceback
+import os
+import traceback
 from pathlib import Path
+
 import renpy_host
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import HostTexture, WgpuDraw
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -17,13 +21,13 @@ lines = []
 ok = True
 
 try:
-    import host_pygame.scrap as scrap
+    from host_pygame import scrap
     assert hasattr(scrap, "put_data")
     scrap.put_data({"image/png": b"x"})
     lines.append("PASS: host scrap.put_data")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
-    lines.append("FAIL scrap %r" % e)
+    lines.append(f"FAIL scrap {e!r}")
 
 try:
     class Mat2:
@@ -51,7 +55,7 @@ try:
     child = HostTexture(1, 630, 1080, 0, 0, 630, 1080)
     parent.blit(child, 0, 0)
     dest = d._reverse_dest_size(parent, child, (420, 720))
-    lines.append("overlay dest=%s" % (dest,))
+    lines.append(f"overlay dest={dest}")
     if dest != (420, 720):
         ok = False
         lines.append("FAIL overlay")
@@ -63,18 +67,18 @@ try:
     child2 = HostTexture(1, 600, 72, 0, 0, 150, 72)
     parent2.blit(child2, 0, 0)
     dest2 = d._reverse_dest_size(parent2, child2, (400, 48))
-    lines.append("tw dest=%s" % (dest2,))
+    lines.append(f"tw dest={dest2}")
     if abs(dest2[0] - 100) > 2 or abs(dest2[1] - 48) > 2:
         ok = False
         lines.append("FAIL tw")
     else:
         lines.append("PASS tw partial")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
-    lines.append("EXCEPTION %r" % e)
+    lines.append(f"EXCEPTION {e!r}")
     lines.append(traceback.format_exc())
 
-body = ("ok=%s\n" % ok) + "\n".join(lines) + "\n"
+body = (f"ok={ok}\n") + "\n".join(lines) + "\n"
 out.write_text(body)
 print(body)
 renpy_host.request_quit()

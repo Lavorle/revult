@@ -23,6 +23,7 @@ Real Cubism Core plug-in path (not exercised here):
 import math
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -38,7 +39,7 @@ try:
     import renpy
 
     renpy.host_build = True
-    import renpy.wgpu.shaders as shaders  # noqa: E402
+    from renpy.wgpu import shaders
 
     shaders.register_builtin_core()
     parts = set(shaders.list_wgsl_parts())
@@ -53,7 +54,7 @@ try:
         raise RuntimeError(f"missing Live2D WGSL parts: {missing}")
     registry_ok = True
     registry_parts = sorted(needed)
-except Exception as e:  # pragma: no cover - host may not have full renpy on path
+except Exception as e:  # pragma: no cover - host may not have full renpy on path  # noqa: BLE001
     registry_ok = False
     registry_parts = []
     registry_err = repr(e)
@@ -196,7 +197,7 @@ try:
     from golden_mae import gate_result_path
 
     out = gate_result_path("live2d")
-except Exception:
+except Exception:  # noqa: BLE001
     base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
     out = Path(base) / "host" / "target" / "gate-live2d.txt"
     if not out.parent.is_dir():

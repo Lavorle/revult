@@ -76,7 +76,7 @@ def _request_quit():
         import renpy_host  # type: ignore
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -162,7 +162,7 @@ def _prepare_run_args(base: Path):
         try:
             renpy.arguments.register_command("run", renpy.arguments.run, True)
             renpy.arguments.register_command("quit", renpy.arguments.quit)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     args = renpy.arguments.bootstrap()
     renpy.game.args = args
@@ -171,13 +171,13 @@ def _prepare_run_args(base: Path):
 
 def _pre_main_host_stubs(log: list) -> None:
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _append_log(log, "renpysound rebound to host")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"renpysound rebound soft-fail: {e}")
 
     try:
@@ -194,9 +194,9 @@ def _pre_main_host_stubs(log: list) -> None:
             rpg.constants = host_pygame.constants
         try:
             rpg.import_as_pygame()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _append_log(log, f"import_as_pygame soft-fail: {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"pygame.constants soft-fail: {e}")
 
     try:
@@ -212,10 +212,10 @@ def _pre_main_host_stubs(log: list) -> None:
         for _name in dir(_uguu):
             if _name.startswith("GL_") or _name in ("clear_errors", "get_error"):
                 setattr(pkg, _name, getattr(_uguu, _name))
-        setattr(pkg, "uguu", _uguu)
-        setattr(pkg, "gl", _uguu)
+        pkg.uguu = _uguu
+        pkg.gl = _uguu
         _append_log(log, "uguu host stub installed")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"uguu stub soft-fail: {type(e).__name__}: {e}")
 
     try:
@@ -225,11 +225,11 @@ def _pre_main_host_stubs(log: list) -> None:
         try:
             import renpy as _renpy_pkg
 
-            setattr(_renpy_pkg, "ecsign", _ecsign)
-        except Exception:
+            _renpy_pkg.ecsign = _ecsign
+        except Exception:  # noqa: BLE001, S110
             pass
         _append_log(log, "ecsign host stub installed")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"ecsign soft-fail: {e}")
 
 
@@ -238,17 +238,17 @@ def _is_choice_screen() -> bool:
         import renpy
 
         return renpy.exports.get_screen("choice") is not None
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
 def _current_label():
     try:
-        import renpy.game as game
+        from renpy import game
 
         ctx = game.context()
         return getattr(ctx, "current", None)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -268,7 +268,7 @@ def _probe_say_text() -> str:
         last = getattr(renpy.store, "_last_raw_what", None)
         if last:
             chunks.append(str(last))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return " || ".join(chunks)
 
@@ -299,11 +299,11 @@ def _looks_like_ending(label, say_blob: str, state: dict) -> tuple[bool, str]:
         "good ending",
     )
     for m in good_markers:
-        if m in s and "bad" not in s:
+        if m in s and "bad" not in s:  # noqa: SIM102
             # Be conservative: only trust explicit good ending or strong love line
             # after we left main menu and saw a choice.
-            if state.get("menu_seen") or state.get("main_menu_started"):
-                if m == "good ending" or state.get("hit_later_dialogue") is not True:
+            if state.get("menu_seen") or state.get("main_menu_started"):  # noqa: SIM102
+                if m == "good ending" or state.get("hit_later_dialogue") is not True:  # noqa: SIM102
                     if "good ending" in s:
                         return True, "good"
     if label is not None:
@@ -319,7 +319,7 @@ def _force_second_choice_random(state: dict, log: list) -> None:
 
     try:
         orig = renpy.exports.random
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"force_second_choice: no renpy.exports.random ({e})")
         return
 
@@ -327,7 +327,7 @@ def _force_second_choice_random(state: dict, log: list) -> None:
         def choice(self, seq):
             try:
                 n = len(seq)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 n = 0
             if n >= 2:
                 state["forced_second_picks"] = int(state.get("forced_second_picks") or 0) + 1
@@ -348,7 +348,7 @@ def _force_second_choice_random(state: dict, log: list) -> None:
     renpy.exports.random = _SecondChoiceRandom()  # type: ignore[assignment]
     try:
         renpy.store.random = renpy.exports.random  # type: ignore[attr-defined]
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     state["forced_second_choice"] = True
     _append_log(log, "installed SecondChoiceRandom on renpy.exports.random")
@@ -386,7 +386,7 @@ def _path_k_select_second(state: dict, log: list) -> dict:
             f"PathK menu select attempt#{state['menu_path_k_attempts']} "
             f"queued={out['queued']} injected={out['injected']}",
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
         _append_log(log, f"PathK error: {out['error']}")
     return out
@@ -409,17 +409,18 @@ def _path_m_click_second(state: dict, log: list) -> dict:
             f"PathM click attempt#{state['menu_path_m_attempts']} at ({x},{y}) "
             f"injected={r.get('injected')}",
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
         _append_log(log, f"PathM error: {out['error']}")
     return out
 
 
 def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
-    import renpy
-    import renpy.display.core as core
-    import renpy.main as renpy_main
     import interact_helpers as ih
+
+    import renpy
+    import renpy.main as renpy_main
+    from renpy.display import core
 
     OrigInterface = core.Interface
 
@@ -463,10 +464,10 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             state["auto_choice_delay"] = 0.05
             try:
                 renpy.config.skip_delay = 1
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             _append_log(log, "prefs: music off, afm on, auto_choice_delay=0.05 + second-pick")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             state["prefs_error"] = f"{type(e).__name__}: {e}"
             _append_log(log, f"prefs_error={state['prefs_error']}")
 
@@ -492,7 +493,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             in_mm = False
             try:
                 in_mm = bool(ih.in_main_menu())
-            except Exception:
+            except Exception:  # noqa: BLE001
                 in_mm = False
             state["in_main_menu"] = in_mm
 
@@ -506,11 +507,11 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 if in_mm and not state.get("main_menu_started"):
                     try:
                         iface.timeout(0.08)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
                     try:
                         renpy.exports.timeout(0.08)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
 
                 # F3b: leave real main menu via Start / JumpOut (not SKIP_MAIN_MENU).
@@ -523,7 +524,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                             state["main_menu_started"] = True
                             _append_log(log, f"main_menu Start via activate: {st}")
                     except BaseException as je:
-                        import renpy.game as game
+                        from renpy import game
 
                         if isinstance(je, game.CONTROL_EXCEPTIONS):
                             state["main_menu_started"] = True
@@ -559,9 +560,9 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                     state["injects_ok"] = int(state.get("injects_ok") or 0) + int(
                         pulse.get("queued") or 0
                     ) + int(pulse.get("injected") or 0)
-            except BaseException as e:
+            except BaseException as e:  # noqa: BLE001
                 try:
-                    import renpy.game as game
+                    from renpy import game
 
                     if isinstance(e, game.CONTROL_EXCEPTIONS):
                         raise
@@ -583,7 +584,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             except BaseException as e:
                 msg = f"{type(e).__name__}: {e}"
                 try:
-                    import renpy.game as game
+                    from renpy import game
 
                     if isinstance(e, game.CONTROL_EXCEPTIONS):
                         raise
@@ -638,8 +639,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                         state["present_path"] = cap.get("present_path")
                         _append_log(
                             log,
-                            "in_game_frame ownership_ok=%s nonblank_ok=%s size=%sx%s reject=%s"
-                            % (
+                            "in_game_frame ownership_ok={} nonblank_ok={} size={}x{} reject={}".format(
                                 state.get("ownership_ok"),
                                 state.get("nonblank_ok"),
                                 state.get("frame_w"),
@@ -647,7 +647,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                                 (state.get("nonblank") or {}).get("reject"),
                             ),
                         )
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         state["in_game_frame_error"] = f"{type(e).__name__}: {e}"
                         _append_log(log, f"in_game_frame_error={state['in_game_frame_error']}")
             elif in_mm:
@@ -691,9 +691,8 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                     path = state.get("last_menu_path") or "auto_choice_index1"
                     _append_log(
                         log,
-                        "ENDING_REACHED kind=%s path=%s label=%r interact=%s "
-                        "in_game_frame_ok=%s"
-                        % (
+                        "ENDING_REACHED kind={} path={} label={!r} interact={} "
+                        "in_game_frame_ok={}".format(
                             kind,
                             path,
                             label_after,
@@ -729,7 +728,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                             cap.get("frame_ok") and cap.get("nonblank_ok")
                         )
                         state["in_game_frame_sampled"] = True
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         state["in_game_frame_error"] = f"{type(e).__name__}: {e}"
                 raise HostStop(
                     "first_interact",
@@ -826,7 +825,7 @@ def run() -> None:
 
     try:
         import renpy_host  # noqa: F401
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"FATAL no renpy_host: {e}")
         meta["notes"] = "must run under renpy-host embed"
         meta["traceback"] = traceback.format_exc()
@@ -837,7 +836,7 @@ def run() -> None:
 
     try:
         import bootstrap as boot
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"FATAL import bootstrap: {e}")
         meta["traceback"] = traceback.format_exc()
         meta["elapsed_secs"] = round(time.monotonic() - t0, 3)
@@ -852,13 +851,13 @@ def run() -> None:
         state["reached"] = "import_renpy"
         _append_log(log, "stage import_renpy ok")
 
-        good, miss, err, extra = boot.stage_import_all()
+        good, miss, err, extra = boot.stage_import_all()  # noqa: RUF059
         if not good:
             raise RuntimeError(f"import_all: {err}")
         state["reached"] = "import_all"
         _append_log(log, f"stage import_all ok import_all={extra.get('import_all')}")
 
-        good, miss, err, extra = boot.stage_set_game_dir(base)
+        good, _miss, err, extra = boot.stage_set_game_dir(base)
         if not good:
             raise RuntimeError(f"set_game_dir: {err}")
         state["reached"] = "set_game_dir"
@@ -877,14 +876,14 @@ def run() -> None:
             logdir = main_mod.path_to_logdir(basedir)
             renpy.config.logdir = logdir
             os.makedirs(logdir, 0o777, exist_ok=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _append_log(log, f"logdir soft-fail: {e}")
 
         args = _prepare_run_args(base)
         _append_log(log, f"args command={getattr(args, 'command', None)}")
         try:
             renpy.importer.init_importer()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _append_log(log, f"importer soft-fail: {e}")
 
         _pre_main_host_stubs(log)
@@ -892,7 +891,7 @@ def run() -> None:
             renpy.config.performance_test = False
             renpy.config.has_music = False
             renpy.config.main_menu_music = None
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
         _install_hooks(state, log, max_interacts)
@@ -917,7 +916,7 @@ def run() -> None:
             _append_log(log, f"HostStop {hs.stage}: {hs.detail}")
         except SystemExit as se:
             _append_log(log, f"SystemExit {se}")
-        except BaseException as e:
+        except BaseException as e:  # noqa: BLE001
             tb = traceback.format_exc()
             state["run_error"] = f"{type(e).__name__}: {e}"
             state["uncaught_exception"] = state.get("uncaught_exception") or state[
@@ -936,11 +935,10 @@ def run() -> None:
             if not any("ENDING_REACHED" in x for x in log):
                 _append_log(
                     log,
-                    "ENDING_REACHED kind=%s label=%r say=%r"
-                    % (state.get("ending_kind"), label, (say_blob or "")[:200]),
+                    "ENDING_REACHED kind={} label={!r} say={!r}".format(state.get("ending_kind"), label, (say_blob or "")[:200]),
                 )
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         meta["traceback"] = traceback.format_exc()
         _append_log(log, f"FATAL {type(e).__name__}: {e}")
     finally:
@@ -980,8 +978,7 @@ def run() -> None:
             notes_parts.append(f"uncaught={uncaught}")
         if not in_game_ok:
             notes_parts.append(
-                "in_game_frame_fail nonblank=%s ownership=%s reject=%s"
-                % (
+                "in_game_frame_fail nonblank={} ownership={} reject={}".format(
                     nonblank_ok,
                     ownership_ok,
                     (state.get("nonblank") or {}).get("reject"),

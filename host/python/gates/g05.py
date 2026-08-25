@@ -10,7 +10,9 @@ FFmpeg path is covered by the non-golden `video` regression gate.
 
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
+
 from renpy.wgpu.video import _gradient_frame
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:

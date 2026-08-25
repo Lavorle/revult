@@ -1,4 +1,8 @@
-import os, sys, time, threading, traceback
+import os
+import sys
+import threading
+import time
+import traceback
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -18,15 +22,15 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[diag2] %s\n" % m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[diag2] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_prefs_diag2.log","a").write(m+"\n")
+    open("/tmp/hmc_prefs_diag2.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()
-    except Exception:
+        import renpy_host; renpy_host.request_quit()  # noqa: I001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def walk_rt(node, depth=0, path="", acc=None, budget=None):
@@ -51,7 +55,7 @@ def walk_rt(node, depth=0, path="", acc=None, budget=None):
             "path": path,
             "type": type(node).__name__,
             "shaders": list(sh) if sh else None,
-            "uni": sorted(list(uni.keys())) if isinstance(uni, dict) else None,
+            "uni": sorted(uni.keys()) if isinstance(uni, dict) else None,
             "u_anim": uni.get("u_animation") if isinstance(uni, dict) else None,
             "mesh_t": type(mesh).__name__ if mesh is not None else None,
             "mesh_true": mesh is True,
@@ -64,7 +68,7 @@ def walk_rt(node, depth=0, path="", acc=None, budget=None):
         })
     for i, it in enumerate(kids):
         ch = it[0] if isinstance(it, tuple) else it
-        walk_rt(ch, depth+1, path+"/%d"%i, acc, budget)
+        walk_rt(ch, depth+1, path+"/%d"%i, acc, budget)  # noqa: UP031
     return acc
 
 def run():
@@ -75,17 +79,17 @@ def run():
     os.environ["RENPY_SKIP_SPLASHSCREEN"]="1"
     gates = str(base/"host/python/gates")
     if gates not in sys.path: sys.path.insert(0, gates)
-    import renpy_host, bootstrap as boot
+    import bootstrap as boot
     for call in (boot.stage_import_renpy, boot.stage_import_all, lambda: boot.stage_set_game_dir(base)):
-        good, miss, err, extra = call()
-        _log("stage %s %s" % (good, err))
+        good, _miss, err, _extra = call()
+        _log(f"stage {good} {err}")
         if not good: _quit(); return
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)
-    except Exception as e:
-        _log("main_host %s"%e)
+        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"main_host {e}")
     import renpy.arguments
     basedir = str(base/"host/playtests/HuangmeiC")
     sys.argv = [sys.argv[0] if sys.argv else "x", basedir, "run"]
@@ -93,46 +97,47 @@ def run():
         if not getattr(renpy.arguments, "commands", None):
             renpy.arguments.register_command("run", renpy.arguments.run, True)
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:
-        _log("args %s"%e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"args {e}")
     try:
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; renpy.audio.renpysound=h
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
     try:
-        import renpy_uguu_host as u; sys.modules["renpy.uguu.uguu"]=u
-    except Exception: pass
+        import renpy_uguu_host as u; sys.modules["renpy.uguu.uguu"]=u  # noqa: I001
+    except Exception: pass  # noqa: BLE001, S110
     try:
-        import renpy_ecsign_host as e; sys.modules["renpy.ecsign"]=e
-    except Exception: pass
+        import renpy_ecsign_host as e; sys.modules["renpy.ecsign"]=e  # noqa: I001
+    except Exception: pass  # noqa: BLE001, S110
     try:
-        import host_pygame, host_pygame.locals as loc
+        import host_pygame
+        import host_pygame.locals as loc
         if not hasattr(host_pygame,"constants"): host_pygame.constants=loc
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.import_as_pygame()
-        except Exception: pass
-    except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass  # noqa: BLE001, S110
 
     def probe():
         deadline=time.time()+40
         while time.time()<deadline:
             try:
                 if getattr(renpy.store,"main_menu",None): break
-            except Exception: pass
+            except Exception: pass  # noqa: BLE001, S110
             time.sleep(0.1)
-        _log("main_menu models=%s" % getattr(renpy.display.render,"models",None))
+        _log("main_menu models={}".format(getattr(renpy.display.render,"models",None)))
         try:
             renpy.store.Show("preferences", kind="sound_config")()
-        except Exception as e:
-            _log("Show %s"%e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"Show {e}")
         time.sleep(0.6)
         # redraw
         import interact_helpers as ih
         for _ in range(10):
             try:
-                ready,why,iface=ih.interface_ready()
+                ready,_why,iface=ih.interface_ready()
                 if ready and iface:
                     root=ih._rebuild_product_root(iface)
                     w=int(getattr(renpy.config,"screen_width",1920) or 1920)
@@ -140,17 +145,17 @@ def run():
                     st=renpy.display.render.render_screen(root,w,h)
                     renpy.display.draw.draw_screen(st, flip=True)
                     iface.surftree=st
-            except Exception as e:
-                _log("redraw %s"%e)
+            except Exception as e:  # noqa: BLE001
+                _log(f"redraw {e}")
             time.sleep(0.05)
 
         iface = renpy.display.interface
         st = getattr(iface, "surftree", None)
         hits = walk_rt(st)
-        _log("surftree hits n=%d" % len(hits))
+        _log("surftree hits n=%d" % len(hits))  # noqa: UP031
         for h in hits:
             if (h.get("shaders") and any("dissolve" in str(s) for s in h["shaders"])) or h.get("u_anim") is not None or (h.get("mesh_t") and h["mesh_t"]!="NoneType") or (h.get("cm_ntex") or 0)>=2:
-                _log("HIT %s" % h)
+                _log(f"HIT {h}")
 
         # Find selected button ATL and render it alone
         scr = renpy.display.screen.get_screen("preferences")
@@ -167,7 +172,7 @@ def run():
                     for it in v:
                         kids.append(it[0] if isinstance(it,tuple) else it)
             for i,k in enumerate(kids):
-                r=find_sel(k, path+"/%d"%i)
+                r=find_sel(k, path+"/%d"%i)  # noqa: UP031
                 if r: return r
             return None
         raw = getattr(scr,"child",None) or getattr(scr,"raw_child",None)
@@ -176,7 +181,7 @@ def run():
             _log("no selected button")
         else:
             btn, path = found
-            _log("selected button path=%s" % path)
+            _log(f"selected button path={path}")
             # find dissolve ATL child
             def find_dt(d, depth=0):
                 if d is None or depth>10: return None
@@ -199,20 +204,20 @@ def run():
             _log("dt=%s" % (type(dt).__name__ if dt else None))
             if dt is not None:
                 stt = dt.state
-                _log("dt.state shader=%r u_anim=%s child=%s" % (
+                _log("dt.state shader={!r} u_anim={} child={}".format(
                     getattr(stt,"shader",None), getattr(stt,"u_animation",None),
                     type(getattr(dt,"child",None)).__name__ if getattr(dt,"child",None) else None))
                 try:
                     rv = renpy.display.render.render(dt, 179, 64, 1.0, 1.0)
-                    _log("dt.rv shaders=%s uniforms=%s mesh=%s nch=%s size=%s" % (
+                    _log("dt.rv shaders={} uniforms={} mesh={} nch={} size={}".format(
                         getattr(rv,"shaders",None),
-                        list((getattr(rv,"uniforms") or {}).keys()) if isinstance(getattr(rv,"uniforms",None),dict) else None,
+                        list((rv.uniforms or {}).keys()) if isinstance(getattr(rv,"uniforms",None),dict) else None,
                         type(getattr(rv,"mesh",None)).__name__ if getattr(rv,"mesh",None) is not None else None,
                         len(getattr(rv,"children",None) or ()),
                         (rv.width, rv.height),
                     ))
                     for i,(ch,x,y) in enumerate(getattr(rv,"children",None) or ()):
-                        _log("  ch%d type=%s mesh=%s sh=%s nch=%s size=%s at=%.1f,%.1f" % (
+                        _log("  ch%d type=%s mesh=%s sh=%s nch=%s size=%s at=%.1f,%.1f" % (  # noqa: UP031
                             i, type(ch).__name__,
                             type(getattr(ch,"mesh",None)).__name__ if getattr(ch,"mesh",None) is not None else getattr(ch,"mesh",None),
                             getattr(ch,"shaders",None),
@@ -220,7 +225,7 @@ def run():
                             (getattr(ch,"width",None), getattr(ch,"height",None)),
                             x,y))
                         for j,(gc,gx,gy) in enumerate(list(getattr(ch,"children",None) or ())[:5]):
-                            _log("    gc%d type=%s mesh=%s size=%s" % (
+                            _log("    gc%d type=%s mesh=%s size=%s" % (  # noqa: UP031
                                 j, type(gc).__name__,
                                 type(getattr(gc,"mesh",None)).__name__ if getattr(gc,"mesh",None) is not None else getattr(gc,"mesh",None),
                                 (getattr(gc,"width",None), getattr(gc,"height",None))))
@@ -233,11 +238,11 @@ def run():
                     renpy_host.begin_frame()
                     try:
                         draw._draw_node(rv, 462+179*4, 47)  # sound_config pos
-                    except Exception as e:
-                        _log("draw_node exc %s" % e)
+                    except Exception as e:  # noqa: BLE001
+                        _log(f"draw_node exc {e}")
                         _log(traceback.format_exc())
                     renpy_host.end_frame_present()
-                    rw,rh,rt = renpy_host.read_game_rt_rgba()
+                    rw,_rh,rt = renpy_host.read_game_rt_rgba()
                     # sample sound_config band
                     x0,y0,x1,y1 = 462+179*4, 47, 462+179*5, 47+64
                     ys=n=0; rs=gs=bs=0
@@ -248,17 +253,17 @@ def run():
                             if a<40: continue
                             n+=1; rs+=r; gs+=g; bs+=b
                             if r>180 and g>140 and b<90: ys+=1
-                    _log("solo_draw tab sound mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d" % (
+                    _log("solo_draw tab sound mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d" % (  # noqa: UP031
                         rs/n if n else 0, gs/n if n else 0, bs/n if n else 0,
                         ys/float(n) if n else -1, n))
-                except Exception as e:
-                    _log("render/draw FAIL %s" % e)
+                except Exception as e:  # noqa: BLE001
+                    _log(f"render/draw FAIL {e}")
                     _log(traceback.format_exc())
 
         # matrixcolor pack check for Identity
         try:
-            from renpy.common import _matrixcolor
-        except Exception:
+            pass
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             # IdentityMatrix
@@ -266,13 +271,13 @@ def run():
             CM = renpy.store.ColorizeMatrix
             im = IM()(None, 1.0)
             cm = CM("#ffde00","#ffde00")(None, 1.0)
-            _log("Identity matrix fields xdx=%s ydy=%s xdw=%s" % (im.xdx, im.ydy, im.xdw))
-            _log("Colorize matrix xdx=%s ydy=%s xdw=%s ydw=%s" % (cm.xdx, cm.ydy, cm.xdw, cm.ydw))
+            _log(f"Identity matrix fields xdx={im.xdx} ydy={im.ydy} xdw={im.xdw}")
+            _log(f"Colorize matrix xdx={cm.xdx} ydy={cm.ydy} xdw={cm.xdw} ydw={cm.ydw}")
             draw = renpy.display.draw
-            _log("pack Identity %s" % draw._matrix_to_floats(im)[:8])
-            _log("pack Colorize %s" % draw._matrix_to_floats(cm)[:8])
-        except Exception as e:
-            _log("matrix pack %s" % e)
+            _log(f"pack Identity {draw._matrix_to_floats(im)[:8]}")
+            _log(f"pack Colorize {draw._matrix_to_floats(cm)[:8]}")
+        except Exception as e:  # noqa: BLE001
+            _log(f"matrix pack {e}")
             _log(traceback.format_exc())
 
         time.sleep(0.2)
@@ -282,8 +287,8 @@ def run():
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:
-        _log("main exit %s" % e)
+    except BaseException as e:  # noqa: BLE001
+        _log(f"main exit {e}")
 
 run()
 

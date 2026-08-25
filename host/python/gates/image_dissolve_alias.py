@@ -19,6 +19,7 @@ Checks:
 import os
 import sys
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -28,7 +29,8 @@ except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host  # type: ignore
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 _base = Path(os.environ.get("RENPY_HOST_BASE") or str(Path.cwd()))
 out = _base / "host" / "target" / "gate-image_dissolve_alias.txt"
@@ -62,7 +64,7 @@ try:
         fragment_300="/* stub */",
     )
     notes.append("register_shader_image_dissolve=ok")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
     notes.append(f"FAIL: register_shader image_dissolve {type(e).__name__}: {e}")
 
@@ -155,7 +157,7 @@ if mean_r < 1.0 and mean_b < 1.0:
     ok = False
     notes.append("FAIL: blank/clear frame")
 
-msg = "gate=image_dissolve_alias\nok=%s\n%s\n" % (
+msg = "gate=image_dissolve_alias\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

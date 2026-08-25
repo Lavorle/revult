@@ -1,5 +1,6 @@
-import os, sys, types
+import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -10,6 +11,8 @@ except ImportError:
 
 # Full renpy.config stub BEFORE any draw that might log
 import renpy
+
+
 class _Cfg:
     log_to_stdout = False
     log_enable = False
@@ -30,8 +33,9 @@ class _Log:
 renpy.log = _Log()  # type: ignore
 
 import renpy_host
-from renpy.wgpu.draw import WgpuDraw, HostTexture
 from host_pygame import image as himg
+
+from renpy.wgpu.draw import WgpuDraw
 
 base = Path(os.environ.get("RENPY_HOST_BASE", "/mnt/nvme1n1p2/revult"))
 surf = himg.load(str(base / "the_question/game/gui/main_menu.png"))

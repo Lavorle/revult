@@ -22,6 +22,7 @@ import zlib
 from pathlib import Path
 
 import renpy_host  # type: ignore
+
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -268,7 +269,7 @@ def main():
             if isinstance(t, int) and t > 0:
                 t = HostTexture(t, w, h)
             else:
-                notes.append("fail:%s:load" % name)
+                notes.append(f"fail:{name}:load")
                 results.append({"name": name, "ok": False, "rel": rel, "kind": "image",
                                 "mean": (0, 0, 0), "center": (0, 0, 0), "pure_frac": 1.0,
                                 "dest": (0, 0), "black_slab": True, "still_bg": True})
@@ -294,7 +295,7 @@ def main():
         x1, y1 = 50 + size[0], 50 + size[1]
         for y in range(y0, y1, 3):
             for x in range(x0, x1, 3):
-                r, g, b, a = samp(rt, rw, rh, x, y)
+                r, g, b, a = samp(rt, rw, rh, x, y)  # noqa: RUF059
                 rs += r
                 gs += g
                 bs += b
@@ -314,7 +315,7 @@ def main():
             "black_slab": black_slab, "still_bg": still_bg, "dest": size,
         })
         if not ok:
-            notes.append("fail:%s" % name)
+            notes.append(f"fail:{name}")
 
     # Frame multipiece: notify + chat + prefs heading/choice (product borders)
     # Prefs product uses tile=True on choice Frame; multipiece non-tile still
@@ -330,9 +331,8 @@ def main():
         root.blit(Surf(VW, VH, bytes([BG[0], BG[1], BG[2], BG[3]]) * (VW * VH)), 0, 0)
         w, h, px = png_rgba(GUI / rel)
         t = draw.load_texture(Surf(w, h, px))
-        if not isinstance(t, HostTexture) or t.handle <= 0:
-            if isinstance(t, int) and t > 0:
-                t = HostTexture(t, w, h)
+        if (not isinstance(t, HostTexture) or t.handle <= 0) and isinstance(t, int) and t > 0:
+            t = HostTexture(t, w, h)
         frame = build_frame(t, w, h, dw, dh, borders)
         root.blit(frame, 100, 100)
         draw.draw_screen(root, flip=True)
@@ -341,7 +341,7 @@ def main():
         rs = gs = bs = n = pure = 0
         for y in range(110, 100 + dh - 10, 2):
             for x in range(110, 100 + dw - 10, 2):
-                r, g, b, a = samp(rt, rw, rh, x, y)
+                r, g, b, _a = samp(rt, rw, rh, x, y)
                 rs += r
                 gs += g
                 bs += b
@@ -359,7 +359,7 @@ def main():
             "black_slab": black_slab, "still_bg": still_bg, "dest": (dw, dh),
         })
         if not ok:
-            notes.append("fail:%s" % name)
+            notes.append(f"fail:{name}")
 
     # alpha_mask half-black premul
     root = R(VW, VH)
@@ -391,18 +391,17 @@ def main():
     ok = panel_ok
     lines = [
         "gate=hmc_chrome_residual",
-        "ok=%s" % ok,
+        f"ok={ok}",
         "ac=C_residual",
-        "gui_dir=%s" % GUI,
+        f"gui_dir={GUI}",
         "mode=sequential_isolated_probe_parity",
-        "panel_ok=%s" % panel_ok,
+        f"panel_ok={panel_ok}",
         "notes=%s" % (";".join(notes) if notes else "none"),
     ]
     for r in results:
         lines.append(
-            "panel.%s ok=%s kind=%s mean=(%.1f,%.1f,%.1f) center=%s pure_frac=%.3f "
-            "black_slab=%s still_bg=%s dest=%s rel=%s"
-            % (
+            "panel.{} ok={} kind={} mean=({:.1f},{:.1f},{:.1f}) center={} pure_frac={:.3f} "
+            "black_slab={} still_bg={} dest={} rel={}".format(
                 r["name"], r["ok"], r["kind"],
                 r["mean"][0], r["mean"][1], r["mean"][2],
                 r["center"], r["pure_frac"],
@@ -427,15 +426,14 @@ def main():
     )
     msg = "\n".join(lines) + "\n"
     out.write_text(msg)
-    print("[hmc_chrome_residual] SUMMARY ok=%s panel_ok=%s notes=%s" % (ok, panel_ok, notes or "none"), flush=True)
+    print("[hmc_chrome_residual] SUMMARY ok={} panel_ok={} notes={}".format(ok, panel_ok, notes or "none"), flush=True)
     for r in results:
         print(
-            "  %s ok=%s mean=(%.0f,%.0f,%.0f) center=%s still_bg=%s"
-            % (r["name"], r["ok"], r["mean"][0], r["mean"][1], r["mean"][2], r["center"], r.get("still_bg")),
+            "  {} ok={} mean=({:.0f},{:.0f},{:.0f}) center={} still_bg={}".format(r["name"], r["ok"], r["mean"][0], r["mean"][1], r["mean"][2], r["center"], r.get("still_bg")),
             flush=True,
         )
     if not ok:
-        raise RuntimeError("hmc_chrome_residual failed: %s" % notes)
+        raise RuntimeError(f"hmc_chrome_residual failed: {notes}")
 
 
 main()

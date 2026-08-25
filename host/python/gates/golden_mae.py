@@ -20,6 +20,7 @@ import struct
 import sys
 from pathlib import Path
 from typing import Any
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -97,7 +98,7 @@ def try_write_png(path: Path, w: int, h: int, rgba: bytes) -> None:
 
         path.parent.mkdir(parents=True, exist_ok=True)
         Image.frombytes("RGBA", (int(w), int(h)), bytes(rgba)).save(path)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -118,8 +119,7 @@ def mae_compare(actual: bytes, baseline: bytes) -> tuple[float, int, int]:
         if d > 0:
             mismatches += 1
             total += d
-            if d > max_d:
-                max_d = d
+            max_d = max(max_d, d)
 
     mean = (total / n) / 255.0
     return mean, max_d, mismatches
@@ -228,7 +228,7 @@ def compare_or_bootstrap(
 
     try:
         bw, bh, baseline = read_raw_rgba(base_path)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         msg = f"[{name}] FAIL-CLOSED: failed reading baseline at {base_path}: {e} ok=False"
         print(msg, flush=True)
         return False, msg
@@ -355,7 +355,7 @@ def main() -> int:
     try:
         aw, ah, actual_rgba = load_image_or_rgba(args.actual)
         bw, bh, baseline_rgba = load_image_or_rgba(args.baseline)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         err_res = {
             "status": "FAIL",
             "passed": False,

@@ -22,6 +22,7 @@ Note: no from __future__; host run_file prepends imports.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -32,6 +33,7 @@ except ImportError:
 
 import renpy_host  # type: ignore
 from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
@@ -199,7 +201,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     src = _make_source_surface()
@@ -209,7 +211,7 @@ def main():
         if isinstance(tex, int) and tex > 0:
             tex = HostTexture(tex, SRC_W, SRC_H)
         else:
-            msg = "ok=False reason=load_texture_failed tex=%r" % (tex,)
+            msg = f"ok=False reason=load_texture_failed tex={tex!r}"
             out.write_text(msg + "\n")
             print("[frame_multipiece]", msg, flush=True)
             return
@@ -226,8 +228,8 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[frame_multipiece]", msg, flush=True)
         return
@@ -269,7 +271,7 @@ def main():
 
     ok = border_ok and outside_ok and not featureless_black
     msg = (
-        "ok=%s border_hits=%d/%d border_ok=%s center_rgb=(%d,%d,%d) "
+        "ok=%s border_hits=%d/%d border_ok=%s center_rgb=(%d,%d,%d) "  # noqa: UP031
         "center_black=%s center_orange=%s outside_ok=%s featureless_black=%s "
         "top=%s left=%s dest=%dx%d src=%dx%d border=%d"
         % (

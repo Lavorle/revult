@@ -33,6 +33,7 @@ import zlib
 from pathlib import Path
 
 import renpy_host  # type: ignore
+
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -131,7 +132,7 @@ class _Surf:
 def _png_rgba(path):
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise RuntimeError("not png: %s" % path)
+        raise RuntimeError(f"not png: {path}")
     pos = 8
     w = h = None
     raw = b""
@@ -151,7 +152,7 @@ def _png_rgba(path):
     if not w or not h:
         raise RuntimeError("bad png header")
     if bit_depth != 8 or color_type not in (2, 6):
-        raise RuntimeError("unsupported png ct=%s bd=%s" % (color_type, bit_depth))
+        raise RuntimeError(f"unsupported png ct={color_type} bd={bit_depth}")
     decomp = zlib.decompress(raw)
     bpp = 4 if color_type == 6 else 3
     stride = w * bpp + 1
@@ -182,7 +183,7 @@ def _png_rgba(path):
                 pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
                 scan[i] = (scan[i] + pr) & 0xFF
         elif filt != 0:
-            raise RuntimeError("bad filter %s" % filt)
+            raise RuntimeError(f"bad filter {filt}")
         prev = scan
         for x in range(w):
             si = x * bpp
@@ -346,7 +347,7 @@ def _load_tex(draw, path, tag):
         if isinstance(tex, int) and tex > 0:
             tex = HostTexture(tex, src_w, src_h)
         else:
-            raise RuntimeError("load_texture_failed tex=%r tag=%s" % (tex, tag))
+            raise RuntimeError(f"load_texture_failed tex={tex!r} tag={tag}")
     return tex, src_w, src_h, transparent, a_min, a_max, a_mean
 
 
@@ -374,7 +375,7 @@ def main():
     draw.init((VW, VH))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     # --- Real textbox.png Image path ---
@@ -383,8 +384,8 @@ def main():
             draw, tb_png, "gui/textbox.png"
         )
         textbox_load_ok = True
-    except Exception as e:
-        msg = "ok=False reason=load_textbox_png err=%s path=%s" % (e, tb_png)
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=load_textbox_png err={e} path={tb_png}"
         out.write_text(msg + "\n")
         print("[tq_say_chrome]", msg, flush=True)
         return
@@ -395,8 +396,8 @@ def main():
             draw, nb_png, "gui/namebox.png"
         )
         namebox_load_ok = True
-    except Exception as e:
-        msg = "ok=False reason=load_namebox_png err=%s path=%s" % (e, nb_png)
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=load_namebox_png err={e} path={nb_png}"
         out.write_text(msg + "\n")
         print("[tq_say_chrome]", msg, flush=True)
         return
@@ -409,7 +410,7 @@ def main():
         if isinstance(probe_tex, int) and probe_tex > 0:
             probe_tex = HostTexture(probe_tex, probe_w, probe_h)
         else:
-            msg = "ok=False reason=load_probe_texture_failed tex=%r" % (probe_tex,)
+            msg = f"ok=False reason=load_probe_texture_failed tex={probe_tex!r}"
             out.write_text(msg + "\n")
             print("[tq_say_chrome]", msg, flush=True)
             return
@@ -441,8 +442,8 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[tq_say_chrome]", msg, flush=True)
         return
@@ -466,7 +467,7 @@ def main():
         r, g, b, a = _sample(rgba, rw, rh, px * sx, py * sy)
         tb_rgb[name] = (r, g, b, a)
 
-    tb_mean, tb_var, tb_a_mean, _ = _mean_var_region(
+    tb_mean, tb_var, _tb_a_mean, _ = _mean_var_region(
         rgba, rw, rh, sx, sy, TB_X + 20, TB_Y + 10, TB_X + TB_W - 20, TB_Y + TB_H - 5, step=12
     )
 
@@ -581,7 +582,7 @@ def main():
     # Leading ok= only; subfields use *_pass / *_ok names that still may contain
     # True/False but grep uses ok=True / ok=False prefix match on first field.
     msg = (
-        "ok=%s textbox_pass=%s namebox_load_ok=%s namebox_draw_pass=%s "
+        "ok=%s textbox_pass=%s namebox_load_ok=%s namebox_draw_pass=%s "  # noqa: UP031
         "namebox_frame_structure_ok=%s namebox_draw_attempted=%s "
         "tb_mid=%s tb_top=%s tb_bottom=%s tb_outside=%s "
         "tb_mean=(%.1f,%.1f,%.1f) tb_luma_var=%.1f "

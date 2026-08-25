@@ -19,6 +19,7 @@ import os
 import sys
 import types
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -35,7 +36,7 @@ for p in (_base, str(Path(_base) / "host" / "python")):
 # Host already seeds renpy; ensure config has crop_relative_default.
 try:
     import renpy  # type: ignore
-except Exception:
+except Exception:  # noqa: BLE001
     renpy = types.ModuleType("renpy")
     sys.modules["renpy"] = renpy
 
@@ -117,7 +118,7 @@ if not hasattr(_mx, "Matrix2D"):
 if not hasattr(_mx, "Matrix"):
     _mx.Matrix = _Matrix2D
 
-from renpy_display_accelerator_host import RenderTransform  # noqa: E402
+from renpy_display_accelerator_host import RenderTransform
 
 
 class _FakeChild:
@@ -231,7 +232,7 @@ def main():
         import renpy_host  # type: ignore
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 

@@ -7,12 +7,14 @@ Cases:
 
 Pass = mid-st coverage ≈ 0.25 for both paths, not ~1.0.
 """
-import renpy_host
-from renpy.pygame.surface import Surface
-from renpy.wgpu.draw import HostTexture, WgpuDraw
-from pathlib import Path
 import os
 import traceback
+from pathlib import Path
+
+import renpy_host
+from renpy.pygame.surface import Surface
+
+from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
 try:
@@ -135,7 +137,7 @@ def main():
 
         kids = list(draw._iter_children(text))
         needs = draw._node_needs_axis_scale(text, kids)
-        lines.append("needs_axis_scale=%s (expect False)" % needs)
+        lines.append(f"needs_axis_scale={needs} (expect False)")
 
         draw.draw_screen(root, flip=True)
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
@@ -149,20 +151,19 @@ def main():
         )
         ok_id = (not needs) and not_stretched and partial_ok and width_ok
         lines.append(
-            "sub_w=%d ink_cols=%d coverage=%.3f max_ink_x=%d"
+            "sub_w=%d ink_cols=%d coverage=%.3f max_ink_x=%d"  # noqa: UP031
             % (sub_w, ink_cols, coverage, max_x)
         )
         lines.append(
-            "not_stretched=%s partial_ok=%s width_ok=%s ok_id=%s"
-            % (not_stretched, partial_ok, width_ok, ok_id)
+            f"not_stretched={not_stretched} partial_ok={partial_ok} width_ok={width_ok} ok_id={ok_id}"
         )
 
         # 2) Oversample reverse (maximize / draw_per_virt>1)
         os_factor = 1.5
         inv = 1.0 / os_factor
-        draw_w = int(round(TW * os_factor))
-        draw_h = int(round(TH * os_factor))
-        mid_draw_w = int(round(EXPECTED_W * os_factor))
+        draw_w = round(TW * os_factor)
+        draw_h = round(TH * os_factor)
+        mid_draw_w = round(EXPECTED_W * os_factor)
         s2 = Surface((draw_w, draw_h))
         s2.fill((0, 0, 0, 0))
         for y in range(draw_h):
@@ -186,7 +187,7 @@ def main():
         needs2 = draw._node_needs_axis_scale(text2, kids2)
         dest = draw._reverse_dest_size(text2, sub2, (TW, TH))
         lines.append(
-            "oversample needs_axis_scale=%s (expect True) dest=%s expect≈(%d,%d)"
+            "oversample needs_axis_scale=%s (expect True) dest=%s expect≈(%d,%d)"  # noqa: UP031
             % (needs2, dest, EXPECTED_W, TH)
         )
         dest_ok = (
@@ -207,36 +208,35 @@ def main():
         )
         ok_os = dest_ok and os_not_stretched and os_partial and os_width_ok
         lines.append(
-            "oversample ink_cols=%d coverage=%.3f max_ink_x=%d dest_ok=%s"
+            "oversample ink_cols=%d coverage=%.3f max_ink_x=%d dest_ok=%s"  # noqa: UP031
             % (ink2, cov2, max2, dest_ok)
         )
         lines.append(
-            "os_not_stretched=%s os_partial=%s os_width_ok=%s ok_os=%s"
-            % (os_not_stretched, os_partial, os_width_ok, ok_os)
+            f"os_not_stretched={os_not_stretched} os_partial={os_partial} os_width_ok={os_width_ok} ok_os={ok_os}"
         )
 
         ok = bool(ok_id and ok_os)
-        lines.append("ok=%s" % ok)
-    except Exception as e:
+        lines.append(f"ok={ok}")
+    except Exception as e:  # noqa: BLE001
         ok = False
-        lines.append("EXCEPTION %r" % (e,))
+        lines.append(f"EXCEPTION {e!r}")
         lines.append(traceback.format_exc())
 
-    body = ("ok=%s\n" % ok) + "\n".join(lines) + "\n"
+    body = (f"ok={ok}\n") + "\n".join(lines) + "\n"
     out.write_text(body)
     try:
         import sys
 
         sys.__stdout__.write(body)
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     if not ok:
-        raise RuntimeError("tq_typewriter_identity failed; see %s" % out)
+        raise RuntimeError(f"tq_typewriter_identity failed; see {out}")
     return 0
 
 

@@ -10,6 +10,7 @@ Verifies:
 """
 
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -18,17 +19,18 @@ except ImportError:
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
-import renpy_host
+import os
 
 # Import WgpuDraw without full renpy.display boot when possible.
 import sys
-import os
+
+import renpy_host
 
 base = os.environ.get("RENPY_HOST_BASE", "")
 if base and base not in sys.path:
     sys.path.insert(0, base)
 
-from renpy.wgpu.draw import WgpuDraw  # noqa: E402
+from renpy.wgpu.draw import WgpuDraw
 
 
 class FakeSurf:

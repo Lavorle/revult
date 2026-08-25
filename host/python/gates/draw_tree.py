@@ -15,6 +15,7 @@ Note: no `from __future__` — host run_file prepends imports before this source
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -25,6 +26,7 @@ except ImportError:
 
 import renpy_host
 from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import WgpuDraw
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())

@@ -76,9 +76,8 @@ def main() -> None:
         and float(smoke.get("pos") or 0.0) > 0.0
     )
     msg = (
-        "[video-gate] write_ok=%s source=%s frames=%s pos=%.4f "
-        "ffmpeg=%s clock_ok=%s phase=%s ok=%s"
-        % (
+        "[video-gate] write_ok={} source={} frames={} pos={:.4f} "
+        "ffmpeg={} clock_ok={} phase={} ok={}".format(
             wt.get("write_ok"),
             smoke.get("source"),
             smoke.get("frames"),

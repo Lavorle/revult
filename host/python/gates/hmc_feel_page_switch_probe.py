@@ -10,6 +10,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -25,13 +26,13 @@ def _base():
 
 def _log(msg):
     try:
-        open("/tmp/hmc_feel_page_switch_probe.log", "a").write(str(msg) + "\n")
-    except Exception:
+        open("/tmp/hmc_feel_page_switch_probe.log", "a").write(str(msg) + "\n")  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        sys.__stdout__.write("[page_switch] %s\n" % msg)
+        sys.__stdout__.write(f"[page_switch] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -39,7 +40,7 @@ def _quit():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -52,16 +53,16 @@ def _clear_falsey(name):
 def _stubs():
     import types
     try:
-        import renpy.audio.renpysound_host as h
         import renpy.audio as a
+        import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"] = h
         a.renpysound = h
-    except Exception as e:
-        _log("sound %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"sound {e}")
     try:
         import host_pygame
         import host_pygame.locals as loc
-        import host_pygame.scrap as scrap
+        from host_pygame import scrap
         if not hasattr(host_pygame, "constants"):
             host_pygame.constants = loc
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
@@ -72,14 +73,14 @@ def _stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = scrap
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        _log("pygame %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"] = u
@@ -94,15 +95,15 @@ def _stubs():
         pkg.gl = u
         import renpy
         renpy.uguu = pkg
-    except Exception as e:
-        _log("uguu %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"] = e
         import renpy
         renpy.ecsign = e
-    except Exception as e:
-        _log("ecsign %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign {e}")
 
 
 def _pp():
@@ -118,14 +119,14 @@ def _show(kind):
     renpy.display.screen.show_screen("preferences", kind=kind)
     try:
         renpy.restart_interaction()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         iface = renpy.game.interface
         if iface is not None:
             iface.force_redraw = True
             iface.restart_interaction = True
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return (time.monotonic() - t0) * 1000.0
 
@@ -168,7 +169,7 @@ def probe():
         try:
             if bool(getattr(renpy.store, "main_menu", False)):
                 break
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(0.2)
     report["runs"].append(_measure("sound_config", "open_sound"))
@@ -190,13 +191,13 @@ def probe():
         _log(r)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    _log("wrote %s" % out)
+    _log(f"wrote {out}")
     time.sleep(0.2)
     _quit()
 
 
 def main():
-    open("/tmp/hmc_feel_page_switch_probe.log", "w").write("start\n")
+    open("/tmp/hmc_feel_page_switch_probe.log", "w").write("start\n")  # noqa: SIM115
     base = _base()
     game = os.environ.get("RENPY_HOST_GAME") or str(base / "host" / "playtests" / "HuangmeiC")
     os.environ["RENPY_HOST_BASE"] = str(base)
@@ -217,8 +218,8 @@ def main():
             ("import_all", boot.stage_import_all),
             ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
         ):
-            good, missing, error, extra = call()
-            _log("stage %s good=%s" % (name, good))
+            good, _missing, _error, _extra = call()
+            _log(f"stage {name} good={good}")
             if not good:
                 _quit()
                 return
@@ -227,8 +228,8 @@ def main():
         try:
             import renpy_main_host
             renpy_main_host.install(renpy)
-        except Exception as e:
-            _log("main_host %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main_host {e}")
         try:
             import renpy.arguments
             basedir = getattr(renpy.config, "basedir", None) or game
@@ -238,11 +239,11 @@ def main():
                 try:
                     renpy.arguments.register_command("run", renpy.arguments.run, True)
                     renpy.arguments.register_command("quit", renpy.arguments.quit)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             renpy.game.args = renpy.arguments.bootstrap()
-        except Exception as e:
-            _log("args %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"args {e}")
             _quit()
             return
         threading.Thread(target=probe, daemon=True).start()
@@ -250,13 +251,13 @@ def main():
             renpy.main.main()
         except SystemExit:
             pass
-        except Exception as e:
-            _log("main %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main {e}")
             _log(traceback.format_exc())
         finally:
             _quit()
-    except Exception as e:
-        _log("outer %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"outer {e}")
         _log(traceback.format_exc())
         _quit()
 

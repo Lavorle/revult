@@ -1,7 +1,11 @@
-import os, sys, traceback
+import os
+import sys
+import traceback
 from pathlib import Path
+
 import renpy_host
 from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -22,8 +26,8 @@ lines=[]
 def rec(m):
     lines.append(str(m))
     try:
-        sys.__stdout__.write("[dpath] %s\n"%m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[dpath] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
 
 class FakeRender:
@@ -43,7 +47,7 @@ try:
     w,h=1280,720
     draw=WgpuDraw(); draw.init((w,h))
     try: draw.physical_size=renpy_host.window_size()
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
 
     # monkeypatch key methods
     hits={"mid":0,"extreme0":0,"extreme1":0,"leaf_draw":0,"tex_slots":0,"walk_both":0,"is_diss":0,"mesh_branch":0,"surface_draw":0}
@@ -60,14 +64,14 @@ try:
         shaders=getattr(node,"shaders",None)
         texs=getattr(node,"textures",None)
         hits["leaf_draw"]+=1
-        rec("draw_model_like shaders=%s texs=%s uniforms=%s"%(shaders, len(texs) if texs else None, getattr(node,"uniforms",None)))
+        rec("draw_model_like shaders={} texs={} uniforms={}".format(shaders, len(texs) if texs else None, getattr(node,"uniforms",None)))
         return _orig_dml(node, ox, oy)
     draw._draw_model_like=_dml
 
     _orig_ctt=draw._child_to_texture
     def _ctt(child):
         t=_orig_ctt(child)
-        rec("child_to_texture type=%s -> %s handle=%s"%(type(child).__name__, type(t).__name__ if t else None, getattr(t,"handle",None)))
+        rec("child_to_texture type={} -> {} handle={}".format(type(child).__name__, type(t).__name__ if t else None, getattr(t,"handle",None)))
         return t
     draw._child_to_texture=_ctt
 
@@ -80,19 +84,19 @@ try:
     root.uniforms={"u_renpy_dissolve":0.5}
     root.blit(old,0,0); root.blit(new,0,0)
 
-    rec("pre is_diss=%s complete=%s mesh=%s kids=%d"%(draw._is_dissolve_node(root), draw._dissolve_complete(root), root.mesh, len(root.children)))
+    rec("pre is_diss=%s complete=%s mesh=%s kids=%d"%(draw._is_dissolve_node(root), draw._dissolve_complete(root), root.mesh, len(root.children)))  # noqa: UP031
     draw.draw_screen(root, flip=True)
     rw,rh,rgba=renpy_host.read_game_rt_rgba()
     n=rw*rh; step=max(1,n//20000); rs=gs=bs=cnt=0
     for i in range(0,n,step):
         o=i*4; rs+=rgba[o]; gs+=rgba[o+1]; bs+=rgba[o+2]; cnt+=1
-    rec("ROOT mean=(%.1f,%.1f,%.1f) hits=%s"%(rs/cnt,gs/cnt,bs/cnt,hits))
-except Exception as e:
-    rec("EXC %s"%e); rec(traceback.format_exc())
+    rec(f"ROOT mean=({rs/cnt:.1f},{gs/cnt:.1f},{bs/cnt:.1f}) hits={hits}")
+except Exception as e:  # noqa: BLE001
+    rec(f"EXC {e}"); rec(traceback.format_exc())
 out.write_text("\n".join(lines)+"\n")
 try:
-    sys.__stdout__.write("WROTE %s\n"%out); sys.__stdout__.flush()
-except Exception:
+    sys.__stdout__.write(f"WROTE {out}\n"); sys.__stdout__.flush()
+except Exception:  # noqa: BLE001, S110
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

@@ -1,5 +1,8 @@
-import os, sys, traceback
+import os
+import sys
+import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -7,7 +10,7 @@ except ImportError:
         from host.python.gates._harness import gate_harness, parametrized_gate
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
-out = open("/tmp/diag_product2.txt", "w")
+out = open("/tmp/diag_product2.txt", "w")  # noqa: SIM115
 def log(m):
     out.write(str(m) + "\n"); out.flush()
 try:
@@ -38,14 +41,14 @@ try:
         if not good:
             break
     log(f"final has_config={hasattr(renpy,'config')} basedir={getattr(getattr(renpy,'config',None),'basedir',None)}")
-except Exception:
+except Exception:  # noqa: BLE001
     log("EXC\n"+traceback.format_exc())
 finally:
     out.close()
 try:
     import renpy_host
     renpy_host.request_quit()
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

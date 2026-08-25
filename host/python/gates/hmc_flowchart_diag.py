@@ -1,7 +1,11 @@
 
 """hmc_flowchart_diag — product ShowMenu flowchart RT + surftree dump."""
-import os, sys, threading, time, traceback
+import os
+import sys
+import threading
+import time
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -15,25 +19,28 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[flow_diag] %s\n"%m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[flow_diag] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_flowchart_diag.log","a").write(m+"\n")
+    open("/tmp/hmc_flowchart_diag.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()
-    except Exception:
+        import renpy_host; renpy_host.request_quit()  # noqa: I001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _stubs():
     import types
     try:
-        import renpy.audio.renpysound_host as h, renpy.audio as a
+        import renpy.audio as a
+        import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; a.renpysound=h
-    except Exception as e: _log("rs %s"%e)
+    except Exception as e: _log(f"rs {e}")  # noqa: BLE001
     try:
-        import host_pygame, host_pygame.locals as L, host_pygame.scrap as S
+        import host_pygame
+        import host_pygame.locals as L
+        import host_pygame.scrap as S
         if not hasattr(host_pygame,"constants"): host_pygame.constants=L
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
         sys.modules.setdefault("pygame.constants", host_pygame.constants)
@@ -41,10 +48,10 @@ def _stubs():
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.scrap=S
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
         try: rpg.import_as_pygame()
-        except Exception: pass
-    except Exception as e: _log("pg %s"%e)
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception as e: _log(f"pg {e}")  # noqa: BLE001
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u; sys.modules["renpy.uguu.gl"]=u
@@ -53,20 +60,22 @@ def _stubs():
             pkg=types.ModuleType("renpy.uguu"); pkg.__path__=[]; sys.modules["renpy.uguu"]=pkg
         for n in dir(u):
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
-        setattr(pkg,"uguu",u); setattr(pkg,"gl",u)
+        pkg.uguu = u; pkg.gl = u
         try:
-            import renpy; renpy.uguu=pkg
-        except Exception: pass
-    except Exception as e: _log("u %s"%e)
+            import renpy; renpy.uguu=pkg  # noqa: I001
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception as e: _log(f"u {e}")  # noqa: BLE001
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
         try:
-            import renpy as r; setattr(r,"ecsign",e)
-        except Exception: pass
-    except Exception as e: _log("e %s"%e)
+            import renpy as r; r.ecsign = e  # noqa: I001
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception as e: _log(f"e {e}")  # noqa: BLE001
 
-def _walk(n, depth=0, budget=[400], acc=None, ox=0.0, oy=0.0):
+def _walk(n, depth=0, budget=None, acc=None, ox=0.0, oy=0.0):
+    if budget is None:
+        budget = [400]
     if acc is None:
         acc={"nodes":0,"ht":0,"ints":0,"mesh":0,"kids_max":0,"leaves":[],"errors":[]}
     if n is None or budget[0]<=0 or depth>40:
@@ -80,7 +89,7 @@ def _walk(n, depth=0, budget=[400], acc=None, ox=0.0, oy=0.0):
             if len(acc["leaves"])<30:
                 acc["leaves"].append(("HT",ox,oy,n.w,n.h,n.handle))
             return acc
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     if isinstance(n,int) and not isinstance(n,bool):
         if n>0:
@@ -103,7 +112,7 @@ def _walk(n, depth=0, budget=[400], acc=None, ox=0.0, oy=0.0):
                 acc["ints"]+=1
                 if len(acc["leaves"])<30:
                     acc["leaves"].append(("TEXINT",ox,oy,0,0,tex))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     kids=list(getattr(n,"children",None) or [])
     acc["kids_max"]=max(acc["kids_max"], len(kids))
@@ -114,7 +123,7 @@ def _walk(n, depth=0, budget=[400], acc=None, ox=0.0, oy=0.0):
             else:
                 ch=e; cx=cy=0.0
             _walk(ch, depth+1, budget, acc, ox+cx, oy+cy)
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001
             acc["errors"].append(str(ex)[:80])
     return acc
 
@@ -129,7 +138,7 @@ def _sample():
     for y in range(stepy//2,h,stepy):
         for x in range(stepx//2,w,stepx):
             o=(y*w+x)*4
-            r,g,b,a=rt[o],rt[o+1],rt[o+2],rt[o+3]
+            r,g,b,_a=rt[o],rt[o+1],rt[o+2],rt[o+3]
             samples.append((r,g,b)); rs+=r; gs+=g; bs+=b; n+=1
             if r+g+b<20: pure+=1
     mean=(rs/n,gs/n,bs/n)
@@ -138,7 +147,9 @@ def _sample():
     return {"ok": var>=5 and pure/n<0.85, "mean":mean, "var":var, "pure":pure/n, "w":w,"h":h}
 
 def _redraw():
-    import renpy, interact_helpers as ih
+    import interact_helpers as ih
+
+    import renpy
     ready,why,iface=ih.interface_ready()
     if not ready: return {"err":why}
     root=ih._rebuild_product_root(iface)
@@ -149,15 +160,15 @@ def _redraw():
     draw=renpy.display.draw
     try:
         draw.load_all_textures(st)
-    except Exception as e:
-        _log("prepare_err %s"%e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"prepare_err {e}")
     draw.draw_screen(st, flip=True)
     try: iface.surftree=st
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
     return {"st":st,"root":type(root).__name__}
 
 def run():
-    open("/tmp/hmc_flowchart_diag.log","w").write("start\n")
+    open("/tmp/hmc_flowchart_diag.log","w").write("start\n")  # noqa: SIM115
     base=_base()
     game=os.environ.get("RENPY_HOST_GAME") or str(base/"host/playtests/HuangmeiC")
     os.environ.update({"RENPY_HOST_BASE":str(base),"RENPY_HOST_BUILD":"1","RENPY_HOST_GAME":game})
@@ -168,26 +179,26 @@ def run():
             os.environ.pop(k,None)
     for p in (str(base/"host/python/gates"), str(base/"host/python")):
         if p not in sys.path: sys.path.insert(0,p)
-    import renpy_host, bootstrap as boot
+    import bootstrap as boot
     for name,call in (("import_renpy",boot.stage_import_renpy),("import_all",boot.stage_import_all),("set_game_dir",lambda: boot.stage_set_game_dir(base))):
-        good,miss,err,extra=call(); _log("stage %s good=%s err=%r"%(name,good,err))
+        good,_miss,err,_extra=call(); _log(f"stage {name} good={good} err={err!r}")
         if not good: _quit(); return
     import renpy
     renpy.host_build=True
     try: renpy.config.performance_test=False
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)
-    except Exception as e: _log("mh %s"%e)
+        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+    except Exception as e: _log(f"mh {e}")  # noqa: BLE001
     try:
         import renpy.arguments
         basedir=getattr(renpy.config,"basedir",None) or game
         sys.argv=[sys.argv[0] if sys.argv else "renpy-host", basedir, "run"]
         if not getattr(renpy.arguments,"commands",None):
             try: renpy.arguments.register_command("run", renpy.arguments.run, True)
-            except Exception: pass
+            except Exception: pass  # noqa: BLE001, S110
         renpy.game.args=renpy.arguments.bootstrap()
-    except Exception as e: _log("args %s"%e)
+    except Exception as e: _log(f"args {e}")  # noqa: BLE001
     _stubs()
     out=base/"host/target/gate-hmc_flowchart_diag.txt"
     state={"done":False}
@@ -196,20 +207,20 @@ def run():
         for i in range(400):
             try:
                 if bool(getattr(renpy.store,"main_menu",False)):
-                    _log("main_menu t=%d"%i); break
-            except Exception: pass
+                    _log("main_menu t=%d"%i); break  # noqa: UP031
+            except Exception: pass  # noqa: BLE001, S110
             time.sleep(0.05)
         else:
             _log("timeout"); _quit(); return
         time.sleep(2.0)
-        pre=_sample(); _log("PRE mean=%s var=%.1f ok=%s"%(tuple(round(x,1) for x in pre.get("mean",(0,0,0))), pre.get("var",0), pre.get("ok")))
+        pre=_sample(); _log("PRE mean={} var={:.1f} ok={}".format(tuple(round(x,1) for x in pre.get("mean",(0,0,0))), pre.get("var",0), pre.get("ok")))
         def show_and_present(name):
             try:
                 renpy.store.ShowMenu(name)()
                 try: renpy.restart_interaction()
-                except Exception: pass
-            except Exception as e:
-                _log("ShowMenu %s fail %s"%(name,e)); return False
+                except Exception: pass  # noqa: BLE001, S110
+            except Exception as e:  # noqa: BLE001
+                _log(f"ShowMenu {name} fail {e}"); return False
             for j in range(40):
                 if renpy.display.screen.get_screen(name) is not None:
                     break
@@ -217,15 +228,15 @@ def run():
             time.sleep(0.2)
             info=_redraw()
             rt=_sample()
-            _log("SEQ %s root=%s mean=%s var=%.1f ok=%s"%(name, info.get("root"), tuple(round(x,1) for x in rt.get("mean",(0,0,0))), rt.get("var",0), rt.get("ok")))
+            _log("SEQ {} root={} mean={} var={:.1f} ok={}".format(name, info.get("root"), tuple(round(x,1) for x in rt.get("mean",(0,0,0))), rt.get("var",0), rt.get("ok")))
             try:
                 renpy.store.Return()()
                 try: renpy.restart_interaction()
-                except Exception: pass
-            except Exception:
+                except Exception: pass  # noqa: BLE001, S110
+            except Exception:  # noqa: BLE001
                 for n in ("load","preferences","appreciation","flowchart","confirm"):
                     try: renpy.display.screen.hide_screen(n)
-                    except Exception: pass
+                    except Exception: pass  # noqa: BLE001, S110
             time.sleep(0.3)
             return True
         for nm in ("load","preferences","appreciation"):
@@ -233,29 +244,29 @@ def run():
         try:
             renpy.store.ShowMenu("flowchart")()
             try: renpy.restart_interaction()
-            except Exception: pass
-        except Exception as e:
-            _log("ShowMenu fail %s"%e); _quit(); return
+            except Exception: pass  # noqa: BLE001, S110
+        except Exception as e:  # noqa: BLE001
+            _log(f"ShowMenu fail {e}"); _quit(); return
         for j in range(40):
             if renpy.display.screen.get_screen("flowchart") is not None:
-                _log("opened j=%d"%j); break
+                _log("opened j=%d"%j); break  # noqa: UP031
             time.sleep(0.1)
         time.sleep(0.5)
         # live iface before force
         try:
             import interact_helpers as ih
-            ready,why,iface=ih.interface_ready()
+            _ready,_why,iface=ih.interface_ready()
             st=getattr(iface,"surftree",None) if iface else None
             acc=_walk(st)
-            _log("LIVE_ST nodes=%s ht=%s ints=%s mesh=%s kids_max=%s leaves=%s"%(acc["nodes"],acc["ht"],acc["ints"],acc["mesh"],acc["kids_max"],acc["leaves"][:12]))
-        except Exception as e:
-            _log("live walk %s"%e)
-        live=_sample(); _log("LIVE_PRE_FORCE mean=%s var=%.1f ok=%s"%(tuple(round(x,1) for x in live.get("mean",(0,0,0))), live.get("var",0), live.get("ok")))
+            _log("LIVE_ST nodes={} ht={} ints={} mesh={} kids_max={} leaves={}".format(acc["nodes"],acc["ht"],acc["ints"],acc["mesh"],acc["kids_max"],acc["leaves"][:12]))
+        except Exception as e:  # noqa: BLE001
+            _log(f"live walk {e}")
+        live=_sample(); _log("LIVE_PRE_FORCE mean={} var={:.1f} ok={}".format(tuple(round(x,1) for x in live.get("mean",(0,0,0))), live.get("var",0), live.get("ok")))
         info=_redraw()
-        _log("redraw root=%s err=%s"%(info.get("root"), info.get("err")))
+        _log("redraw root={} err={}".format(info.get("root"), info.get("err")))
         st=info.get("st")
         acc=_walk(st)
-        _log("FORCE_ST nodes=%s ht=%s ints=%s mesh=%s kids_max=%s leaves=%s err=%s"%(acc["nodes"],acc["ht"],acc["ints"],acc["mesh"],acc["kids_max"],acc["leaves"][:15],acc["errors"][:5]))
+        _log("FORCE_ST nodes={} ht={} ints={} mesh={} kids_max={} leaves={} err={}".format(acc["nodes"],acc["ht"],acc["ints"],acc["mesh"],acc["kids_max"],acc["leaves"][:15],acc["errors"][:5]))
         # also dump top-level child types
         try:
             kids=list(getattr(st,"children",None) or [])
@@ -268,28 +279,28 @@ def run():
                 mesh=getattr(ch,"mesh",None)
                 tex=getattr(ch,"texture",None)
                 nch=len(list(getattr(ch,"children",None) or []))
-                _log("top[%d] type=%s pos=(%s,%s) size=(%s,%s) mesh=%s tex=%s nch=%s"%(i,type(ch).__name__,cx,cy,tw,th,bool(mesh),type(tex).__name__ if tex is not None else None,nch))
-        except Exception as e:
-            _log("top dump %s"%e)
-        post=_sample(); _log("POST mean=%s var=%.1f ok=%s pure=%.3f"%(tuple(round(x,1) for x in post.get("mean",(0,0,0))), post.get("var",0), post.get("ok"), post.get("pure",0)))
+                _log("top[%d] type=%s pos=(%s,%s) size=(%s,%s) mesh=%s tex=%s nch=%s"%(i,type(ch).__name__,cx,cy,tw,th,bool(mesh),type(tex).__name__ if tex is not None else None,nch))  # noqa: UP031
+        except Exception as e:  # noqa: BLE001
+            _log(f"top dump {e}")
+        post=_sample(); _log("POST mean={} var={:.1f} ok={} pure={:.3f}".format(tuple(round(x,1) for x in post.get("mean",(0,0,0))), post.get("var",0), post.get("ok"), post.get("pure",0)))
         # try load appreciation first then flowchart for order effect
         body=[
             "gate=hmc_flowchart_diag",
-            "pre_ok=%s pre_mean=%s"%(pre.get("ok"), pre.get("mean")),
-            "live_ok=%s live_mean=%s"%(live.get("ok"), live.get("mean")),
-            "post_ok=%s post_mean=%s post_var=%.1f"%(post.get("ok"), post.get("mean"), post.get("var",0)),
-            "force_ht=%s force_ints=%s force_nodes=%s"%(acc["ht"],acc["ints"],acc["nodes"]),
+            "pre_ok={} pre_mean={}".format(pre.get("ok"), pre.get("mean")),
+            "live_ok={} live_mean={}".format(live.get("ok"), live.get("mean")),
+            "post_ok={} post_mean={} post_var={:.1f}".format(post.get("ok"), post.get("mean"), post.get("var",0)),
+            "force_ht={} force_ints={} force_nodes={}".format(acc["ht"],acc["ints"],acc["nodes"]),
         ]
         out.write_text("\n".join(body)+"\n")
-        _log("wrote %s"%out)
+        _log(f"wrote {out}")
         state["done"]=True
         _quit()
 
     threading.Thread(target=inj,daemon=True).start()
     try:
-        import renpy.main as m; m.main()
-    except Exception as e:
-        _log("main %s: %s"%(type(e).__name__,e))
+        import renpy.main as m; m.main()  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"main {type(e).__name__}: {e}")
     _log("done")
 
 run()

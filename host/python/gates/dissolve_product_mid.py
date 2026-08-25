@@ -24,6 +24,7 @@ import zlib
 from pathlib import Path
 
 import renpy_host  # type: ignore
+
 from renpy.wgpu.draw import WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -96,7 +97,7 @@ def _png_rgba(path):
     """Minimal PNG decoder for 8-bit RGBA/RGB (no interlacing). Returns (w,h,rgba)."""
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise RuntimeError("not png: %s" % path)
+        raise RuntimeError(f"not png: {path}")
     pos = 8
     w = h = None
     raw = b""
@@ -116,7 +117,7 @@ def _png_rgba(path):
     if not w or not h:
         raise RuntimeError("bad png header")
     if bit_depth != 8 or color_type not in (2, 6):
-        raise RuntimeError("unsupported png ct=%s bd=%s" % (color_type, bit_depth))
+        raise RuntimeError(f"unsupported png ct={color_type} bd={bit_depth}")
     decomp = zlib.decompress(raw)
     bpp = 4 if color_type == 6 else 3
     stride = w * bpp + 1
@@ -147,7 +148,7 @@ def _png_rgba(path):
                 pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
                 scan[i] = (scan[i] + pr) & 0xFF
         elif filt != 0:
-            raise RuntimeError("bad filter %s" % filt)
+            raise RuntimeError(f"bad filter {filt}")
         prev = scan
         for x in range(w):
             si = x * bpp
@@ -174,8 +175,8 @@ def _load_image_rgba(path):
         im = Image.open(path).convert("RGBA")
         w, h = im.size
         return w, h, im.tobytes(), path.name
-    except Exception as e:
-        raise RuntimeError("load %s failed: %s" % (path, e))
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"load {path} failed: {e}")
 
 
 def _solid_rgba(w, h, rgba):
@@ -235,7 +236,7 @@ def _maybe_set_transitions_pref():
         else:
             # Store on a module-level marker so artifact proves we did not force 0.
             source = "declared_no_prefs_obj"
-    except Exception:
+    except Exception:  # noqa: BLE001
         source = "declared_import_softfail"
     return value, source
 
@@ -270,8 +271,8 @@ def main():
                 dst_off = ((y0 + y) * vw + x0) * 4
                 buf[dst_off : dst_off + copy_w * 4] = orgba[src_off : src_off + copy_w * 4]
             old_surf = _Surf(vw, vh, bytes(buf))
-    except Exception as e:
-        old_tag = "solid_red_fallback(%s)" % e
+    except Exception as e:  # noqa: BLE001
+        old_tag = f"solid_red_fallback({e})"
         old_surf = _Surf(vw, vh, _solid_rgba(vw, vh, (220, 40, 40, 255)))
 
     try:
@@ -291,8 +292,8 @@ def main():
                 dst_off = ((y0 + y) * vw + x0) * 4
                 buf[dst_off : dst_off + copy_w * 4] = nrgba[src_off : src_off + copy_w * 4]
             new_surf = _Surf(vw, vh, bytes(buf))
-    except Exception as e:
-        new_tag = "solid_blue_fallback(%s)" % e
+    except Exception as e:  # noqa: BLE001
+        new_tag = f"solid_blue_fallback({e})"
         new_surf = _Surf(vw, vh, _solid_rgba(vw, vh, (40, 40, 220, 255)))
 
     # Nested Render trees (NOT bare Surfaces) as dissolve children → forces RTT.
@@ -308,17 +309,16 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         msg = (
-            "ok=False reason=read_rt err=%s transitions_pref=%s transitions_src=%s "
-            "transitions_ok=%s old=%s new=%s"
-            % (e, transitions_pref, transitions_src, transitions_ok, old_tag, new_tag)
+            f"ok=False reason=read_rt err={e} transitions_pref={transitions_pref} transitions_src={transitions_src} "
+            f"transitions_ok={transitions_ok} old={old_tag} new={new_tag}"
         )
         out.write_text(msg + "\n")
         print("[dissolve_product_mid]", msg, flush=True)
@@ -345,26 +345,10 @@ def main():
 
     ok = bool(transitions_ok and blended and not hard_red and not hard_blue and not clear_like)
     msg = (
-        "ok=%s mean=(%.1f,%.1f,%.1f) blended=%s hard_red=%s hard_blue=%s "
-        "clear_like=%s nested_renders=True u=0.5 transitions_pref=%s "
-        "transitions_src=%s transitions_ok=%s transitions_forced_zero=False "
-        "old=%s new=%s used_product=%s"
-        % (
-            ok,
-            mr,
-            mg,
-            mb,
-            blended,
-            hard_red,
-            hard_blue,
-            clear_like,
-            transitions_pref,
-            transitions_src,
-            transitions_ok,
-            old_tag,
-            new_tag,
-            used_product,
-        )
+        f"ok={ok} mean=({mr:.1f},{mg:.1f},{mb:.1f}) blended={blended} hard_red={hard_red} hard_blue={hard_blue} "
+        f"clear_like={clear_like} nested_renders=True u=0.5 transitions_pref={transitions_pref} "
+        f"transitions_src={transitions_src} transitions_ok={transitions_ok} transitions_forced_zero=False "
+        f"old={old_tag} new={new_tag} used_product={used_product}"
     )
     out.write_text(msg + "\n")
     print("[dissolve_product_mid]", msg, flush=True)

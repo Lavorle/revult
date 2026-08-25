@@ -36,7 +36,7 @@ log_lines = []
 
 def log(m):
     log_lines.append(str(m))
-    print("[tq_draw_diag] %s" % m, flush=True)
+    print(f"[tq_draw_diag] {m}", flush=True)
 
 
 def _summarize(node, depth=0, acc=None, budget=120):
@@ -61,7 +61,7 @@ def _summarize(node, depth=0, acc=None, budget=120):
         ct = getattr(cached, "texture", None)
         cts = getattr(cached, "textures", None)
         if ct is not None and hasattr(ct, "handle"):
-            cached_tex = "HostTexture(h=%s,%sx%s)" % (
+            cached_tex = "HostTexture(h={},{}x{})".format(
                 ct.handle,
                 getattr(ct, "w", 0),
                 getattr(ct, "h", 0),
@@ -70,16 +70,16 @@ def _summarize(node, depth=0, acc=None, budget=120):
             slots = []
             for t in list(cts)[:4]:
                 if t is not None and hasattr(t, "handle"):
-                    slots.append("h=%s:%sx%s" % (t.handle, getattr(t, "w", 0), getattr(t, "h", 0)))
+                    slots.append("h={}:{}x{}".format(t.handle, getattr(t, "w", 0), getattr(t, "h", 0)))
                 else:
                     slots.append(type(t).__name__ if t is not None else "None")
-            cached_tex = "textures[%s]" % ",".join(slots)
+            cached_tex = "textures[{}]".format(",".join(slots))
         else:
-            cached_tex = "model(%s)" % type(cached).__name__
+            cached_tex = f"model({type(cached).__name__})"
     tex_s = None
     if tex is not None:
         if hasattr(tex, "handle"):
-            tex_s = "HostTexture(h=%s,%sx%s@%s,%s)" % (
+            tex_s = "HostTexture(h={},{}x{}@{},{})".format(
                 tex.handle,
                 getattr(tex, "w", 0),
                 getattr(tex, "h", 0),
@@ -87,12 +87,11 @@ def _summarize(node, depth=0, acc=None, budget=120):
                 getattr(tex, "y", 0),
             )
         elif isinstance(tex, int):
-            tex_s = "int(%s)" % tex
+            tex_s = f"int({tex})"
         else:
             tex_s = type(tex).__name__
     acc.append(
-        "%s%s size=%sx%s mesh=%r tex=%s loaded=%s cached_model=%s children=%s blits=%s"
-        % (indent, cls, tw, th, mesh, tex_s, loaded, cached_tex, nkid, nblit)
+        f"{indent}{cls} size={tw}x{th} mesh={mesh!r} tex={tex_s} loaded={loaded} cached_model={cached_tex} children={nkid} blits={nblit}"
     )
     for entry in list(kids)[:8]:
         child = entry[0] if isinstance(entry, (tuple, list)) else entry
@@ -121,7 +120,7 @@ def _count_prepared(node, stats=None, budget=400, seen=None):
         if nid in seen:
             return stats
         seen.add(nid)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     stats["nodes"] += 1
     if getattr(node, "mesh", None):
@@ -141,7 +140,7 @@ def _count_prepared(node, stats=None, budget=400, seen=None):
         try:
             if int(getattr(node, "handle", 0) or 0) > 0:
                 stats["host_tex_leaves"] += 1
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     kids = getattr(node, "children", None) or []
     blits = getattr(node, "blits", None) or []
@@ -159,20 +158,20 @@ class HostStop(BaseException):
         self.stage = stage
         self.detail = detail
         super().__init__(
-            "HostStop@%s: %s" % (stage, detail) if detail else "HostStop@%s" % stage
+            f"HostStop@{stage}: {detail}" if detail else f"HostStop@{stage}"
         )
 
 
 def _pre_main_host_stubs():
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         log("renpysound rebound to host")
-    except Exception as e:
-        log("renpysound rebound soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        log(f"renpysound rebound soft-fail: {e}")
 
     try:
         import host_pygame
@@ -188,10 +187,10 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.import_as_pygame()
-        except Exception as e:
-            log("import_as_pygame soft-fail: %s" % e)
-    except Exception as e:
-        log("pygame.constants soft-fail: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            log(f"import_as_pygame soft-fail: {e}")
+    except Exception as e:  # noqa: BLE001
+        log(f"pygame.constants soft-fail: {e}")
 
     try:
         import renpy_uguu_host as _uguu
@@ -206,11 +205,11 @@ def _pre_main_host_stubs():
         for _name in dir(_uguu):
             if _name.startswith("GL_") or _name in ("clear_errors", "get_error"):
                 setattr(pkg, _name, getattr(_uguu, _name))
-        setattr(pkg, "uguu", _uguu)
-        setattr(pkg, "gl", _uguu)
+        pkg.uguu = _uguu
+        pkg.gl = _uguu
         log("uguu host stub installed")
-    except Exception as e:
-        log("uguu stub soft-fail: %s: %s" % (type(e).__name__, e))
+    except Exception as e:  # noqa: BLE001
+        log(f"uguu stub soft-fail: {type(e).__name__}: {e}")
 
     try:
         import renpy_ecsign_host as _ecsign
@@ -219,12 +218,12 @@ def _pre_main_host_stubs():
         try:
             import renpy as _renpy_pkg
 
-            setattr(_renpy_pkg, "ecsign", _ecsign)
-        except Exception:
+            _renpy_pkg.ecsign = _ecsign
+        except Exception:  # noqa: BLE001, S110
             pass
         log("ecsign host stub installed")
-    except Exception as e:
-        log("ecsign soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        log(f"ecsign soft-fail: {e}")
 
 
 def _ensure_renpy_main(repo_base):
@@ -259,30 +258,30 @@ os.environ.setdefault("RENPY_PERFORMANCE_TEST", "0")
 os.environ.setdefault("RENPY_SKIP_SPLASHSCREEN", "0")
 
 good, miss, err, extra = boot.stage_import_renpy()
-log("import_renpy good=%s err=%s" % (good, err))
+log(f"import_renpy good={good} err={err}")
 if not good:
     outp.parent.mkdir(parents=True, exist_ok=True)
     outp.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
     raise SystemExit(1)
 
 good, miss, err, extra = boot.stage_import_all()
-log("import_all good=%s err=%s" % (good, err))
+log(f"import_all good={good} err={err}")
 
 # stage_set_game_dir expects repo root (resolves the_question / RENPY_HOST_GAME)
 good, miss, err, extra = boot.stage_set_game_dir(base)
 log(
-    "set_game_dir good=%s basedir=%s err=%s"
-    % (good, (extra or {}).get("basedir") if isinstance(extra, dict) else extra, err)
+    "set_game_dir good={} basedir={} err={}".format(good, (extra or {}).get("basedir") if isinstance(extra, dict) else extra, err)
 )
 
-import renpy  # noqa: E402
-import renpy_host  # noqa: E402
+import renpy_host
+
+import renpy
 
 if not getattr(renpy, "host_build", False):
     renpy.host_build = True
 
 main_mod, have, how = _ensure_renpy_main(base)
-log("path helpers %s have=%s" % (how, have))
+log(f"path helpers {how} have={have}")
 
 basedir = getattr(renpy.config, "basedir", None) or str(game)
 renpy.config.renpy_base = getattr(renpy.config, "renpy_base", None) or str(base)
@@ -290,13 +289,13 @@ try:
     logdir = main_mod.path_to_logdir(basedir)
     renpy.config.logdir = logdir
     os.makedirs(logdir, 0o777, exist_ok=True)
-except Exception as e:
-    log("logdir soft-fail: %s" % e)
+except Exception as e:  # noqa: BLE001
+    log(f"logdir soft-fail: {e}")
 
 try:
     renpy.importer.init_importer()
-except Exception as e:
-    log("importer soft-fail: %s" % e)
+except Exception as e:  # noqa: BLE001
+    log(f"importer soft-fail: {e}")
 
 _pre_main_host_stubs()
 
@@ -304,10 +303,10 @@ try:
     renpy.config.performance_test = False
     renpy.config.has_music = False
     renpy.config.main_menu_music = None
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 
-from renpy.wgpu import draw as wdraw  # noqa: E402
+from renpy.wgpu import draw as wdraw
 
 _orig_draw = wdraw.WgpuDraw.draw_screen
 _n = {"i": 0}
@@ -324,23 +323,22 @@ def draw_screen_hook(self, surftree, flip=True):
     # Explicit prepare so we can dump cached_model before draw_screen invalidate.
     if n <= 3 and surftree is not None:
         try:
-            log("--- draw_screen #%s type=%s PRE-prepare ---" % (n, type(surftree).__name__))
+            log(f"--- draw_screen #{n} type={type(surftree).__name__} PRE-prepare ---")
             for s in _summarize(surftree):
                 log(s)
             try:
                 self._ensure_pipes()
                 self.load_all_textures(surftree)
-            except Exception as e:
-                log("prepare fail: %s: %s" % (type(e).__name__, e))
-            log("--- draw_screen #%s POST-prepare ---" % n)
+            except Exception as e:  # noqa: BLE001
+                log(f"prepare fail: {type(e).__name__}: {e}")
+            log(f"--- draw_screen #{n} POST-prepare ---")
             for s in _summarize(surftree):
                 log(s)
             stats = _count_prepared(surftree)
             _diag["prepare_stats"] = stats
             _diag["has_cached_ht"] = bool(stats.get("cached_with_ht"))
             log(
-                "prepare_stats nodes=%s mesh=%s cached_model=%s cached_with_ht=%s texture_cache_len=%s"
-                % (
+                "prepare_stats nodes={} mesh={} cached_model={} cached_with_ht={} texture_cache_len={}".format(
                     stats["nodes"],
                     stats["mesh_true"],
                     stats["cached_model"],
@@ -348,12 +346,12 @@ def draw_screen_hook(self, surftree, flip=True):
                     len(getattr(self, "texture_cache", {})),
                 )
             )
-        except Exception as e:
-            log("summarize fail: %s: %s" % (type(e).__name__, e))
+        except Exception as e:  # noqa: BLE001
+            log(f"summarize fail: {type(e).__name__}: {e}")
     try:
         rv = _orig_draw(self, surftree, flip=flip)
     except Exception as e:
-        log("draw_screen raised: %s: %s" % (type(e).__name__, e))
+        log(f"draw_screen raised: {type(e).__name__}: {e}")
         raise
     if n <= 3:
         try:
@@ -367,23 +365,21 @@ def draw_screen_hook(self, surftree, flip=True):
                 i = (cy * w + cx) * 4
                 _diag["rt_mean"] = (rs, gs, bs)
                 log(
-                    "RT after #%s: %sx%s mean=(%.1f,%.1f,%.1f) center=%s"
-                    % (n, w, h, rs, gs, bs, tuple(rgba[i : i + 4]))
+                    f"RT after #{n}: {w}x{h} mean=({rs:.1f},{gs:.1f},{bs:.1f}) center={tuple(rgba[i : i + 4])}"
                 )
             else:
                 log(
-                    "RT empty after #%s: %sx%s bytes=%s"
-                    % (n, w, h, 0 if not rgba else len(rgba))
+                    f"RT empty after #{n}: {w}x{h} bytes={0 if not rgba else len(rgba)}"
                 )
-        except Exception as e:
-            log("readback fail: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            log(f"readback fail: {e}")
     return rv
 
 
 wdraw.WgpuDraw.draw_screen = draw_screen_hook
 
 _interacts = {"n": 0}
-import renpy.display.core as core  # noqa: E402
+from renpy.display import core
 
 _orig_interact = core.Interface.interact
 
@@ -391,13 +387,13 @@ _orig_interact = core.Interface.interact
 def interact_hook(self, *a, **k):
     _interacts["n"] += 1
     n = _interacts["n"]
-    log("interact enter #%s" % n)
+    log(f"interact enter #{n}")
     try:
         return _orig_interact(self, *a, **k)
     finally:
-        log("interact leave #%s draws=%s" % (n, _n["i"]))
+        log("interact leave #{} draws={}".format(n, _n["i"]))
         if n >= 1 and _n["i"] >= 1:
-            raise HostStop("diag", "interact=%s draws=%s" % (n, _n["i"]))
+            raise HostStop("diag", "interact={} draws={}".format(n, _n["i"]))
 
 
 core.Interface.interact = interact_hook
@@ -427,17 +423,16 @@ try:
     renpy.main.main()
     log("main returned normally")
 except HostStop as e:
-    log("HostStop: %s" % e)
-except Exception as e:
-    log("main exception: %s: %s" % (type(e).__name__, e))
+    log(f"HostStop: {e}")
+except Exception as e:  # noqa: BLE001
+    log(f"main exception: {type(e).__name__}: {e}")
     log(traceback.format_exc()[-2000:])
 
 stats = _diag.get("prepare_stats") or {}
 rt = _diag.get("rt_mean")
 ac_p2 = bool(stats.get("cached_with_ht"))
 log(
-    "SUMMARY ac_p2_prepared_ht=%s cached_model=%s cached_with_ht=%s mesh=%s rt_mean=%s draws=%s"
-    % (
+    "SUMMARY ac_p2_prepared_ht={} cached_model={} cached_with_ht={} mesh={} rt_mean={} draws={}".format(
         ac_p2,
         stats.get("cached_model"),
         stats.get("cached_with_ht"),
@@ -449,10 +444,10 @@ log(
 
 outp.parent.mkdir(parents=True, exist_ok=True)
 outp.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
-log("wrote %s" % outp)
+log(f"wrote {outp}")
 try:
     renpy_host.request_quit()
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

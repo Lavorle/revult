@@ -61,7 +61,7 @@ def _request_quit():
         import renpy_host  # type: ignore
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -72,10 +72,10 @@ def _log(msg: str) -> None:
     try:
         sys.__stdout__.write(line)
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             print(line, end="", flush=True)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -111,7 +111,7 @@ def _prepare_run_args(base: Path):
         try:
             renpy.arguments.register_command("run", renpy.arguments.run, True)
             renpy.arguments.register_command("quit", renpy.arguments.quit)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     args = renpy.arguments.bootstrap()
     renpy.game.args = args
@@ -121,13 +121,13 @@ def _prepare_run_args(base: Path):
 def _pre_main_host_stubs() -> None:
     """Host rebinds required before renpy.main.main() (uguu/ecsign/sound/pygame)."""
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound to host")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _log(f"renpysound rebound soft-fail: {e}")
 
     try:
@@ -150,14 +150,14 @@ def _pre_main_host_stubs() -> None:
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             rpg.import_as_pygame()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _log(f"import_as_pygame soft-fail: {e}")
         _log("host scrap rebound (clipboard no-op)")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _log(f"pygame.constants soft-fail: {e}")
 
     try:
@@ -173,10 +173,10 @@ def _pre_main_host_stubs() -> None:
         for _name in dir(_uguu):
             if _name.startswith("GL_") or _name in ("clear_errors", "get_error"):
                 setattr(pkg, _name, getattr(_uguu, _name))
-        setattr(pkg, "uguu", _uguu)
-        setattr(pkg, "gl", _uguu)
+        pkg.uguu = _uguu
+        pkg.gl = _uguu
         _log("uguu host stub installed")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _log(f"uguu stub soft-fail: {type(e).__name__}: {e}")
 
     try:
@@ -186,11 +186,11 @@ def _pre_main_host_stubs() -> None:
         try:
             import renpy as _renpy_pkg
 
-            setattr(_renpy_pkg, "ecsign", _ecsign)
-        except Exception:
+            _renpy_pkg.ecsign = _ecsign
+        except Exception:  # noqa: BLE001, S110
             pass
         _log("ecsign host stub installed")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _log(f"ecsign soft-fail: {e}")
 
 
@@ -284,14 +284,14 @@ def run() -> None:
             logdir = main_mod.path_to_logdir(basedir)
             renpy.config.logdir = logdir
             os.makedirs(logdir, 0o777, exist_ok=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _log(f"logdir soft-fail: {e}")
 
         args = _prepare_run_args(base)
         _log(f"args command={getattr(args, 'command', None)}")
         try:
             renpy.importer.init_importer()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _log(f"importer soft-fail: {e}")
 
         _pre_main_host_stubs()
@@ -299,7 +299,7 @@ def run() -> None:
         # Belt-and-suspenders for 00gltest hang (env already set; also force config).
         try:
             renpy.config.performance_test = False
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
         # Temporary D4 loader probe (Slice 0). Gated by RENPY_HOST_LOADER_PROBE=1.
@@ -345,11 +345,11 @@ def run() -> None:
                         )
                     try:
                         tp = _loader.transpath(target)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         tp = f"ERR {type(e).__name__}: {e}"
                     try:
                         loadable = _loader.loadable(target)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         loadable = f"ERR {type(e).__name__}: {e}"
                     # game_files membership for the asset
                     try:
@@ -362,7 +362,7 @@ def run() -> None:
                         lm_has = target.lower() in {
                             k.lower() for k in (getattr(_loader, "lower_map", {}) or {})
                         }
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         gf_hit, gf_count, cf_count, lm_has = f"ERR {e}", -1, -1, False
                     _log(
                         "LOADER_PROBE "
@@ -398,7 +398,7 @@ def run() -> None:
                             data = lf.read(8)
                             lf.close()
                             _log(f"LOADER_PROBE load({target!r}) ok hdr={data!r} type={type(lf)!r}")
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             _log(f"LOADER_PROBE load({target!r}) FAIL {type(e).__name__}: {e}")
                             import traceback as _tb
                             print(_tb.format_exc(), flush=True)
@@ -407,7 +407,7 @@ def run() -> None:
                             data2 = lf2.read(8)
                             lf2.close()
                             _log(f"LOADER_PROBE load(dir=images) ok hdr={data2!r}")
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             _log(f"LOADER_PROBE load(dir=images) FAIL {type(e).__name__}: {e}")
                         # Full Image/pgrender decode path (post-open residual probe)
                         try:
@@ -419,13 +419,13 @@ def run() -> None:
                             px0 = None
                             try:
                                 px0 = surf.get_at((0, 0)) if surf is not None else None
-                            except Exception as e2:
+                            except Exception as e2:  # noqa: BLE001
                                 px0 = f"get_at ERR {type(e2).__name__}: {e2}"
                             _log(
                                 f"LOADER_PROBE pgrender.load_image ok size={sz!r} "
                                 f"type={type(surf)!r} px0={px0!r}"
                             )
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             _log(
                                 f"LOADER_PROBE pgrender.load_image FAIL "
                                 f"{type(e).__name__}: {e}"
@@ -449,20 +449,20 @@ def run() -> None:
                                     sum(s[i] for s in samples) // len(samples)
                                     for i in range(3)
                                 )
-                            except Exception as e3:
+                            except Exception as e3:  # noqa: BLE001
                                 mean_s = f"sample ERR {type(e3).__name__}: {e3}"
                             _log(
                                 f"LOADER_PROBE im.Image.load ok size={sz2!r} "
                                 f"type={type(surf2)!r} sample_rgb={mean_s!r}"
                             )
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             _log(
                                 f"LOADER_PROBE im.Image.load FAIL "
                                 f"{type(e).__name__}: {e}"
                             )
                             import traceback as _tb
                             print(_tb.format_exc(), flush=True)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         _log(f"LOADER_PROBE open/load probe FAIL {type(e).__name__}: {e}")
                         import traceback as _tb
                         print(_tb.format_exc(), flush=True)
@@ -477,7 +477,7 @@ def run() -> None:
                                     f"join={j!r} equal_d={j == d} "
                                     f"isdir_join={os.path.isdir(j)} isdir_d={os.path.isdir(d)}"
                                 )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     _log(f"LOADER_PROBE FAILED {type(e).__name__}: {e}")
                     print(traceback.format_exc(), flush=True)
 

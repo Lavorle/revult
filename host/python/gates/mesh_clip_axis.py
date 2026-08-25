@@ -19,6 +19,7 @@ Note: no from __future__; host run_file prepends imports.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -28,7 +29,7 @@ except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host  # type: ignore
-from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import WgpuDraw
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
@@ -86,7 +87,7 @@ def _present(draw, tree):
         draw.draw_screen(tree, flip=True)
         try:
             renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     w, h, rgba = renpy_host.read_game_rt_rgba()
     assert w > 0 and h > 0 and len(rgba) == w * h * 4, (w, h, len(rgba))
@@ -104,7 +105,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     # Oversized solid: 600x600 green.
@@ -141,9 +142,9 @@ def main():
     c_right = _sample(rgba, rw, rh, ox_r, oy_r)
 
     pos_in = _near(c_in, GREEN)
-    pos_left_bg = _near(c_left, BG) or (c_left[1] < 80)  # not green
-    pos_top_bg = _near(c_top, BG) or (c_top[1] < 80)
-    pos_right_bg = _near(c_right, BG) or (c_right[1] < 80)
+    _near(c_left, BG) or (c_left[1] < 80)  # not green
+    _near(c_top, BG) or (c_top[1] < 80)
+    _near(c_right, BG) or (c_right[1] < 80)
     # Stricter: outside samples must NOT be green-dominant.
     pos_left_ok = not _near(c_left, GREEN, tol=60)
     pos_top_ok = not _near(c_top, GREEN, tol=60)

@@ -35,8 +35,8 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # Reuse pure helpers from golden_mae — never duplicate MAE logic.
 try:
@@ -66,11 +66,11 @@ def _safe_write(msg: str) -> None:
     try:
         sys.stdout.buffer.write(data)
         sys.stdout.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             sys.stdout.write(msg if msg.endswith("\n") else msg + "\n")
             sys.stdout.flush()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -132,7 +132,7 @@ def gate_harness(
         label = f"case {idx} {case}" if case else f"case {idx}"
         try:
             out = run_one(case)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             msg = f"[{name}] {label} FAIL: run_one {type(e).__name__}: {e}"
             notes.append(msg)
             results.append({"case": case, "passed": False, "error": msg})
@@ -158,7 +158,7 @@ def gate_harness(
                 # fallback: let golden_compare decide (may raise TypeError -> handled)
                 ok, msg = golden_compare(out)  # type: ignore[call-arg]
                 results.append({"case": case, "passed": ok, "message": msg})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             ok, msg = False, f"[{name}] {label} FAIL: golden_compare {type(e).__name__}: {e}"
             results.append({"case": case, "passed": False, "error": msg})
         notes.append(msg)
@@ -188,11 +188,11 @@ def gate_harness(
 
 
 __all__ = [
+    "compare_or_bootstrap",
+    "evaluate_golden",
     "gate_harness",
+    "gate_result_path",
+    "mae_compare",
     "parametrized_gate",
     "repo_root",
-    "gate_result_path",
-    "evaluate_golden",
-    "mae_compare",
-    "compare_or_bootstrap",
 ]

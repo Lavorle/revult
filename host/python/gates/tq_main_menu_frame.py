@@ -75,7 +75,7 @@ def _request_quit():
         import renpy_host  # type: ignore
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -167,7 +167,7 @@ def _prepare_run_args(base: Path):
         try:
             renpy.arguments.register_command("run", renpy.arguments.run, True)
             renpy.arguments.register_command("quit", renpy.arguments.quit)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     args = renpy.arguments.bootstrap()
     renpy.game.args = args
@@ -176,13 +176,13 @@ def _prepare_run_args(base: Path):
 
 def _pre_main_host_stubs(log: list) -> None:
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _append_log(log, "renpysound rebound to host")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"renpysound rebound soft-fail: {e}")
 
     try:
@@ -199,9 +199,9 @@ def _pre_main_host_stubs(log: list) -> None:
             rpg.constants = host_pygame.constants
         try:
             rpg.import_as_pygame()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _append_log(log, f"import_as_pygame soft-fail: {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"pygame.constants soft-fail: {e}")
 
     try:
@@ -217,10 +217,10 @@ def _pre_main_host_stubs(log: list) -> None:
         for _name in dir(_uguu):
             if _name.startswith("GL_") or _name in ("clear_errors", "get_error"):
                 setattr(pkg, _name, getattr(_uguu, _name))
-        setattr(pkg, "uguu", _uguu)
-        setattr(pkg, "gl", _uguu)
+        pkg.uguu = _uguu
+        pkg.gl = _uguu
         _append_log(log, "uguu host stub installed")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"uguu stub soft-fail: {type(e).__name__}: {e}")
 
     try:
@@ -230,19 +230,20 @@ def _pre_main_host_stubs(log: list) -> None:
         try:
             import renpy as _renpy_pkg
 
-            setattr(_renpy_pkg, "ecsign", _ecsign)
-        except Exception:
+            _renpy_pkg.ecsign = _ecsign
+        except Exception:  # noqa: BLE001, S110
             pass
         _append_log(log, "ecsign host stub installed")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"ecsign soft-fail: {e}")
 
 
 def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
-    import renpy
-    import renpy.display.core as core
-    import renpy.main as renpy_main
     import interact_helpers as ih
+
+    import renpy
+    import renpy.main as renpy_main
+    from renpy.display import core
 
     OrigInterface = core.Interface
 
@@ -262,7 +263,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             OrigInterface.draw_screen(self, root_widget, fullscreen_video, draw)
             try:
                 in_mm = bool(ih.in_main_menu())
-            except Exception:
+            except Exception:  # noqa: BLE001
                 in_mm = bool(state.get("in_main_menu"))
             state["in_main_menu"] = in_mm
             state["draw_count"] = int(state.get("draw_count") or 0) + 1
@@ -284,8 +285,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                     capturer(f"draw_screen_n{state['draw_count']}")
                     raise HostStop(
                         "main_menu_frame",
-                        "captured ownership_ok=%s nonblank_ok=%s present_path=%s"
-                        % (
+                        "captured ownership_ok={} nonblank_ok={} present_path={}".format(
                             state.get("ownership_ok"),
                             state.get("nonblank_ok"),
                             state.get("present_path"),
@@ -318,7 +318,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 if hasattr(prefs, "afm_enable"):
                     prefs.afm_enable = False
             _append_log(log, "prefs: music off, transitions 0, performance_test off")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             state["prefs_error"] = f"{type(e).__name__}: {e}"
             _append_log(log, f"prefs_error={state['prefs_error']}")
 
@@ -339,11 +339,11 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             """Best-effort unblock of main-menu interact_core under host pump."""
             try:
                 iface.timeout(float(secs))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             try:
                 renpy.exports.timeout(float(secs))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
         def _force_product_present() -> dict:
@@ -371,7 +371,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                         out["interface_start"] = start_detail
                         if not ok_start:
                             out["error"] = f"start:{start_detail}"
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         out["error"] = f"start:{type(e).__name__}:{e}"
                 draw = getattr(getattr(renpy, "display", None), "draw", None)
                 out["draw_source"] = type(draw).__name__ if draw is not None else "None"
@@ -383,7 +383,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                             out["presented"] = True
                             out["path"] = f"product_surftree:{type(surftree).__name__}"
                             return out
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             out["error"] = f"surftree:{type(e).__name__}:{e}"
 
                     # Rebuild root from scene_lists when surftree is still absent
@@ -396,7 +396,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                     if root is None:
                         try:
                             root = ih._rebuild_product_root(iface)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             out["error"] = (out.get("error") or "") + f";rebuild:{type(e).__name__}:{e}"
 
                     if root is not None and hasattr(iface, "draw_screen"):
@@ -411,9 +411,9 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                                 out["presented"] = True
                                 out["path"] = f"product_draw_root:{type(root).__name__}"
                                 return out
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 out["error"] = (out.get("error") or "") + f";root:{type(e).__name__}:{e}"
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             out["error"] = (out.get("error") or "") + f";iface:{type(e).__name__}:{e}"
 
                     # Explicit render_screen rebuild when iface.draw_screen path fails.
@@ -425,12 +425,12 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                             draw.draw_screen(st, flip=True)
                             try:
                                 iface.surftree = st
-                            except Exception:
+                            except Exception:  # noqa: BLE001, S110
                                 pass
                             out["presented"] = True
                             out["path"] = f"product_render_screen:{type(st).__name__}"
                             return out
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             out["error"] = (out.get("error") or "") + f";render:{type(e).__name__}:{e}"
 
                 # Fall back to shared ensure (may use surrogate).
@@ -440,7 +440,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 out["draw_source"] = pres.get("draw_source") or out["draw_source"]
                 if pres.get("error"):
                     out["error"] = (out.get("error") or "") + f";{pres.get('error')}"
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 out["error"] = f"{type(e).__name__}: {e}"
             return out
 
@@ -457,7 +457,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                     pref = _force_product_present()
                     state["product_present_attempt"] = pref
                     _append_log(log, f"product_present_attempt={pref}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     state["product_present_attempt_error"] = f"{type(e).__name__}: {e}"
 
                 cap = ih.capture_with_present_ownership(force_present=True)
@@ -503,8 +503,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                         )
                         _append_log(
                             log,
-                            "manual product readback size=%sx%s nonblank=%s reject=%s path=%s"
-                            % (
+                            "manual product readback size={}x{} nonblank={} reject={} path={}".format(
                                 cap["frame_w"],
                                 cap["frame_h"],
                                 cap["nonblank_ok"],
@@ -512,7 +511,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                                 cap.get("present_path"),
                             ),
                         )
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         state["manual_product_capture_error"] = f"{type(e).__name__}: {e}"
                         _append_log(log, f"manual product capture error: {state['manual_product_capture_error']}")
 
@@ -531,9 +530,8 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 state["frame_error"] = cap.get("frame_error")
                 _append_log(
                     log,
-                    "capture ownership_ok=%s nonblank_ok=%s size=%sx%s "
-                    "reject=%s presents=%s idle_clears=%s last=%s path=%s"
-                    % (
+                    "capture ownership_ok={} nonblank_ok={} size={}x{} "
+                    "reject={} presents={} idle_clears={} last={} path={}".format(
                         state.get("ownership_ok"),
                         state.get("nonblank_ok"),
                         state.get("frame_w"),
@@ -561,10 +559,10 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                             int(state.get("frame_h") or 0),
                             state.get("capture_rgba"),
                         )
-                except Exception as ge:
+                except Exception as ge:  # noqa: BLE001
                     state["golden_error"] = f"{type(ge).__name__}: {ge}"
                     _append_log(log, f"golden soft-fail: {state['golden_error']}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 state["capture_error"] = f"{type(e).__name__}: {e}"
                 state["capture_tb"] = traceback.format_exc()
                 _append_log(log, f"capture_error={state['capture_error']}")
@@ -579,7 +577,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
             in_mm = False
             try:
                 in_mm = bool(ih.in_main_menu())
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 state["in_main_menu_error"] = f"{type(e).__name__}: {e}"
             state["in_main_menu"] = in_mm
             if in_mm and not state.get("main_menu_logged"):
@@ -600,7 +598,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 raise
             except BaseException as e:
                 try:
-                    import renpy.game as game
+                    from renpy import game
 
                     if isinstance(e, game.CONTROL_EXCEPTIONS):
                         raise
@@ -617,7 +615,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
 
             try:
                 in_mm = bool(ih.in_main_menu())
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             state["in_main_menu"] = in_mm
 
@@ -626,8 +624,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 _do_capture(f"post_interact_main_menu_n{n}")
                 raise HostStop(
                     "main_menu_frame",
-                    "captured ownership_ok=%s nonblank_ok=%s present_path=%s"
-                    % (
+                    "captured ownership_ok={} nonblank_ok={} present_path={}".format(
                         state.get("ownership_ok"),
                         state.get("nonblank_ok"),
                         state.get("present_path"),
@@ -639,7 +636,7 @@ def _install_hooks(state: dict, log: list, max_interacts: int) -> None:
                 if not state.get("capture_attempted"):
                     try:
                         state["in_main_menu"] = bool(ih.in_main_menu())
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
                     _do_capture(f"ncap_n{n}")
                 raise HostStop(
@@ -753,14 +750,14 @@ def run() -> None:
             meta["ok"] = False
             _write_report(base, meta, log)
             state["report_written"] = True
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     atexit.register(_atexit_report)
 
     try:
         import renpy_host  # noqa: F401
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"FATAL no renpy_host: {e}")
         meta["notes"] = "must run under renpy-host embed"
         meta["traceback"] = traceback.format_exc()
@@ -771,7 +768,7 @@ def run() -> None:
 
     try:
         import bootstrap as boot
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _append_log(log, f"FATAL import bootstrap: {e}")
         meta["traceback"] = traceback.format_exc()
         meta["elapsed_secs"] = round(time.monotonic() - t0, 3)
@@ -786,13 +783,13 @@ def run() -> None:
         state["reached"] = "import_renpy"
         _append_log(log, "stage import_renpy ok")
 
-        good, miss, err, extra = boot.stage_import_all()
+        good, miss, err, extra = boot.stage_import_all()  # noqa: RUF059
         if not good:
             raise RuntimeError(f"import_all: {err}")
         state["reached"] = "import_all"
         _append_log(log, f"stage import_all ok import_all={extra.get('import_all')}")
 
-        good, miss, err, extra = boot.stage_set_game_dir(base)
+        good, _miss, err, extra = boot.stage_set_game_dir(base)
         if not good:
             raise RuntimeError(f"set_game_dir: {err}")
         state["reached"] = "set_game_dir"
@@ -811,14 +808,14 @@ def run() -> None:
             logdir = main_mod.path_to_logdir(basedir)
             renpy.config.logdir = logdir
             os.makedirs(logdir, 0o777, exist_ok=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _append_log(log, f"logdir soft-fail: {e}")
 
         args = _prepare_run_args(base)
         _append_log(log, f"args command={getattr(args, 'command', None)}")
         try:
             renpy.importer.init_importer()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _append_log(log, f"importer soft-fail: {e}")
 
         _pre_main_host_stubs(log)
@@ -826,7 +823,7 @@ def run() -> None:
             renpy.config.performance_test = False
             renpy.config.has_music = False
             renpy.config.main_menu_music = None
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
         _install_hooks(state, log, max_interacts)
@@ -851,13 +848,13 @@ def run() -> None:
             _append_log(log, f"HostStop {hs.stage}: {hs.detail}")
         except SystemExit as se:
             _append_log(log, f"SystemExit {se}")
-        except BaseException as e:
+        except BaseException as e:  # noqa: BLE001
             tb = traceback.format_exc()
             state["run_error"] = f"{type(e).__name__}: {e}"
             _append_log(log, f"run BaseException: {state['run_error']}")
             meta["traceback"] = tb
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         meta["traceback"] = traceback.format_exc()
         _append_log(log, f"FATAL {type(e).__name__}: {e}")
     finally:
@@ -879,7 +876,7 @@ def run() -> None:
             import renpy.loader as _loader
 
             loadable_main_menu = bool(_loader.loadable("gui/main_menu.png"))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             loadable_err = f"{type(e).__name__}: {e}"
             loadable_main_menu = False
         state["loadable_main_menu"] = loadable_main_menu
@@ -905,8 +902,7 @@ def run() -> None:
             notes_parts.append("main_menu_not_reached")
         if not ownership_ok:
             notes_parts.append(
-                "ownership_fail last=%s presents=%s idle_clears=%s err=%s"
-                % (
+                "ownership_fail last={} presents={} idle_clears={} err={}".format(
                     own.get("last_product_present"),
                     own.get("product_presents"),
                     own.get("idle_clears_after_present"),
@@ -915,8 +911,7 @@ def run() -> None:
             )
         if not nonblank_ok:
             notes_parts.append(
-                "nonblank_fail reject=%s reasons=%s"
-                % (nb.get("reject"), nb.get("reasons"))
+                "nonblank_fail reject={} reasons={}".format(nb.get("reject"), nb.get("reasons"))
             )
         if not frame_ok and not notes_parts:
             notes_parts.append("frame_not_ok")

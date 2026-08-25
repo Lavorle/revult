@@ -1,6 +1,9 @@
 """Supporting evidence: product path + inject + nested wait (not V1 bare claim)."""
-import os, sys, traceback
+import os
+import sys
+import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -18,16 +21,16 @@ lines = []
 def log(m):
     lines.append(m)
     try:
-        sys.__stdout__.write("[verify-input-pump] %s\n" % m)
+        sys.__stdout__.write(f"[verify-input-pump] {m}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def finish(ok, **extra):
     with OUT.open("w") as f:
-        f.write("ok=%s\n" % ok)
+        f.write(f"ok={ok}\n")
         for k,v in extra.items():
-            f.write("%s=%s\n" % (k,v))
+            f.write(f"{k}={v}\n")
         f.write("---\n")
         for l in lines:
             f.write(l+"\n")
@@ -36,7 +39,7 @@ def rq():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def run():
@@ -51,8 +54,8 @@ def run():
         sys.path.insert(0, gates)
     import bootstrap as boot
     for call in (boot.stage_import_renpy, boot.stage_import_all, lambda: boot.stage_set_game_dir(base)):
-        good, miss, err, extra = call()
-        log("stage good=%s err=%r" % (good, err))
+        good, _miss, err, _extra = call()
+        log(f"stage good={good} err={err!r}")
         if not good:
             finish(False, error=err); rq(); return
     renpy.host_build = True
@@ -60,8 +63,8 @@ def run():
     try:
         import renpy_main_host
         renpy_main_host.install(renpy)
-    except Exception as e:
-        log("main_host: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        log(f"main_host: {e}")
     try:
         import product as pm
         if hasattr(pm, "_prepare_run_args"):
@@ -69,8 +72,8 @@ def run():
         if hasattr(pm, "_pre_main_host_stubs"):
             pm._pre_main_host_stubs()
         log("product helpers ok")
-    except Exception as e:
-        log("product helpers: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        log(f"product helpers: {e}")
         log(traceback.format_exc())
 
     # Measure pump: call wait_until repeatedly and inject keys
@@ -89,8 +92,8 @@ def run():
                 break
             drained += 1
         if i % 10 == 0:
-            log("iter=%d drained=%d ticks=%s" % (i, drained, renpy_host.get_ticks_ms()-t0))
-    log("pre-main inject loop done injects=%d" % injects)
+            log("iter=%d drained=%d ticks=%s" % (i, drained, renpy_host.get_ticks_ms()-t0))  # noqa: UP031
+    log("pre-main inject loop done injects=%d" % injects)  # noqa: UP031
 
     # Enter main briefly - HostStop after short watchdog via request_quit timer
     import threading
@@ -105,7 +108,7 @@ def run():
             # also mouse click near Start (approx center-left of 1280x720 main menu)
             renpy_host.inject_mouse(640, 420, 1, True)
             renpy_host.inject_mouse(640, 420, 1, False)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(4)
         rq()
@@ -116,8 +119,8 @@ def run():
     try:
         renpy_main.main()
         log("main returned")
-    except BaseException as e:
-        log("main exit %s: %s" % (type(e).__name__, e))
+    except BaseException as e:  # noqa: BLE001
+        log(f"main exit {type(e).__name__}: {e}")
     finish(True, note="supporting pump+inject path exercised")
     rq()
 

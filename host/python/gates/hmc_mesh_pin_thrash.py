@@ -16,6 +16,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -31,11 +32,11 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[mesh_pin] %s\n" % m)
+        sys.__stdout__.write(f"[mesh_pin] {m}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_mesh_pin_thrash.log", "a").write(m + "\n")
+    open("/tmp/hmc_mesh_pin_thrash.log", "a").write(m + "\n")  # noqa: SIM115
 
 
 def _quit():
@@ -43,17 +44,18 @@ def _quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
 def main():
-    open("/tmp/hmc_mesh_pin_thrash.log", "w").write("start\n")
+    open("/tmp/hmc_mesh_pin_thrash.log", "w").write("start\n")  # noqa: SIM115
     base = _base()
     out = base / "host" / "target" / "gate-hmc_mesh_pin_thrash.txt"
     lines = []
     try:
         import renpy_host
+
         from renpy.wgpu.draw import HostTexture, WgpuDraw
 
         # Probe new bindings exist.
@@ -61,8 +63,7 @@ def main():
         has_touch = hasattr(renpy_host, "touch_mesh")
         has_map = hasattr(renpy_host, "mesh_map_len")
         lines.append(
-            "bindings mesh_alive=%s touch_mesh=%s mesh_map_len=%s"
-            % (has_alive, has_touch, has_map)
+            f"bindings mesh_alive={has_alive} touch_mesh={has_touch} mesh_map_len={has_map}"
         )
         _log(lines[-1])
         if not (has_alive and has_touch):
@@ -107,7 +108,7 @@ def main():
         root = R(1920, 1080, kids)
 
         pre_map = int(renpy_host.mesh_map_len()) if has_map else -1
-        lines.append("pre_draw mesh_map_len=%d" % pre_map)
+        lines.append("pre_draw mesh_map_len=%d" % pre_map)  # noqa: UP031
         _log(lines[-1])
 
         orig_end = renpy_host.end_frame_present
@@ -117,7 +118,7 @@ def main():
             n_cache = len(draw._mesh_cache)
             n_map = int(renpy_host.mesh_map_len()) if has_map else -1
             lines.append(
-                "pre_present deferred=%d mesh_cache=%d mesh_map=%d"
+                "pre_present deferred=%d mesh_cache=%d mesh_map=%d"  # noqa: UP031
                 % (n_def, n_cache, n_map)
             )
             _log(lines[-1])
@@ -132,7 +133,7 @@ def main():
         # Second present reuses Python cache — must not hit dead host meshes.
         draw.draw_screen(root, flip=True)
 
-        rw, rh, rt = renpy_host.read_game_rt_rgba()
+        rw, _rh, rt = renpy_host.read_game_rt_rgba()
         # Sample interior of left white panel (40+200, 40+150) = (240, 190)
         x, y = 240, 190
         o = (y * rw + x) * 4
@@ -141,7 +142,7 @@ def main():
         arenaish = r < 30 and g < 30 and b < 40
         panel_ok = r > 200 and g > 200 and b > 200 and not arenaish
         lines.append(
-            "panel_px=(%d,%d,%d) mesh_cache=%d deferred_after=%d cap=%d"
+            "panel_px=(%d,%d,%d) mesh_cache=%d deferred_after=%d cap=%d"  # noqa: UP031
             % (
                 r,
                 g,
@@ -164,21 +165,21 @@ def main():
                 alive_hits += 1
             else:
                 dead_hits += 1
-        lines.append("cache_probe alive=%d dead=%d" % (alive_hits, dead_hits))
+        lines.append("cache_probe alive=%d dead=%d" % (alive_hits, dead_hits))  # noqa: UP031
         _log(lines[-1])
 
         ok = panel_ok and dead_hits == 0 and has_alive and has_touch
-        lines.append("panel_ok=%s ok=%s" % (panel_ok, ok))
-        lines.append("ok=%s" % ok)
+        lines.append(f"panel_ok={panel_ok} ok={ok}")
+        lines.append(f"ok={ok}")
         _log(lines[-1])
         out.write_text("\n".join(lines) + "\n")
-    except Exception:
+    except Exception:  # noqa: BLE001
         tb = traceback.format_exc()
         lines.append("EXCEPTION\n" + tb)
         lines.append("ok=False")
         try:
             out.write_text("\n".join(lines) + "\n")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _log(tb)
     finally:

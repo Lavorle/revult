@@ -9,6 +9,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -24,11 +25,11 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[mesh_thrash] %s\n" % m)
+        sys.__stdout__.write(f"[mesh_thrash] {m}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_dc_mesh_thrash.log", "a").write(m + "\n")
+    open("/tmp/hmc_dc_mesh_thrash.log", "a").write(m + "\n")  # noqa: SIM115
 
 
 def _quit():
@@ -36,17 +37,18 @@ def _quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
 def main():
-    open("/tmp/hmc_dc_mesh_thrash.log", "w").write("start\n")
+    open("/tmp/hmc_dc_mesh_thrash.log", "w").write("start\n")  # noqa: SIM115
     base = _base()
     out = base / "host" / "target" / "gate-hmc_dc_mesh_thrash.txt"
     lines = []
     try:
         import renpy_host
+
         from renpy.wgpu.draw import HostTexture, WgpuDraw
 
         draw = WgpuDraw()
@@ -90,7 +92,7 @@ def main():
         def _spy_end():
             n_def = len(getattr(draw, "_mesh_deferred_destroy", []) or [])
             n_cache = len(draw._mesh_cache)
-            lines.append("pre_present deferred=%d mesh_cache=%d" % (n_def, n_cache))
+            lines.append("pre_present deferred=%d mesh_cache=%d" % (n_def, n_cache))  # noqa: UP031
             _log(lines[-1])
             return orig_end()
 
@@ -100,13 +102,13 @@ def main():
         finally:
             renpy_host.end_frame_present = orig_end
 
-        rw, rh, rt = renpy_host.read_game_rt_rgba()
+        rw, _rh, rt = renpy_host.read_game_rt_rgba()
         # Sample interior of left white panel (40+200, 40+150) = (240, 190)
         x, y = 240, 190
         o = (y * rw + x) * 4
         r, g, b = rt[o], rt[o + 1], rt[o + 2]
         line = (
-            "panel_px=(%d,%d,%d) mesh_cache=%d deferred_after=%d cap=%d"
+            "panel_px=(%d,%d,%d) mesh_cache=%d deferred_after=%d cap=%d"  # noqa: UP031
             % (
                 r,
                 g,
@@ -120,10 +122,10 @@ def main():
         _log(line)
         # Pass: panel sample near white, not arena clear (~13,13,20) or thrash RGB.
         ok = r > 200 and g > 200 and b > 200
-        lines.append("ok=%s" % ok)
+        lines.append(f"ok={ok}")
         out.write_text("\n".join(lines) + "\n")
-        _log("wrote %s ok=%s" % (out, ok))
-    except Exception:
+        _log(f"wrote {out} ok={ok}")
+    except Exception:  # noqa: BLE001
         tb = traceback.format_exc()
         lines.append(tb)
         out.write_text("\n".join(lines) + "\n")
@@ -137,7 +139,7 @@ if __name__ == "__main__":
 else:
     try:
         main()
-    except Exception:
+    except Exception:  # noqa: BLE001
         traceback.print_exc()
         _quit()
 

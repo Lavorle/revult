@@ -17,6 +17,7 @@ Note: no from __future__; host run_file prepends imports.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -27,6 +28,7 @@ except ImportError:
 
 import renpy_host  # type: ignore
 from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import WgpuDraw
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
@@ -94,7 +96,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     # Product Solid dest size (full window) with 10x10 source + reverse.
@@ -118,8 +120,8 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[solid_reverse_scale]", msg, flush=True)
         return
@@ -129,8 +131,8 @@ def main():
     # Center + near-corner interiors must be green (full-rect stretch).
     cx, cy = vw // 2, vh // 2
     qx, qy = max(2, vw // 40), max(2, vh // 40)
-    r_c, g_c, b_c, a_c = _sample(rgba, rw, rh, cx * sx, cy * sy)
-    r_q, g_q, b_q, a_q = _sample(rgba, rw, rh, qx * sx, qy * sy)
+    r_c, g_c, b_c, _a_c = _sample(rgba, rw, rh, cx * sx, cy * sy)
+    r_q, g_q, b_q, _a_q = _sample(rgba, rw, rh, qx * sx, qy * sy)
 
     center_ok = _near((r_c, g_c, b_c), GREEN)
     corner_ok = _near((r_q, g_q, b_q), GREEN)
@@ -138,7 +140,7 @@ def main():
     not_clear = not (r_c < 8 and g_c < 8 and b_c < 8)
     ok = center_ok and corner_ok and not_clear
     msg = (
-        "ok=%s center_rgb=(%d,%d,%d) corner_rgb=(%d,%d,%d) "
+        "ok=%s center_rgb=(%d,%d,%d) corner_rgb=(%d,%d,%d) "  # noqa: UP031
         "center_ok=%s corner_ok=%s not_clear=%s dest=%dx%d src=%dx%d"
         % (
             ok,

@@ -7,8 +7,10 @@ Creates a 2x1 texture [RED | BLUE] and draws a full-NDC quad sampling only the
 BLUE half via UVs. Center pixel of game RT must be blue-dominant, not red.
 """
 
-import renpy_host
 from pathlib import Path
+
+import renpy_host
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:

@@ -8,6 +8,7 @@ Note: run_file prepends imports — no __future__ here.
 
 import os
 import traceback
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -16,9 +17,9 @@ except ImportError:
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
-import renpy_host  # type: ignore
 import host_pygame.event as pev  # type: ignore
-from host_pygame.locals import MOUSEBUTTONDOWN, MOUSEMOTION  # type: ignore
+import renpy_host  # type: ignore
+from host_pygame.locals import MOUSEBUTTONDOWN  # type: ignore
 
 
 def _drain(n=64):
@@ -106,7 +107,7 @@ def main():
             # inject_mouse is supposed to emit motion first; soft note only
             lines.append("NOTE: no MOUSEMOTION observed before button (unexpected)")
 
-    except Exception:
+    except Exception:  # noqa: BLE001
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())

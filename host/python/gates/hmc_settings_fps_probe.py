@@ -34,15 +34,15 @@ def _base():
 
 
 def _log(msg):
-    line = "[hmc_settings_fps] %s\n" % msg
+    line = f"[hmc_settings_fps] {msg}\n"
     try:
         sys.__stdout__.write(line)
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        open("/tmp/hmc_settings_fps_probe.log", "a").write(msg + "\n")
-    except Exception:
+        open("/tmp/hmc_settings_fps_probe.log", "a").write(msg + "\n")  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -51,7 +51,7 @@ def _quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -65,17 +65,17 @@ def _stubs():
     import types
 
     try:
-        import renpy.audio.renpysound_host as h
         import renpy.audio as a
+        import renpy.audio.renpysound_host as h
 
         sys.modules["renpy.audio.renpysound"] = h
         a.renpysound = h
-    except Exception as e:
-        _log("sound %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"sound {e}")
     try:
         import host_pygame
         import host_pygame.locals as loc
-        import host_pygame.scrap as scrap
+        from host_pygame import scrap
 
         if not hasattr(host_pygame, "constants"):
             host_pygame.constants = loc
@@ -88,14 +88,14 @@ def _stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = scrap
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        _log("pygame %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
 
@@ -112,8 +112,8 @@ def _stubs():
         import renpy
 
         renpy.uguu = pkg
-    except Exception as e:
-        _log("uguu %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
 
@@ -121,8 +121,8 @@ def _stubs():
         import renpy
 
         renpy.ecsign = e
-    except Exception as e:
-        _log("ecsign %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign {e}")
 
 
 def _counters():
@@ -130,7 +130,7 @@ def _counters():
     try:
         import renpy
         renpy_frames = int(getattr(renpy.config, "frames", 0) or 0)
-    except Exception:
+    except Exception:  # noqa: BLE001
         renpy_frames = -1
     host_frames = int(renpy_host.frame_count()) if hasattr(renpy_host, "frame_count") else -1
     product = (
@@ -163,14 +163,7 @@ def _sample_fps(label, seconds=8.0):
             if last_r >= 0 and r1 >= last_r:
                 samples_r.append((r1 - last_r) / dt)
             _log(
-                "%s partial host=%.1f product=%.1f renpy=%.1f dt=%.3f"
-                % (
-                    label,
-                    (h1 - last_h) / dt if dt and last_h >= 0 else -1,
-                    (p1 - last_p) / dt if dt and last_p >= 0 else -1,
-                    (r1 - last_r) / dt if dt and last_r >= 0 else -1,
-                    dt,
-                )
+                f"{label} partial host={(h1 - last_h) / dt if dt and last_h >= 0 else -1:.1f} product={(p1 - last_p) / dt if dt and last_p >= 0 else -1:.1f} renpy={(r1 - last_r) / dt if dt and last_r >= 0 else -1:.1f} dt={dt:.3f}"
             )
         last_t = t1
         last_h, last_p, last_r = h1, p1, r1
@@ -207,20 +200,20 @@ def _show_prefs(kind="sound_config"):
         renpy.display.screen.show_screen("preferences", kind=kind)
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return True, "show_screen"
-    except Exception as e1:
+    except Exception as e1:  # noqa: BLE001
         try:
             renpy.store.ShowMenu("preferences")()
             renpy.display.screen.show_screen("preferences", kind=kind)
             try:
                 renpy.restart_interaction()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
-            return True, "ShowMenu:%s" % e1
-        except Exception as e2:
-            return False, "fail:%s/%s" % (e1, e2)
+            return True, f"ShowMenu:{e1}"
+        except Exception as e2:  # noqa: BLE001
+            return False, f"fail:{e1}/{e2}"
 
 
 def _hover_thrash(seconds=4.0):
@@ -236,16 +229,17 @@ def _hover_thrash(seconds=4.0):
         try:
             # inject_mouse(x, y, button, pressed) — motion with button=0
             renpy_host.inject_mouse(int(x), int(y), 0, False)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if i == 0:
-                _log("hover inject soft-fail: %s" % e)
+                _log(f"hover inject soft-fail: {e}")
         i += 1
         time.sleep(0.08)
 
 
 def probe():
-    import renpy
     import renpy_host
+
+    import renpy
 
     out = _base() / "host" / "target" / "gate-hmc_settings_fps_probe.txt"
     lines = []
@@ -256,39 +250,39 @@ def probe():
         try:
             if bool(getattr(renpy.store, "main_menu", False)):
                 break
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(0.2)
     mm = bool(getattr(renpy.store, "main_menu", False))
-    _log("main_menu=%s frames=%s" % (mm, renpy_host.frame_count()))
-    lines.append("main_menu=%s" % mm)
+    _log(f"main_menu={mm} frames={renpy_host.frame_count()}")
+    lines.append(f"main_menu={mm}")
 
     # Sample main menu briefly (S1 hint)
     s1 = _sample_fps("S1_main_menu", 4.0)
-    lines.append("S1_main_menu_product_fps=%.2f" % s1.get("product_fps", s1.get("steady_fps", -1)))
-    lines.append("S1_main_menu_detail=%s" % s1)
-    _log("S1 %s" % s1)
+    lines.append("S1_main_menu_product_fps={:.2f}".format(s1.get("product_fps", s1.get("steady_fps", -1))))
+    lines.append(f"S1_main_menu_detail={s1}")
+    _log(f"S1 {s1}")
 
     kinds = ("sound_config", "dialog_config_1", "dialog_config_2", "text_config")
     s2_results = []
     for kind in kinds:
         ok, how = _show_prefs(kind)
-        lines.append("prefs_open kind=%s ok=%s how=%s" % (kind, ok, how))
-        _log("prefs open %s %s %s" % (kind, ok, how))
+        lines.append(f"prefs_open kind={kind} ok={ok} how={how}")
+        _log(f"prefs open {kind} {ok} {how}")
         time.sleep(0.8)
         scr = renpy.display.screen.get_screen("preferences")
-        lines.append("prefs_screen kind=%s present=%s" % (kind, scr is not None))
-        idle = _sample_fps("S2_%s_idle" % kind, 5.0)
-        lines.append("S2_%s_idle_detail=%s" % (kind, idle))
-        _log("S2 %s idle %s" % (kind, idle))
+        lines.append(f"prefs_screen kind={kind} present={scr is not None}")
+        idle = _sample_fps(f"S2_{kind}_idle", 5.0)
+        lines.append(f"S2_{kind}_idle_detail={idle}")
+        _log(f"S2 {kind} idle {idle}")
         s2_results.append(idle)
         if kind == "sound_config":
             hover_thread = threading.Thread(target=_hover_thrash, args=(4.0,), daemon=True)
             hover_thread.start()
-            hover = _sample_fps("S2_%s_hover" % kind, 4.0)
+            hover = _sample_fps(f"S2_{kind}_hover", 4.0)
             hover_thread.join(timeout=1.0)
-            lines.append("S2_%s_hover_detail=%s" % (kind, hover))
-            _log("S2 %s hover %s" % (kind, hover))
+            lines.append(f"S2_{kind}_hover_detail={hover}")
+            _log(f"S2 {kind} hover {hover}")
             s2_results.append(hover)
 
     # S3 confirm dock panel
@@ -302,25 +296,25 @@ def probe():
         )
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(0.6)
         s3 = _sample_fps("S3_confirm", 4.0)
-        lines.append("S3_confirm_detail=%s" % s3)
-        _log("S3 confirm %s" % s3)
+        lines.append(f"S3_confirm_detail={s3}")
+        _log(f"S3 confirm {s3}")
         try:
             renpy.display.screen.hide_screen("confirm")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        lines.append("S3_confirm_error=%s" % e)
-        _log("S3 fail %s" % e)
+    except Exception as e:  # noqa: BLE001
+        lines.append(f"S3_confirm_error={e}")
+        _log(f"S3 fail {e}")
 
     # S4 dialogue/say: leave prefs and try to enter story if possible; else sample say screen if present
     try:
         try:
             renpy.display.screen.hide_screen("preferences")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         # Prefer jumping into first story start when available
         started = False
@@ -330,19 +324,19 @@ def probe():
                 renpy.display.screen.show_screen("say", who="probe", what="FPS probe dialogue line.")
                 try:
                     renpy.restart_interaction()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
                 time.sleep(0.5)
                 started = True
-        except Exception as e:
-            _log("say show soft-fail %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"say show soft-fail {e}")
         s4 = _sample_fps("S4_dialogue_or_menu", 4.0)
-        lines.append("S4_dialogue_detail=%s" % s4)
-        lines.append("S4_say_started=%s" % started)
-        _log("S4 %s started=%s" % (s4, started))
-    except Exception as e:
-        lines.append("S4_error=%s" % e)
-        _log("S4 fail %s" % e)
+        lines.append(f"S4_dialogue_detail={s4}")
+        lines.append(f"S4_say_started={started}")
+        _log(f"S4 {s4} started={started}")
+    except Exception as e:  # noqa: BLE001
+        lines.append(f"S4_error={e}")
+        _log(f"S4 fail {e}")
 
     # Verdict against 8-13 class and 30 target using product_fps
     fps_vals = [r.get("steady_fps", -1) for r in s2_results if r.get("steady_fps", -1) >= 0]
@@ -350,22 +344,22 @@ def probe():
     s2_max = max(fps_vals) if fps_vals else -1
     in_813 = any(5.0 <= v <= 16.0 for v in fps_vals)
     ge30 = all(v >= 30.0 for v in fps_vals) if fps_vals else False
-    lines.append("S2_min_product_fps=%.2f" % s2_min)
-    lines.append("S2_max_product_fps=%.2f" % s2_max)
-    lines.append("S2_in_8_13_class=%s" % in_813)
-    lines.append("S2_ge_30=%s" % ge30)
-    lines.append("ok=%s" % (bool(fps_vals)))
+    lines.append(f"S2_min_product_fps={s2_min:.2f}")
+    lines.append(f"S2_max_product_fps={s2_max:.2f}")
+    lines.append(f"S2_in_8_13_class={in_813}")
+    lines.append(f"S2_ge_30={ge30}")
+    lines.append(f"ok={bool(fps_vals)}")
     lines.append("measured=True")
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    _log("wrote %s" % out)
+    _log(f"wrote {out}")
     time.sleep(0.3)
     _quit()
 
 
 def main():
-    open("/tmp/hmc_settings_fps_probe.log", "w").write("start\n")
+    open("/tmp/hmc_settings_fps_probe.log", "w").write("start\n")  # noqa: SIM115
     base = _base()
     game = os.environ.get("RENPY_HOST_GAME") or str(base / "host" / "playtests" / "HuangmeiC")
     os.environ["RENPY_HOST_BASE"] = str(base)
@@ -382,17 +376,16 @@ def main():
     try:
         _stubs()
         import bootstrap as boot
-        import renpy_host
 
         for name, call in (
             ("import_renpy", boot.stage_import_renpy),
             ("import_all", boot.stage_import_all),
             ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
         ):
-            good, missing, error, extra = call()
-            _log("stage %s good=%s missing=%s error=%r" % (name, good, missing, error))
+            good, missing, error, _extra = call()
+            _log(f"stage {name} good={good} missing={missing} error={error!r}")
             if not good:
-                _log("bootstrap fail %s" % name)
+                _log(f"bootstrap fail {name}")
                 _quit()
                 return
 
@@ -403,8 +396,8 @@ def main():
             import renpy_main_host
 
             renpy_main_host.install(renpy)
-        except Exception as e:
-            _log("main_host: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main_host: {e}")
         try:
             import renpy.arguments
 
@@ -415,11 +408,11 @@ def main():
                 try:
                     renpy.arguments.register_command("run", renpy.arguments.run, True)
                     renpy.arguments.register_command("quit", renpy.arguments.quit)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             renpy.game.args = renpy.arguments.bootstrap()
-        except Exception as e:
-            _log("args fail %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"args fail {e}")
             _quit()
             return
 
@@ -430,13 +423,13 @@ def main():
             renpy.main.main()
         except SystemExit:
             pass
-        except Exception as e:
-            _log("main exc %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main exc {e}")
             _log(traceback.format_exc())
         finally:
             _quit()
-    except Exception as e:
-        _log("main outer exc %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"main outer exc {e}")
         _log(traceback.format_exc())
         _quit()
 

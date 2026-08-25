@@ -1,5 +1,7 @@
 import renpy_host
+
 from renpy.wgpu.draw import WgpuDraw
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:

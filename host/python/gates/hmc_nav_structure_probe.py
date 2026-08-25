@@ -51,13 +51,13 @@ def _base():
 
 def _log(msg):
     try:
-        sys.__stdout__.write("[hmc_nav_struct] %s\n" % msg)
+        sys.__stdout__.write(f"[hmc_nav_struct] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        open("/tmp/hmc_nav_structure_probe.log", "a").write(msg + "\n")
-    except Exception:
+        open("/tmp/hmc_nav_structure_probe.log", "a").write(msg + "\n")  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -66,7 +66,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -82,14 +82,14 @@ def _pre_main_host_stubs():
     import types
 
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:
-        _log("renpysound soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"renpysound soft-fail: {e}")
 
     try:
         import host_pygame
@@ -108,15 +108,15 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             rpg.import_as_pygame()
-        except Exception as e:
-            _log("import_as_pygame soft-fail: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"import_as_pygame soft-fail: {e}")
         _log("pygame host shim ok")
-    except Exception as e:
-        _log("pygame soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame soft-fail: {e}")
 
     try:
         import renpy_uguu_host as _uguu
@@ -131,17 +131,17 @@ def _pre_main_host_stubs():
         for _name in dir(_uguu):
             if _name.startswith("GL_") or _name in ("clear_errors", "get_error"):
                 setattr(pkg, _name, getattr(_uguu, _name))
-        setattr(pkg, "uguu", _uguu)
-        setattr(pkg, "gl", _uguu)
+        pkg.uguu = _uguu
+        pkg.gl = _uguu
         try:
             import renpy
 
             renpy.uguu = pkg
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _log("uguu host stub installed")
-    except Exception as e:
-        _log("uguu soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu soft-fail: {e}")
 
     try:
         import renpy_ecsign_host as _ecsign
@@ -150,12 +150,12 @@ def _pre_main_host_stubs():
         try:
             import renpy as _renpy_pkg
 
-            setattr(_renpy_pkg, "ecsign", _ecsign)
-        except Exception:
+            _renpy_pkg.ecsign = _ecsign
+        except Exception:  # noqa: BLE001, S110
             pass
         _log("ecsign host stub installed")
-    except Exception as e:
-        _log("ecsign soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign soft-fail: {e}")
 
 
 def _texinfo(t):
@@ -171,7 +171,7 @@ def _texinfo(t):
                 "x": int(getattr(t, "x", 0) or 0),
                 "y": int(getattr(t, "y", 0) or 0),
             }
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     if t is None:
         return None
@@ -189,7 +189,7 @@ def _rev_scale(node):
         xdx = float(getattr(rev, "xdx", 1.0) or 1.0)
         ydy = float(getattr(rev, "ydy", 1.0) or 1.0)
         return (xdx, ydy)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -217,12 +217,12 @@ def _walk_structure(node, acc=None, depth=0, budget=800, ox=0.0, oy=0.0):
     try:
         tw = getattr(node, "width", None) or getattr(node, "w", None)
         th = getattr(node, "height", None) or getattr(node, "h", None)
-    except Exception:
+    except Exception:  # noqa: BLE001
         tw = th = None
     try:
         tw = int(tw) if tw is not None else None
         th = int(th) if th is not None else None
-    except Exception:
+    except Exception:  # noqa: BLE001
         tw = th = None
 
     tex = getattr(node, "texture", None)
@@ -241,7 +241,7 @@ def _walk_structure(node, acc=None, depth=0, budget=800, ox=0.0, oy=0.0):
             # Text glyphs often small-ish textured leaves with UV subrects
             sw = ti.get("w") or 0
             sh = ti.get("h") or 0
-            if sw > 0 and sh > 0 and (sw <= 64 or sh <= 64) and (sw * sh) <= 64 * 128:
+            if sw > 0 and sh > 0 and (sw <= 64 or sh <= 64) and (sw * sh) <= 64 * 128:  # noqa: SIM102
                 # candidate glyph/atlas piece; also bar thumbs ~40x40
                 if 8 <= sw <= 64 and 8 <= sh <= 64:
                     acc["n_bar_ish"] += 1  # thumb-sized; refined below
@@ -274,7 +274,7 @@ def _walk_structure(node, acc=None, depth=0, budget=800, ox=0.0, oy=0.0):
             sjoin = " ".join(str(s) for s in sl).lower()
             if "text" in sjoin or "glyph" in sjoin:
                 acc["n_text_ish"] += 1
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     rev = _rev_scale(node)
@@ -305,7 +305,7 @@ def _walk_structure(node, acc=None, depth=0, budget=800, ox=0.0, oy=0.0):
                 abs(cr[0] - 1.0) > 0.02 or abs(cr[1] - 1.0) > 0.02
             ):
                 rev_kids += 1
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     if rev_kids >= 3:
         acc["n_multipiece_parents"] += 1
@@ -329,7 +329,7 @@ def _walk_structure(node, acc=None, depth=0, budget=800, ox=0.0, oy=0.0):
             else:
                 ch = entry
                 cx = cy = 0.0
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             continue
         try:
             from renpy.wgpu.draw import HostTexture
@@ -338,7 +338,7 @@ def _walk_structure(node, acc=None, depth=0, budget=800, ox=0.0, oy=0.0):
                 acc["n_host_tex"] += 1
                 acc["handles"].add(int(ch.handle))
                 continue
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _walk_structure(ch, acc, depth + 1, budget, ox + cx, oy + cy)
     return acc
@@ -351,14 +351,15 @@ def _force_product_redraw():
     Does **not** clobber iface.surftree with an empty/broken rebuild (flowchart
     custom displayables can yield a sparse rebuild while live tree is rich).
     """
-    import renpy
     import interact_helpers as ih
+
+    import renpy
 
     info = {"path": None, "error": None, "surftree": None, "root": None}
     try:
         ready, why, iface = ih.interface_ready()
         if not ready or iface is None:
-            info["error"] = "iface:%s" % why
+            info["error"] = f"iface:{why}"
             return info
         prev = getattr(iface, "surftree", None)
         root = ih._rebuild_product_root(iface)
@@ -375,7 +376,7 @@ def _force_product_redraw():
         try:
             if hasattr(draw, "load_all_textures"):
                 draw.load_all_textures(surftree)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             info["prepare_err"] = str(e)
         draw.draw_screen(surftree, flip=True)
         # Only adopt rebuilt tree if it has real HostTexture leaves; otherwise
@@ -383,13 +384,13 @@ def _force_product_redraw():
         try:
             rebuilt_struct = _walk_structure(surftree) if surftree is not None else None
             n_tex = int((rebuilt_struct or {}).get("n_host_tex", 0) or 0)
-        except Exception:
+        except Exception:  # noqa: BLE001
             n_tex = 0
             rebuilt_struct = None
         if surftree is not None and n_tex > 0:
             try:
                 iface.surftree = surftree
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             info["surftree"] = surftree
             info["path"] = "rebuild_render_screen"
@@ -400,12 +401,12 @@ def _force_product_redraw():
             if prev is None and surftree is not None:
                 try:
                     iface.surftree = surftree
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
         info["root"] = type(root).__name__
         return info
-    except Exception as e:
-        info["error"] = "%s:%s" % (type(e).__name__, e)
+    except Exception as e:  # noqa: BLE001
+        info["error"] = f"{type(e).__name__}:{e}"
         return info
 
 
@@ -420,22 +421,22 @@ def _product_present_after_showmenu():
 
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             draw = getattr(renpy.display, "draw", None)
             if draw is not None and hasattr(draw, "request_redraw"):
                 draw.request_redraw()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             import renpy_host
 
             if hasattr(renpy_host, "request_redraw"):
                 renpy_host.request_redraw()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     # Nested product interact often reports frames=1; soft present is required
     # for gate structure after ShowMenu. This is product draw_screen, not an
@@ -466,7 +467,7 @@ def _sample_live_surftree_only():
 
         ready, why, iface = ih.interface_ready()
         if not ready or iface is None:
-            info["error"] = "iface:%s" % why
+            info["error"] = f"iface:{why}"
             return info
         st = getattr(iface, "surftree", None)
         info["surftree"] = st
@@ -498,11 +499,11 @@ def _sample_live_surftree_only():
                 "dest_sample": (struct.get("dests") or [])[:10],
                 "errors": list(struct.get("errors") or []),
             }
-        except Exception as e:
-            info["error"] = "walk:%s" % e
+        except Exception as e:  # noqa: BLE001
+            info["error"] = f"walk:{e}"
         return info
-    except Exception as e:
-        info["error"] = "%s:%s" % (type(e).__name__, e)
+    except Exception as e:  # noqa: BLE001
+        info["error"] = f"{type(e).__name__}:{e}"
         return info
 
 
@@ -511,8 +512,8 @@ def _sample_rt():
 
     try:
         rw, rh, rt = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        return {"ok": False, "error": "read_rt:%s" % e}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"read_rt:{e}"}
     if not rw or not rh or not rt:
         return {"ok": False, "error": "empty_rt"}
     rs = gs = bs = n = pure = white_hi = dark = 0
@@ -575,7 +576,7 @@ def _sample_band_mean(rt, rw, rh, x0, y0, x1, y1, step=4):
     for y in range(y0, y1, step):
         for x in range(x0, x1, step):
             o = (y * rw + x) * 4
-            r, g, b, a = rt[o], rt[o + 1], rt[o + 2], rt[o + 3]
+            r, g, b, _a = rt[o], rt[o + 1], rt[o + 2], rt[o + 3]
             rs += r
             gs += g
             bs += b
@@ -599,7 +600,7 @@ def _get_screen(name):
         import renpy
 
         return renpy.display.screen.get_screen(name)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -611,19 +612,19 @@ def _force_show_menu(name):
         action()
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return True, "ShowMenu()"
-    except Exception as e1:
+    except Exception as e1:  # noqa: BLE001
         try:
             renpy.display.screen.show_screen(name)
             try:
                 renpy.restart_interaction()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
-            return True, "display.screen.show_screen:%s" % e1
-        except Exception as e2:
-            return False, "fail:%s|%s" % (e1, e2)
+            return True, f"display.screen.show_screen:{e1}"
+        except Exception as e2:  # noqa: BLE001
+            return False, f"fail:{e1}|{e2}"
 
 
 def _force_return():
@@ -633,19 +634,19 @@ def _force_return():
         renpy.store.Return()()
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return "Return()"
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     for n in ("load", "preferences", "appreciation", "flowchart", "confirm", "save"):
         try:
             renpy.display.screen.hide_screen(n)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     try:
         renpy.restart_interaction()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return "hide_screens"
 
@@ -660,7 +661,7 @@ def _force_confirm_quit():
                 mapping = getattr(m, "preferences_confirm_requirement_mapping", None)
                 if isinstance(mapping, dict):
                     mapping["quit"] = True
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         renpy.display.screen.show_screen(
             "confirm",
@@ -671,11 +672,11 @@ def _force_confirm_quit():
         )
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return True, "show_screen_confirm"
-    except Exception as e1:
-        return False, "fail:%s" % e1
+    except Exception as e1:  # noqa: BLE001
+        return False, f"fail:{e1}"
 
 
 def _palette_ok(name, rt):
@@ -692,7 +693,7 @@ def _palette_ok(name, rt):
     mean = rt.get("mean") or (0, 0, 0)
     try:
         r, g, b = float(mean[0]), float(mean[1]), float(mean[2])
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False, "mean_unreadable"
     var = float(rt.get("var") or 0)
     white = float(rt.get("white_frac") or 0)
@@ -703,52 +704,52 @@ def _palette_ok(name, rt):
     if name == "load":
         # cool gray, not dark main_menu, not warm prefs
         if r + g + b < 120:
-            return False, "too_dark_like_main_menu mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"too_dark_like_main_menu mean=({r:.0f},{g:.0f},{b:.0f})"
         if r > 200 and g > 200 and b < 190:
-            return False, "too_warm_like_prefs mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"too_warm_like_prefs mean=({r:.0f},{g:.0f},{b:.0f})"
         if not (r > 150 and g > 150 and b > 150 and near(r, g, 25) and b >= g - 5):
-            return False, "not_cool_load_gray mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"not_cool_load_gray mean=({r:.0f},{g:.0f},{b:.0f})"
         return True, "load_cool_gray"
 
     if name == "preferences":
         # warm: R≈G > B somewhat, high white possible from choice Frames
         if r + g + b < 140:
-            return False, "too_dark mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"too_dark mean=({r:.0f},{g:.0f},{b:.0f})"
         # reject pure cool load-like if B clearly dominates R
         if b > r + 8 and b > g + 5 and white < 0.4:
-            return False, "cool_like_load mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"cool_like_load mean=({r:.0f},{g:.0f},{b:.0f})"
         if not (r > 160 and g > 160):
-            return False, "not_warm_prefs mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"not_warm_prefs mean=({r:.0f},{g:.0f},{b:.0f})"
         return True, "prefs_warm"
 
     if name == "appreciation":
         # teal/green: G high, often G > R and G ≈ B-ish
         if r + g + b < 140:
-            return False, "too_dark mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"too_dark mean=({r:.0f},{g:.0f},{b:.0f})"
         if g < 180:
-            return False, "not_teal_green mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"not_teal_green mean=({r:.0f},{g:.0f},{b:.0f})"
         # G should not be clearly below R (warm prefs) without teal lift
         if g + 5 < r and b + 5 < r:
-            return False, "too_warm_like_prefs mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"too_warm_like_prefs mean=({r:.0f},{g:.0f},{b:.0f})"
         return True, "appr_teal"
 
     if name == "flowchart":
         # brown/dark mixed — mean much lower than load/prefs
         if r + g + b > 450:
-            return False, "too_bright_like_load_prefs mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"too_bright_like_load_prefs mean=({r:.0f},{g:.0f},{b:.0f})"
         if r + g + b < 80 and var < 200:
-            return False, "featureless_dark mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"featureless_dark mean=({r:.0f},{g:.0f},{b:.0f})"
         # R typically >= G >= B for brown
         if not (r > 70 and g > 60 and b > 50):
-            return False, "not_brownish mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"not_brownish mean=({r:.0f},{g:.0f},{b:.0f})"
         return True, "flow_brown"
 
     if name == "confirm":
         # dim overlay + dialog band — not full-bright prefs, not pure main_menu
         if r + g + b > 600:
-            return False, "too_bright mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"too_bright mean=({r:.0f},{g:.0f},{b:.0f})"
         if r + g + b < 60 and var < 100:
-            return False, "featureless_dark mean=(%.0f,%.0f,%.0f)" % (r, g, b)
+            return False, f"featureless_dark mean=({r:.0f},{g:.0f},{b:.0f})"
         return True, "confirm_dim"
 
     return True, "no_palette_rule"
@@ -814,38 +815,38 @@ def _structure_ok(name, struct, rt):
     if n_tex < fl["tex"]:
         if rt_structure_rescue:
             reasons.append(
-                "SOFT host_tex<%d (got host=%d int=%d) rescued_by_rt_palette"
+                "SOFT host_tex<%d (got host=%d int=%d) rescued_by_rt_palette"  # noqa: UP031
                 % (fl["tex"], n_host, n_int)
             )
         else:
             ok = False
             reasons.append(
-                "host_tex<%d (got host=%d int=%d total=%d)"
+                "host_tex<%d (got host=%d int=%d total=%d)"  # noqa: UP031
                 % (fl["tex"], n_host, n_int, n_tex)
             )
     if n_handles < fl["handles"]:
         if rt_structure_rescue:
             reasons.append(
-                "SOFT unique_handles<%d (got %d) rescued_by_rt_palette"
+                "SOFT unique_handles<%d (got %d) rescued_by_rt_palette"  # noqa: UP031
                 % (fl["handles"], n_handles)
             )
         else:
             ok = False
-            reasons.append("unique_handles<%d (got %d)" % (fl["handles"], n_handles))
+            reasons.append("unique_handles<%d (got %d)" % (fl["handles"], n_handles))  # noqa: UP031
     if fl["rev_or_mp"] and (n_rev + n_mp) < fl["rev_or_mp"]:
         ok = False
-        reasons.append("no_frame_multipiece_or_reverse (rev=%d mp=%d)" % (n_rev, n_mp))
+        reasons.append("no_frame_multipiece_or_reverse (rev=%d mp=%d)" % (n_rev, n_mp))  # noqa: UP031
     if fl["text"] and n_text < fl["text"]:
         # Soft fail for text — product text may be atlas-baked differently; mark soft
-        reasons.append("SOFT text_ish<%d (got %d)" % (fl["text"], n_text))
+        reasons.append("SOFT text_ish<%d (got %d)" % (fl["text"], n_text))  # noqa: UP031
     if fl["bar"] and n_bar < fl["bar"]:
-        reasons.append("SOFT bar_ish<%d (got %d)" % (fl["bar"], n_bar))
+        reasons.append("SOFT bar_ish<%d (got %d)" % (fl["bar"], n_bar))  # noqa: UP031
 
     # Prefs white-pill heuristic: high white_frac + low reverse pieces → hollow
     if name == "preferences" and rt.get("white_frac", 0) > 0.35 and n_rev < 2:
         ok = False
         reasons.append(
-            "white_pill_suspect white_frac=%.3f rev=%d" % (rt.get("white_frac", 0), n_rev)
+            "white_pill_suspect white_frac=%.3f rev=%d" % (rt.get("white_frac", 0), n_rev)  # noqa: UP031
         )
 
     soft_only = [r for r in reasons if r.startswith("SOFT ")]
@@ -885,7 +886,6 @@ def run():
     if host_py not in sys.path:
         sys.path.insert(0, host_py)
 
-    import renpy_host  # type: ignore
     import bootstrap as boot
 
     for name, call in (
@@ -893,10 +893,10 @@ def run():
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        rec("stage %s good=%s err=%r" % (name, good, err))
+        good, _miss, err, _extra = call()
+        rec(f"stage {name} good={good} err={err!r}")
         if not good:
-            out.write_text("gate=hmc_nav_structure_probe\nok=False\nerror=%s\n" % err)
+            out.write_text(f"gate=hmc_nav_structure_probe\nok=False\nerror={err}\n")
             _request_quit()
             return
 
@@ -905,7 +905,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     try:
@@ -913,8 +913,8 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:
-        rec("main_host: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        rec(f"main_host: {e}")
 
     try:
         import renpy.arguments
@@ -926,13 +926,13 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
-        rec("args command=%s basedir=%s" % (getattr(args, "command", None), basedir))
-    except Exception as e:
-        rec("args fail: %s" % e)
+        rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
+    except Exception as e:  # noqa: BLE001
+        rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
     _pre_main_host_stubs()
@@ -951,9 +951,9 @@ def run():
             try:
                 if bool(getattr(renpy.store, "main_menu", False)):
                     state["main_menu"] = True
-                    rec("main_menu at tick=%d" % i)
+                    rec("main_menu at tick=%d" % i)  # noqa: UP031
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             time.sleep(0.05)
         if not state["main_menu"]:
@@ -965,8 +965,8 @@ def run():
         time.sleep(2.0)
 
         for tname, screen_name in targets:
-            state["phase"] = "nav_%s" % tname
-            rec("=== target %s ===" % tname)
+            state["phase"] = f"nav_{tname}"
+            rec(f"=== target {tname} ===")
             entry = {
                 "name": tname,
                 "opened": False,
@@ -987,7 +987,7 @@ def run():
                 if not ok_open:
                     entry["error"] = via
                     state["results"].append(entry)
-                    rec("open FAIL %s" % via)
+                    rec(f"open FAIL {via}")
                     continue
 
                 opened = False
@@ -997,7 +997,7 @@ def run():
                         break
                     time.sleep(0.1)
                 entry["opened"] = opened
-                rec("opened=%s via=%s" % (opened, via))
+                rec(f"opened={opened} via={via}")
                 time.sleep(0.5)
 
                 # Sample LIVE iface.surftree BEFORE soft present — flowchart custom
@@ -1005,8 +1005,7 @@ def run():
                 # Nested frames=1 may still lag one screen; soft present below updates RT.
                 live_st_pre = _sample_live_surftree_only()
                 rec(
-                    "LIVE_PRE present path=%s host_tex=%s handles=%s"
-                    % (
+                    "LIVE_PRE present path={} host_tex={} handles={}".format(
                         live_st_pre.get("path"),
                         live_st_pre.get("n_host_tex"),
                         live_st_pre.get("n_unique_handles"),
@@ -1015,8 +1014,7 @@ def run():
 
                 pinfo = _product_present_after_showmenu()
                 rec(
-                    "PRODUCT present path=%s err=%s root=%s rebuild_tex=%s"
-                    % (
+                    "PRODUCT present path={} err={} root={} rebuild_tex={}".format(
                         pinfo.get("path"),
                         pinfo.get("error"),
                         pinfo.get("root"),
@@ -1053,9 +1051,9 @@ def run():
                 if force_tree is not None:
                     try:
                         force_struct = _walk_structure(force_tree)
-                    except Exception as e:
-                        force_struct["errors"].append("walk:%s" % e)
-                        rec("FORCE walk fail: %s" % e)
+                    except Exception as e:  # noqa: BLE001
+                        force_struct["errors"].append(f"walk:{e}")
+                        rec(f"FORCE walk fail: {e}")
 
                 live_summary = live_st.get("struct") or {
                     "n_nodes": live_st.get("n_nodes", 0),
@@ -1107,8 +1105,7 @@ def run():
                 struct_summary.setdefault("n_int_tex", 0)
                 struct_summary.setdefault("n_unique_handles", 0)
                 rec(
-                    "STRUCT_SRC=%s live_tex=%s force_tex=%s"
-                    % (
+                    "STRUCT_SRC={} live_tex={} force_tex={}".format(
                         struct_src,
                         live_summary.get("n_host_tex"),
                         force_summary.get("n_host_tex"),
@@ -1130,8 +1127,7 @@ def run():
                     if band:
                         rt["prefs_panel"] = band
                         rec(
-                            "prefs_panel mean=(%.0f,%.0f,%.0f) white=%.3f dark=%.3f"
-                            % (
+                            "prefs_panel mean=({:.0f},{:.0f},{:.0f}) white={:.3f} dark={:.3f}".format(
                                 band["mean"][0],
                                 band["mean"][1],
                                 band["mean"][2],
@@ -1168,9 +1164,9 @@ def run():
                 pal_ok, pal_reason = _palette_ok(tname, rt_summary)
                 if not pal_ok:
                     sok = False
-                    hard = list(hard) + ["palette:%s" % pal_reason]
+                    hard = list(hard) + [f"palette:{pal_reason}"]
                 else:
-                    soft = list(soft) + ["palette_ok:%s" % pal_reason]
+                    soft = list(soft) + [f"palette_ok:{pal_reason}"]
 
                 if force_score == 0 and live_score > 0:
                     soft = list(soft) + [
@@ -1191,7 +1187,7 @@ def run():
                 entry["force_soft_fail"] = []
 
                 rec(
-                    "PRODUCT struct host_tex=%d handles=%d rev=%d mp=%d text_ish=%d bar_ish=%d mesh=%d src=%s"
+                    "PRODUCT struct host_tex=%d handles=%d rev=%d mp=%d text_ish=%d bar_ish=%d mesh=%d src=%s"  # noqa: UP031
                     % (
                         int(struct_summary.get("n_host_tex") or 0),
                         int(struct_summary.get("n_unique_handles") or 0),
@@ -1204,8 +1200,7 @@ def run():
                     )
                 )
                 rec(
-                    "PRODUCT rt ok=%s mean=(%.0f,%.0f,%.0f) var=%.1f white=%.3f pure=%.3f"
-                    % (
+                    "PRODUCT rt ok={} mean=({:.0f},{:.0f},{:.0f}) var={:.1f} white={:.3f} pure={:.3f}".format(
                         rt_summary.get("ok"),
                         (rt_summary.get("mean") or (0, 0, 0))[0],
                         (rt_summary.get("mean") or (0, 0, 0))[1],
@@ -1216,20 +1211,19 @@ def run():
                     )
                 )
                 rec(
-                    "structure_ok=%s hard=%s soft=%s"
-                    % (sok, hard or "none", soft or "none")
+                    "structure_ok={} hard={} soft={}".format(sok, hard or "none", soft or "none")
                 )
-            except Exception as e:
-                entry["error"] = "%s" % e
-                rec("exc %s: %s" % (tname, e))
+            except Exception as e:  # noqa: BLE001
+                entry["error"] = f"{e}"
+                rec(f"exc {tname}: {e}")
                 rec(traceback.format_exc())
             state["results"].append(entry)
 
             try:
                 _force_return()
                 time.sleep(0.4)
-            except Exception as e:
-                rec("return fail: %s" % e)
+            except Exception as e:  # noqa: BLE001
+                rec(f"return fail: {e}")
 
         state["phase"] = "done"
         rec("request_quit")
@@ -1243,8 +1237,8 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:
-        rec("main exit %s: %s" % (type(e).__name__, e))
+    except BaseException as e:  # noqa: BLE001
+        rec(f"main exit {type(e).__name__}: {e}")
 
     results = state["results"]
     primary = [r for r in results if r["name"] in ("load", "preferences", "appreciation", "flowchart")]
@@ -1257,15 +1251,15 @@ def run():
 
     body = [
         "gate=hmc_nav_structure_probe",
-        "ok=%s" % ok,
+        f"ok={ok}",
         "ac=Nav_structure_helper",
-        "main_menu=%s" % main_ok,
-        "primary_ok=%s" % primary_ok,
-        "confirm_ok=%s" % confirm_ok,
-        "phase=%s" % state["phase"],
+        f"main_menu={main_ok}",
+        f"primary_ok={primary_ok}",
+        f"confirm_ok={confirm_ok}",
+        "phase={}".format(state["phase"]),
         "errors=%s" % (";".join(state["errors"]) if state["errors"] else "none"),
-        "notes=LIVE_primary_structure_bar;force_helper_only;ban_nonclear_only;"
-        "ban_force_green_while_live_fail;human_photos_AC-Nav1_authority",
+        ("notes=LIVE_primary_structure_bar;force_helper_only;ban_nonclear_only;"
+        "ban_force_green_while_live_fail;human_photos_AC-Nav1_authority"),
     ]
     for r in results:
         st = r.get("struct") or {}
@@ -1273,13 +1267,12 @@ def run():
         lst = r.get("live_struct") or {}
         lrt = r.get("live_rt") or {}
         body.append(
-            "screen.%s structure_ok=%s live_ok=%s force_ok=%s opened=%s "
-            "LIVE host_tex=%s handles=%s rev=%s mp=%s text=%s bar=%s "
-            "rt_ok=%s mean=%s var=%.1f white=%.3f "
-            "FORCE host_tex=%s handles=%s rev=%s mp=%s text=%s bar=%s "
-            "rt_ok=%s mean=%s var=%.1f white=%.3f "
-            "hard=%s soft=%s via=%s err=%s"
-            % (
+            "screen.{} structure_ok={} live_ok={} force_ok={} opened={} "
+            "LIVE host_tex={} handles={} rev={} mp={} text={} bar={} "
+            "rt_ok={} mean={} var={:.1f} white={:.3f} "
+            "FORCE host_tex={} handles={} rev={} mp={} text={} bar={} "
+            "rt_ok={} mean={} var={:.1f} white={:.3f} "
+            "hard={} soft={} via={} err={}".format(
                 r["name"],
                 r.get("structure_ok"),
                 r.get("live_structure_ok"),
@@ -1314,7 +1307,7 @@ def run():
         # detail reverse samples (force tree — richest multipiece dump)
         for i, rp in enumerate((st.get("rev_sample") or [])[:4]):
             body.append(
-                "screen.%s.rev[%d] ox=%.0f oy=%.0f size=%s xdx=%.3f ydy=%.3f"
+                "screen.%s.rev[%d] ox=%.0f oy=%.0f size=%s xdx=%.3f ydy=%.3f"  # noqa: UP031
                 % (
                     r["name"],
                     i,
@@ -1329,10 +1322,10 @@ def run():
         "matrix AC-Nav1=structure_helper_LIVE_primary_not_human_authority "
         "AC-Nav2=human_only AC-Nav3=pass_process_stubs_excluded"
     )
-    body.extend(["log.%s" % ln for ln in lines[-60:]])
+    body.extend([f"log.{ln}" for ln in lines[-60:]])
     text = "\n".join(body) + "\n"
     out.write_text(text)
-    rec("wrote %s ok=%s primary_ok=%s" % (out, ok, primary_ok))
+    rec(f"wrote {out} ok={ok} primary_ok={primary_ok}")
 
     if art_root:
         try:
@@ -1342,8 +1335,8 @@ def run():
                 (p / "gate-hmc_nav_structure_probe.txt").write_text(text)
             else:
                 p.write_text(text)
-        except Exception as e:
-            rec("artifact write fail: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            rec(f"artifact write fail: {e}")
 
     _request_quit()
     if not main_ok:

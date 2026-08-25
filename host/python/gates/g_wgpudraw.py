@@ -7,6 +7,7 @@ Loaded via py.run; host run_file injects RENPY_HOST_BASE.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -15,15 +16,16 @@ except ImportError:
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
-import renpy
 import renpy_host
+
+import renpy
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
 
 # Force host_build so register_builtin_core installs Phase 5 parts.
 renpy.host_build = True
-import renpy.wgpu.shaders as shaders  # noqa: E402
-import renpy.wgpu.draw as draw_mod  # noqa: E402
+import renpy.wgpu.draw as draw_mod
+from renpy.wgpu import shaders
 
 shaders.register_builtin_core()
 parts = shaders.list_wgsl_parts()

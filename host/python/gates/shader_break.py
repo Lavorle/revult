@@ -10,6 +10,7 @@ Gate name: shader_break  (RENPY_HOST_GATE=shader_break)
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -22,9 +23,10 @@ import renpy
 
 renpy.host_build = True
 
-from renpy.gl2.gl2shadercache import register_shader  # noqa: E402
-from renpy.text.shader import register_textshader  # noqa: E402
-import renpy_host  # noqa: E402
+import renpy_host
+
+from renpy.gl2.gl2shadercache import register_shader
+from renpy.text.shader import register_textshader
 
 shader_raised = False
 text_raised = False
@@ -34,7 +36,7 @@ text_msg = ""
 # Game/mod GLSL part — must hard-fail (AC8).
 try:
     register_shader("demo.part", variables="uniform float u_x;")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     shader_raised = True
     shader_msg = str(e)
 
@@ -43,7 +45,7 @@ except Exception as e:
 # text is also OK.
 try:
     register_textshader("demo", variables="uniform float u_x;")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     text_raised = True
     text_msg = str(e)
 

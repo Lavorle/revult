@@ -1,4 +1,6 @@
-import sys, traceback, os
+import sys
+import traceback
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -6,7 +8,7 @@ except ImportError:
         from host.python.gates._harness import gate_harness, parametrized_gate
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
-out = open("/tmp/diag_renpy.txt", "w")
+out = open("/tmp/diag_renpy.txt", "w")  # noqa: SIM115
 try:
     out.write(f"path0={sys.path[:6]!r}\n")
     out.write(f"renpy in modules before={ 'renpy' in sys.modules }\n")
@@ -17,7 +19,7 @@ try:
         out.write(f"dir conf={[x for x in dir(r) if 'conf' in x.lower() or x=='host_build']}\n")
         try:
             out.write(f"config={r.config!r}\n")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out.write(f"access config FAIL {type(e).__name__}: {e}\n")
             out.write(traceback.format_exc())
     # try import
@@ -28,14 +30,14 @@ try:
     import renpy.config
     out.write(f"import renpy.config ok module={renpy.config}\n")
     out.write(f"after import has attr={hasattr(renpy,'config')}\n")
-except Exception:
+except Exception:  # noqa: BLE001
     out.write("OUTER\n"+traceback.format_exc())
 finally:
     out.close()
 try:
     import renpy_host
     renpy_host.request_quit()
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

@@ -17,8 +17,8 @@ Note: no from __future__; host run_file prepends imports.
 """
 
 import os
-import time
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -27,9 +27,9 @@ except ImportError:
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
-import renpy
 import renpy_host  # type: ignore
 
+import renpy
 from renpy.audio import renpysound_host as rps
 
 _base = Path(os.environ.get("RENPY_HOST_BASE") or str(Path.cwd()))
@@ -95,8 +95,8 @@ def log(msg):
     lines.append(msg)
     # Prefer raw fd write — partial renpy import can hijack print → renpy.log.
     try:
-        os.write(1, ("[movie_channel_product] %s\n" % msg).encode("utf-8", "replace"))
-    except Exception:
+        os.write(1, (f"[movie_channel_product] {msg}\n").encode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -106,7 +106,7 @@ try:
         ok = False
         log("FAIL no media path (ffmpeg product movie required)")
     else:
-        log("media=%s name=%s" % (path, name))
+        log(f"media={path} name={name}")
         # Prefer smaller decode for gate speed; product layout remains 1920×1080
         # after Movie.render upscale (AC-M5). Decode env is A/B only, not layout size.
         # Force present 1b so the gate tests the default product path deterministically.
@@ -128,7 +128,7 @@ try:
         rps.play(CH, file=None, name=name, relative_volume=0.0)
 
         ready = bool(rps.video_ready(CH))
-        log("video_ready=%s" % ready)
+        log(f"video_ready={ready}")
         if not ready:
             ok = False
             log("FAIL video_ready False (decode failed or path unresolved)")
@@ -139,21 +139,19 @@ try:
             log("FAIL read_video returned None")
         else:
             size = surf.get_size()
-            log("surf_size=%s has_pixels=%s" % (size, hasattr(surf, "_pixels")))
+            log("surf_size={} has_pixels={}".format(size, hasattr(surf, "_pixels")))
             # AC-M5 part 1: under present 1b read_video must expose the decode
             # Surface; the layout 1920×1080 render is verified via Movie.render.
             if size != (decode_w, decode_h):
                 ok = False
                 log(
-                    "FAIL AC-M5 decode surface %s != expected decode %sx%s"
-                    % (size, decode_w, decode_h)
+                    f"FAIL AC-M5 decode surface {size} != expected decode {decode_w}x{decode_h}"
                 )
             else:
-                log("PASS AC-M5 decode surface %sx%s" % (size[0], size[1]))
+                log(f"PASS AC-M5 decode surface {size[0]}x{size[1]}")
                 ch_meta = rps._channels.get(CH, {})
                 log(
-                    "decode_size=%sx%s frame_w/h=%sx%s layout_target=%sx%s"
-                    % (
+                    "decode_size={}x{} frame_w/h={}x{} layout_target={}x{}".format(
                         ch_meta.get("decode_w"),
                         ch_meta.get("decode_h"),
                         ch_meta.get("frame_w"),
@@ -164,7 +162,7 @@ try:
                 )
 
             r, g, b = _mean_rgb(surf)
-            log("mean_rgb=%.1f,%.1f,%.1f" % (r, g, b))
+            log(f"mean_rgb={r:.1f},{g:.1f},{b:.1f}")
             if (r + g + b) < 5.0:
                 ok = False
                 log("FAIL black/empty frame (mean rgb too low)")
@@ -180,14 +178,14 @@ try:
             t0 = renpy_host.get_ticks_ms()
             renpy_host.wait_until(t0 + wait_ms)
             pos = float(rps.get_pos(CH))
-            log("pos_after_wait=%.4f wait_ms=%d" % (pos, wait_ms))
+            log("pos_after_wait=%.4f wait_ms=%d" % (pos, wait_ms))  # noqa: UP031
             surf2 = rps.read_video(CH)
             if surf2 is not None:
                 fp2 = _fingerprint(surf2)
                 ch = rps._channels.get(CH, {})
                 nframes = len(ch.get("frames") or [])
                 idx1 = ch.get("frame_index")
-                log("nframes=%d frame_index=%s→%s" % (nframes, idx0, idx1))
+                log("nframes=%d frame_index=%s→%s" % (nframes, idx0, idx1))  # noqa: UP031
                 if nframes >= 2:
                     # AC-M2b optional: prefer change; if single decode still non-black OK
                     if fp1 != fp2 or (idx0 is not None and idx1 is not None and idx0 != idx1):
@@ -205,17 +203,19 @@ try:
         # even though read_video returned the 320×180 decode Surface (present 1b).
         try:
             import types as _types
-            import renpy.object as _object  # noqa: F401
-            import renpy.style as _style  # noqa: F401
-            import renpy.config as _config  # noqa: F401
-            import renpy.loader as _loader  # noqa: F401
-            import renpy.game as _game  # noqa: F401
-            import renpy.easy as _easy  # noqa: F401
-            import renpy.revertable as _revertable  # noqa: F401
-            import renpy.audio.music as _music  # noqa: F401
-            import renpy.display.render as _render  # noqa: F401
+
             import renpy.display.matrix as _matrix  # noqa: F401
+            import renpy.display.render as _render  # noqa: F401
+            import renpy.style as _style  # noqa: F401
+
+            import renpy.audio.music as _music  # noqa: F401
+            import renpy.config as _config  # noqa: F401
             import renpy.display.displayable as _displayable  # noqa: F401
+            import renpy.easy as _easy  # noqa: F401
+            import renpy.game as _game  # noqa: F401
+            import renpy.loader as _loader  # noqa: F401
+            import renpy.object as _object  # noqa: F401
+            import renpy.revertable as _revertable  # noqa: F401
             from renpy.display.video import resize_movie
 
             # Minimal product-like preferences for loader calls.
@@ -232,37 +232,36 @@ try:
             rv.blit(surf, (0, 0))
             rv = resize_movie(rv, layout_w, layout_h)
             rv_size = rv.get_size()
-            log("movie_render_size=%s" % (rv_size,))
+            log(f"movie_render_size={rv_size}")
             if rv_size != (layout_w, layout_h):
                 ok = False
                 log(
-                    "FAIL AC-M5 layout render %s != (%s, %s)"
-                    % (rv_size, layout_w, layout_h)
+                    f"FAIL AC-M5 layout render {rv_size} != ({layout_w}, {layout_h})"
                 )
             else:
-                log("PASS AC-M5 layout render %sx%s" % rv_size)
-        except Exception as e:
+                log("PASS AC-M5 layout render {}x{}".format(*rv_size))
+        except Exception as e:  # noqa: BLE001
             ok = False
-            log("FAIL AC-M5 layout render exception: %s: %s" % (type(e).__name__, e))
+            log(f"FAIL AC-M5 layout render exception: {type(e).__name__}: {e}")
             import traceback
 
             log(traceback.format_exc())
 
         rps.stop(CH)
 
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
-    log("FAIL exception: %s: %s" % (type(e).__name__, e))
+    log(f"FAIL exception: {type(e).__name__}: {e}")
     import traceback
 
     log(traceback.format_exc())
 
-lines.append("ok=%s" % ok)
+lines.append(f"ok={ok}")
 out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-log("WROTE %s ok=%s" % (out, ok))
+log(f"WROTE {out} ok={ok}")
 try:
     renpy_host.request_quit()
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 if not ok:
     raise SystemExit(1)

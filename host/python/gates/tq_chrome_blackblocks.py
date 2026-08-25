@@ -24,6 +24,7 @@ import zlib
 from pathlib import Path
 
 import renpy_host  # type: ignore
+
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -106,7 +107,7 @@ class _Surf:
 def _png_rgba(path):
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise RuntimeError("not png: %s" % path)
+        raise RuntimeError(f"not png: {path}")
     pos = 8
     w = h = None
     raw = b""
@@ -126,7 +127,7 @@ def _png_rgba(path):
     if not w or not h:
         raise RuntimeError("bad png header")
     if bit_depth != 8 or color_type not in (2, 6):
-        raise RuntimeError("unsupported png ct=%s bd=%s" % (color_type, bit_depth))
+        raise RuntimeError(f"unsupported png ct={color_type} bd={bit_depth}")
     decomp = zlib.decompress(raw)
     bpp = 4 if color_type == 6 else 3
     stride = w * bpp + 1
@@ -157,7 +158,7 @@ def _png_rgba(path):
                 pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
                 scan[i] = (scan[i] + pr) & 0xFF
         elif filt != 0:
-            raise RuntimeError("bad filter %s" % filt)
+            raise RuntimeError(f"bad filter {filt}")
         prev = scan
         for x in range(w):
             si = x * bpp
@@ -265,8 +266,8 @@ def main():
     try:
         src_w, src_h, rgba_src = _png_rgba(png)
         src_tag = "gui/frame.png"
-    except Exception as e:
-        msg = "ok=False reason=load_frame_png err=%s path=%s" % (e, png)
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=load_frame_png err={e} path={png}"
         out.write_text(msg + "\n")
         print("[tq_chrome_blackblocks]", msg, flush=True)
         return
@@ -275,7 +276,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     surf = _Surf(src_w, src_h, rgba_src)
@@ -284,7 +285,7 @@ def main():
         if isinstance(tex, int) and tex > 0:
             tex = HostTexture(tex, src_w, src_h)
         else:
-            msg = "ok=False reason=load_texture_failed tex=%r src=%s" % (tex, src_tag)
+            msg = f"ok=False reason=load_texture_failed tex={tex!r} src={src_tag}"
             out.write_text(msg + "\n")
             print("[tq_chrome_blackblocks]", msg, flush=True)
             return
@@ -300,8 +301,8 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[tq_chrome_blackblocks]", msg, flush=True)
         return
@@ -342,7 +343,7 @@ def main():
 
     ok = border_ok and outside_ok and not featureless_black
     msg = (
-        "ok=%s border_hits=%d/%d border_ok=%s center_rgb=(%d,%d,%d) "
+        "ok=%s border_hits=%d/%d border_ok=%s center_rgb=(%d,%d,%d) "  # noqa: UP031
         "center_black=%s center_orange=%s outside_ok=%s featureless_black=%s "
         "top=%s left=%s dest=%dx%d src=%dx%d border=%d src_tag=%s "
         "confirm_borders=40 product_frame=True"

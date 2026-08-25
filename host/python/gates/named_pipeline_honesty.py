@@ -16,6 +16,7 @@ Writes host/target/gate-named_pipeline_honesty.txt with ok=True/False.
 import os
 import sys
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -42,11 +43,11 @@ def _safe_write(msg: str) -> None:
     data = (msg if msg.endswith("\n") else msg + "\n").encode("utf-8", "replace")
     try:
         os.write(1, data)
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             sys.__stdout__.write(msg if msg.endswith("\n") else msg + "\n")
             sys.__stdout__.flush()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -82,14 +83,14 @@ if sh.host_pipeline_key("renpy.alpha") is not None:
     ok = False
     notes.append("FAIL: renpy.alpha should be composition-only")
 else:
-    notes.append("renpy.alpha composition_mode=%s" % sh.composition_mode("renpy.alpha"))
+    notes.append("renpy.alpha composition_mode={}".format(sh.composition_mode("renpy.alpha")))
 
 if sh.host_pipeline_key("renpy.geometry") is not None:
     ok = False
     notes.append("FAIL: renpy.geometry should be composition-only")
 else:
     notes.append(
-        "renpy.geometry composition_mode=%s" % sh.composition_mode("renpy.geometry")
+        "renpy.geometry composition_mode={}".format(sh.composition_mode("renpy.geometry"))
     )
 
 ftl_key = sh.host_pipeline_key("renpy.ftl")
@@ -158,11 +159,11 @@ try:
     notes.append(f"pack_alpha_dict={u_a}")
     renpy_host.end_frame_present()
     notes.append("live_draw_ok=True")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
     notes.append(f"FAIL: live_draw {type(e).__name__}: {e}")
 
-msg = "gate=named_pipeline_honesty\nok=%s\n%s\n" % (
+msg = "gate=named_pipeline_honesty\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

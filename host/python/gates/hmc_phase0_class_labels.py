@@ -4,7 +4,11 @@ Opens preferences kinds: dialog_config_1, dialog_config_2, text_config.
 Samples RT mean/var and walks surftree for HostTexture / reverse / clipping.
 Writes host/target/gate-hmc_phase0_class_labels.txt
 """
-import os, sys, threading, time, traceback
+import os
+import sys
+import threading
+import time
+import traceback
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -23,15 +27,15 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[hmc_p0] %s\n" % m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[hmc_p0] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_phase0_class_labels.log","a").write(m+"\n")
+    open("/tmp/hmc_phase0_class_labels.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()
-    except Exception:
+        import renpy_host; renpy_host.request_quit()  # noqa: I001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _clear_falsey(n):
@@ -42,21 +46,24 @@ def _clear_falsey(n):
 def _pre():
     import types
     try:
-        import renpy.audio.renpysound_host as h, renpy.audio as a
+        import renpy.audio as a
+        import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; a.renpysound=h
-    except Exception as e: _log("sound %s"%e)
+    except Exception as e: _log(f"sound {e}")  # noqa: BLE001
     try:
-        import host_pygame, host_pygame.locals as loc, host_pygame.scrap as scrap
+        import host_pygame
+        import host_pygame.locals as loc
+        from host_pygame import scrap
         if not hasattr(host_pygame,"constants"): host_pygame.constants=loc
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
         sys.modules["renpy.pygame.scrap"]=scrap; sys.modules["pygame.scrap"]=scrap
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.scrap=scrap
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
         try: rpg.import_as_pygame()
-        except Exception: pass
-    except Exception as e: _log("pygame %s"%e)
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception as e: _log(f"pygame {e}")  # noqa: BLE001
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u; sys.modules["renpy.uguu.gl"]=u
@@ -65,13 +72,13 @@ def _pre():
         for n in dir(u):
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
-        import renpy; renpy.uguu=pkg
-    except Exception as e: _log("uguu %s"%e)
+        import renpy; renpy.uguu=pkg  # noqa: I001
+    except Exception as e: _log(f"uguu {e}")  # noqa: BLE001
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-        import renpy; renpy.ecsign=e
-    except Exception as e: _log("ecsign %s"%e)
+        import renpy; renpy.ecsign=e  # noqa: I001
+    except Exception as e: _log(f"ecsign {e}")  # noqa: BLE001
 
 def _sample_rt():
     import renpy_host
@@ -101,14 +108,14 @@ def _walk(node, acc=None, depth=0, budget=None):
     acc["n"]+=1
     try:
         from renpy.wgpu.draw import HostTexture
-    except Exception:
+    except Exception:  # noqa: BLE001
         HostTexture=None
     # size
     try:
         w=int(getattr(node,"width",0) or 0); h=int(getattr(node,"height",0) or 0)
         if w and h and len(acc["offered"])<12:
             acc["offered"].append((w,h,type(node).__name__))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     # clip flags
     try:
@@ -117,7 +124,7 @@ def _walk(node, acc=None, depth=0, budget=None):
             acc["n_clip"]+=1
             if len(acc["clip_samples"])<8:
                 acc["clip_samples"].append((xc,yc,getattr(node,"width",None),getattr(node,"height",None)))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     # reverse
     try:
@@ -128,10 +135,10 @@ def _walk(node, acc=None, depth=0, budget=None):
                 try:
                     xdx=float(getattr(rev,"xdx",getattr(rev,"xd",1)))
                     ydy=float(getattr(rev,"ydy",getattr(rev,"yd",1)))
-                except Exception:
+                except Exception:  # noqa: BLE001
                     xdx=ydy=None
                 acc["rev_samples"].append((xdx,ydy,getattr(node,"width",None),getattr(node,"height",None)))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     # HostTexture
     try:
@@ -141,13 +148,13 @@ def _walk(node, acc=None, depth=0, budget=None):
             try:
                 import renpy_host
                 alive=bool(renpy_host.texture_alive(int(node.handle)))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             if alive: acc["n_alive"]+=1
             else: acc["n_dead"]+=1
             if len(acc["ht_sizes"])<12:
                 acc["ht_sizes"].append((getattr(node,"w",None),getattr(node,"h",None),alive,int(getattr(node,"handle",0) or 0)))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     # children
     kids=[]
@@ -159,17 +166,17 @@ def _walk(node, acc=None, depth=0, budget=None):
                     kids.append(c[0])
                 else:
                     kids.append(c)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         ct=getattr(node,"cached_texture",None)
         if ct is not None: kids.append(ct)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         cm=getattr(node,"cached_model",None)
         if cm is not None: kids.append(cm)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     for k in kids:
         _walk(k, acc, depth+1, budget)
@@ -179,12 +186,12 @@ def _redraw():
     import renpy
     try:
         import interact_helpers as ih
-    except Exception as e:
-        return "no_ih:%s"%e
+    except Exception as e:  # noqa: BLE001
+        return f"no_ih:{e}"
     try:
         ready, why, iface = ih.interface_ready()
         if not ready or iface is None:
-            return "iface:%s"%why
+            return f"iface:{why}"
         root = ih._rebuild_product_root(iface)
         if root is None:
             return "root_absent"
@@ -197,40 +204,40 @@ def _redraw():
         try:
             if hasattr(draw,"load_all_textures"):
                 draw.load_all_textures(surftree)
-        except Exception as e:
-            return "load_fail:%s"%e
+        except Exception as e:  # noqa: BLE001
+            return f"load_fail:{e}"
         draw.draw_screen(surftree, flip=True)
         try: iface.surftree=surftree
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
         return "ok", surftree
-    except Exception as e:
-        return "exc:%s"%e
+    except Exception as e:  # noqa: BLE001
+        return f"exc:{e}"
 
 def _show_prefs(kind):
     import renpy
     try:
         renpy.display.screen.show_screen("preferences", kind=kind)
         try: renpy.restart_interaction()
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
         return True, "show_screen_preferences_kind"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         try:
             renpy.store.ShowMenu("preferences")()
             # then replace kind
             renpy.display.screen.show_screen("preferences", kind=kind)
             try: renpy.restart_interaction()
-            except Exception: pass
-            return True, "ShowMenu+kind:%s"%e
-        except Exception as e2:
-            return False, "fail %s / %s"%(e,e2)
+            except Exception: pass  # noqa: BLE001, S110
+            return True, f"ShowMenu+kind:{e}"
+        except Exception as e2:  # noqa: BLE001
+            return False, f"fail {e} / {e2}"
 
 def _hide_prefs():
     import renpy
     for n in ("preferences","confirm","load","save","appreciation","flowchart"):
         try: renpy.store.Hide(n)()
-        except Exception:
+        except Exception:  # noqa: BLE001
             try: renpy.hide_screen(n)
-            except Exception: pass
+            except Exception: pass  # noqa: BLE001, S110
 
 def _worker():
     out=_base()/"host"/"target"/"gate-hmc_phase0_class_labels.txt"
@@ -243,10 +250,10 @@ def _worker():
             try:
                 if getattr(renpy.store,"main_menu",False):
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             time.sleep(0.2)
-        lines.append("main_menu=%s"%getattr(renpy.store,"main_menu",None))
+        lines.append("main_menu={}".format(getattr(renpy.store,"main_menu",None)))
         targets=["dialog_config_1","dialog_config_2","text_config","image_config"]
         results=[]
         for kind in targets:
@@ -272,15 +279,15 @@ def _worker():
                 "offered":walk.get("offered",[])[:8],
             }
             results.append(rec)
-            lines.append("RESULT kind=%s opened=%s via=%s redraw=%s clear=%s mean=%s var=%.1f dark_frac=%.3f n_ht=%s n_dead=%s n_clip=%s n_rev=%s"%(
+            lines.append("RESULT kind={} opened={} via={} redraw={} clear={} mean={} var={:.1f} dark_frac={:.3f} n_ht={} n_dead={} n_clip={} n_rev={}".format(
                 kind, ok, via, redraw_s,
                 rt.get("clear"), tuple(round(x,1) for x in rt.get("mean",(0,0,0))) if rt.get("mean") else None,
                 float(rt.get("var") or 0), float(rt.get("dark_frac") or 0),
                 walk.get("n_ht"), walk.get("n_dead"), walk.get("n_clip"), walk.get("n_rev")))
-            lines.append("  ht_sizes=%s"%walk.get("ht_sizes",[])[:8])
-            lines.append("  rev_samples=%s"%walk.get("rev_samples",[])[:6])
-            lines.append("  clip_samples=%s"%walk.get("clip_samples",[])[:6])
-            lines.append("  offered=%s"%walk.get("offered",[])[:8])
+            lines.append("  ht_sizes={}".format(walk.get("ht_sizes",[])[:8]))
+            lines.append("  rev_samples={}".format(walk.get("rev_samples",[])[:6]))
+            lines.append("  clip_samples={}".format(walk.get("clip_samples",[])[:6]))
+            lines.append("  offered={}".format(walk.get("offered",[])[:8]))
             _log(lines[-5])
         # Class label heuristics
         dc1=next((r for r in results if r["kind"]=="dialog_config_1"),None)
@@ -293,18 +300,16 @@ def _worker():
             any_dead = (dc1["walk"].get("n_dead") or 0)+(dc2["walk"].get("n_dead") or 0)
             any_ht = (dc1["walk"].get("n_ht") or 0)+(dc2["walk"].get("n_ht") or 0)
             any_rev = (dc1["walk"].get("n_rev") or 0)+(dc2["walk"].get("n_rev") or 0)
-            if not dc1["opened"] and not dc2["opened"]:
-                c2="never_in_tree"
-            elif both_clear and any_ht==0:
+            if not dc1["opened"] and not dc2["opened"] or both_clear and any_ht==0:
                 c2="never_in_tree"
             elif both_clear and any_dead>0:
                 c2="dead_present"
             elif both_clear and any_rev>0 and any_ht>0:
                 c2="reverse_frame_miss"
             elif both_clear:
-                c2="other:clear_with_ht_alive n_ht=%s n_rev=%s"%(any_ht,any_rev)
+                c2=f"other:clear_with_ht_alive n_ht={any_ht} n_rev={any_rev}"
             else:
-                c2="other:not_clear_mean_dc1=%s dc2=%s"%(dc1["rt"].get("mean"),dc2["rt"].get("mean"))
+                c2="other:not_clear_mean_dc1={} dc2={}".format(dc1["rt"].get("mean"),dc2["rt"].get("mean"))
         # C3
         c3="other:insufficient"
         if tc:
@@ -321,17 +326,17 @@ def _worker():
                 c3="reverse-dest-class"
             else:
                 c3="clip-class"  # screen source uses crop; wgpu has zero xclipping hits historically
-        lines.append("LABEL_C2=%s"%c2)
-        lines.append("LABEL_C3=%s"%c3)
+        lines.append(f"LABEL_C2={c2}")
+        lines.append(f"LABEL_C3={c3}")
         lines.append("NOTE text_config source uses crop(0,825,1920,255)+zoom0.42 over 1920x1080 fixed; bg street day is 3840x2160 + full_fill")
         lines.append("NOTE dialog_config uses preferences_layout background 1849x846 Frame-less Image")
         lines.append("ok=True")
         out.write_text("\n".join(lines)+"\n")
-        _log("wrote %s"%out)
-        _log("LABEL_C2=%s LABEL_C3=%s"%(c2,c3))
-    except Exception:
+        _log(f"wrote {out}")
+        _log(f"LABEL_C2={c2} LABEL_C3={c3}")
+    except Exception:  # noqa: BLE001
         tb=traceback.format_exc()
-        lines.append("EXC %s"%tb)
+        lines.append(f"EXC {tb}")
         out.write_text("\n".join(lines)+"\n")
         _log(tb)
     finally:
@@ -352,18 +357,19 @@ def main():
     for p in (str(base/"host"/"python"/"gates"), str(base/"host"/"python")):
         if p not in sys.path:
             sys.path.insert(0,p)
-    open("/tmp/hmc_phase0_class_labels.log","w").write("start\n")
-    import renpy_host, bootstrap as boot  # noqa: F401
+    open("/tmp/hmc_phase0_class_labels.log","w").write("start\n")  # noqa: SIM115
+    import bootstrap as boot
+    import renpy_host  # noqa: F401
     for name,call in (
         ("import_renpy",boot.stage_import_renpy),
         ("import_all",boot.stage_import_all),
         ("set_game_dir",lambda: boot.stage_set_game_dir(base)),
     ):
-        good,miss,err,extra=call()
-        _log("stage %s good=%s err=%r"%(name,good,err))
+        good,_miss,err,_extra=call()
+        _log(f"stage {name} good={good} err={err!r}")
         if not good:
             out=base/"host"/"target"/"gate-hmc_phase0_class_labels.txt"
-            out.write_text("ok=False\nerror=stage_%s %s\n"%(name,err))
+            out.write_text(f"ok=False\nerror=stage_{name} {err}\n")
             _quit()
             return
     import renpy
@@ -371,8 +377,8 @@ def main():
     try:
         import renpy_main_host
         renpy_main_host.install(renpy)
-    except Exception as e:
-        _log("main_host %s"%e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"main_host {e}")
     try:
         import renpy.arguments
         basedir=getattr(renpy.config,"basedir",None) or game
@@ -382,20 +388,20 @@ def main():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         renpy.game.args=renpy.arguments.bootstrap()
-    except Exception as e:
-        _log("args %s"%e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"args {e}")
     _pre()
-    _log("basedir=%s"%game)
+    _log(f"basedir={game}")
     t=threading.Thread(target=_worker, daemon=True)
     t.start()
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:
-        _log("main exit %s"%e)
+    except BaseException as e:  # noqa: BLE001
+        _log(f"main exit {e}")
 
 if __name__=="__main__":
     main()
@@ -403,7 +409,7 @@ else:
     # host run_gate path: module-level side effect after imports prepended
     try:
         main()
-    except Exception:
+    except Exception:  # noqa: BLE001
         traceback.print_exc()
         _quit()
 

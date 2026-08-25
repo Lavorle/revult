@@ -17,6 +17,7 @@ Note: no from __future__; host run_file prepends imports.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -27,6 +28,7 @@ except ImportError:
 
 import renpy_host  # type: ignore
 from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import WgpuDraw
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
@@ -95,7 +97,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     # 16x16 source: magenta border, cyan 4x4 center (rows/cols 6..9).
@@ -121,8 +123,8 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[frame_scale]", msg, flush=True)
         return
@@ -136,16 +138,16 @@ def main():
     lx = 100 + max(2, dst_w // 40)
     ly = 100 + dst_h // 2
     # Outside dest (screen corner) → background.
-    r_c, g_c, b_c, a_c = _sample(rgba, rw, rh, cx * sx, cy * sy)
-    r_l, g_l, b_l, a_l = _sample(rgba, rw, rh, lx * sx, ly * sy)
-    r_o, g_o, b_o, a_o = _sample(rgba, rw, rh, 10 * sx, 10 * sy)
+    r_c, g_c, b_c, _a_c = _sample(rgba, rw, rh, cx * sx, cy * sy)
+    r_l, g_l, b_l, _a_l = _sample(rgba, rw, rh, lx * sx, ly * sy)
+    r_o, g_o, b_o, _a_o = _sample(rgba, rw, rh, 10 * sx, 10 * sy)
 
     center_ok = _near((r_c, g_c, b_c), CYAN)
     edge_ok = _near((r_l, g_l, b_l), MAGENTA)
     outside_ok = _near((r_o, g_o, b_o), BG)
     ok = center_ok and edge_ok and outside_ok
     msg = (
-        "ok=%s center_rgb=(%d,%d,%d) edge_rgb=(%d,%d,%d) outside_rgb=(%d,%d,%d) "
+        "ok=%s center_rgb=(%d,%d,%d) edge_rgb=(%d,%d,%d) outside_rgb=(%d,%d,%d) "  # noqa: UP031
         "center_ok=%s edge_ok=%s outside_ok=%s dest=%dx%d src=%dx%d"
         % (
             ok,

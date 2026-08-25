@@ -46,11 +46,11 @@ def _log(msg):
         sys.__stdout__.write("[hmc_menu_video_soak] " + str(msg))
         sys.__stdout__.write(chr(10))
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        open("/tmp/hmc_menu_video_soak_probe.log", "a").write(str(msg) + chr(10))
-    except Exception:
+        open("/tmp/hmc_menu_video_soak_probe.log", "a").write(str(msg) + chr(10))  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -58,7 +58,7 @@ def _quit():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -72,17 +72,17 @@ def _stubs():
     import types
 
     try:
-        import renpy.audio.renpysound_host as h
         import renpy.audio as a
+        import renpy.audio.renpysound_host as h
 
         sys.modules["renpy.audio.renpysound"] = h
         a.renpysound = h
-    except Exception as e:
-        _log("sound %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"sound {e}")
     try:
         import host_pygame
         import host_pygame.locals as loc
-        import host_pygame.scrap as scrap
+        from host_pygame import scrap
 
         if not hasattr(host_pygame, "constants"):
             host_pygame.constants = loc
@@ -95,14 +95,14 @@ def _stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = scrap
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        _log("pygame %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
 
@@ -119,8 +119,8 @@ def _stubs():
         import renpy
 
         renpy.uguu = pkg
-    except Exception as e:
-        _log("uguu %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
 
@@ -128,8 +128,8 @@ def _stubs():
         import renpy
 
         renpy.ecsign = e
-    except Exception as e:
-        _log("ecsign %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign {e}")
 
 
 def _product_presents():
@@ -155,7 +155,7 @@ def _take_host_gaps():
         peek = getattr(renpy_host, "inter_present_gaps_ms", None)
         if peek is not None:
             return [float(x) for x in list(peek())]
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return []
 
@@ -164,7 +164,7 @@ def _p99(gaps):
     if not gaps:
         return None
     sg = sorted(gaps)
-    idx = min(len(sg) - 1, int(round(0.99 * (len(sg) - 1))))
+    idx = min(len(sg) - 1, round(0.99 * (len(sg) - 1)))
     return float(sg[idx])
 
 
@@ -196,8 +196,8 @@ def _path_cache_snapshot():
     }
     try:
         from renpy.audio import renpysound_host as rps
-    except Exception as e:
-        snap["error"] = "%s: %s" % (type(e).__name__, e)
+    except Exception as e:  # noqa: BLE001
+        snap["error"] = f"{type(e).__name__}: {e}"
         return snap
 
     keys = _movie_path_candidates()
@@ -213,7 +213,7 @@ def _path_cache_snapshot():
                 rf = bool(rps.path_cache_ready_full(key))
                 if rf or snap["ready_full"] is None:
                     snap["ready_full"] = rf
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     try:
@@ -224,7 +224,7 @@ def _path_cache_snapshot():
             for k, entry in cache.items():
                 try:
                     n = len(entry.get("frames") or [])
-                except Exception:
+                except Exception:  # noqa: BLE001
                     n = 0
                 if n > best_n:
                     best_n = n
@@ -239,8 +239,8 @@ def _path_cache_snapshot():
                 if snap["ready_full"] is None:
                     snap["ready_full"] = bool(entry.get("ready_full"))
                 snap["helper"] = (snap.get("helper") or "") + "+_PATH_FRAME_CACHE"
-    except Exception as e:
-        snap["cache_error"] = "%s: %s" % (type(e).__name__, e)
+    except Exception as e:  # noqa: BLE001
+        snap["cache_error"] = f"{type(e).__name__}: {e}"
     return snap
 
 
@@ -269,9 +269,9 @@ def _movie_frame_index_samples(max_channels=16):
                             "total_decoded": int(total) if total is not None else None,
                         }
                     )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return samples
 
@@ -342,7 +342,7 @@ def _sample_window(label, seconds, poll_s=0.05):
         n0i = int(n0) if n0 is not None else None
         n1i = int(n1) if n1 is not None else None
         cache_growth = (n1i - n0i) if (n0i is not None and n1i is not None) else None
-    except Exception:
+    except Exception:  # noqa: BLE001
         cache_growth = None
 
     return {
@@ -376,7 +376,7 @@ def _sample_window(label, seconds, poll_s=0.05):
 
 def _rank_h(early, late):
     hints = []
-    e_p99 = early.get("p99_inter_present_ms")
+    early.get("p99_inter_present_ms")
     l_p99 = late.get("p99_inter_present_ms")
     growth = late.get("path_cache_growth")
     if growth is None:
@@ -384,13 +384,13 @@ def _rank_h(early, late):
             n_e = int((early.get("path_cache_end") or {}).get("nframes") or 0)
             n_l = int((late.get("path_cache_end") or {}).get("nframes") or 0)
             growth = n_l - n_e
-        except Exception:
+        except Exception:  # noqa: BLE001
             growth = None
     inflight_late = bool(late.get("path_cache_inflight_end"))
     n_late = late.get("path_cache_nframes_end")
     try:
         n_late_i = int(n_late) if n_late is not None else None
-    except Exception:
+    except Exception:  # noqa: BLE001
         n_late_i = None
     host_over_prod = late.get("host_frames_minus_product")
     advances = bool(late.get("frame_index_advances"))
@@ -403,14 +403,14 @@ def _rank_h(early, late):
             "id": "H1",
             "title": "path-cache full-RGBA growth past warm prefix",
             "severity_hint": sev,
-            "evidence": "path_cache_growth=%s nframes_late=%s p99_late=%s" % (growth, n_late, l_p99),
+            "evidence": f"path_cache_growth={growth} nframes_late={n_late} p99_late={l_p99}",
         })
     else:
         hints.append({
             "id": "H1",
             "title": "path-cache full-RGBA growth past warm prefix",
             "severity_hint": "low" if not late_bad else "med",
-            "evidence": "growth=%s n_late=%s late_bad=%s" % (growth, n_late, late_bad),
+            "evidence": f"growth={growth} n_late={n_late} late_bad={late_bad}",
         })
 
     if inflight_late and late_bad:
@@ -418,14 +418,14 @@ def _rank_h(early, late):
             "id": "H2",
             "title": "background ffmpeg continue-fill after warm",
             "severity_hint": "high",
-            "evidence": "inflight_late=%s nframes=%s p99_late=%s" % (inflight_late, n_late, l_p99),
+            "evidence": f"inflight_late={inflight_late} nframes={n_late} p99_late={l_p99}",
         })
     else:
         hints.append({
             "id": "H2",
             "title": "background ffmpeg continue-fill after warm",
             "severity_hint": "med" if inflight_late else "low",
-            "evidence": "inflight_late=%s growth=%s" % (inflight_late, growth),
+            "evidence": f"inflight_late={inflight_late} growth={growth}",
         })
 
     if host_over_prod is not None and host_over_prod > max(30, (late.get("product_presents") or 0) * 0.5):
@@ -433,7 +433,7 @@ def _rank_h(early, late):
             "id": "H3",
             "title": "write_texture / present thrash (host_frames > product)",
             "severity_hint": "high" if late_bad else "med",
-            "evidence": "host_minus_product=%s host_frames=%s product=%s" % (
+            "evidence": "host_minus_product={} host_frames={} product={}".format(
                 host_over_prod, late.get("host_frames"), late.get("product_presents")),
         })
     else:
@@ -441,7 +441,7 @@ def _rank_h(early, late):
             "id": "H3",
             "title": "write_texture / present thrash (host_frames > product)",
             "severity_hint": "low",
-            "evidence": "host_minus_product=%s" % host_over_prod,
+            "evidence": f"host_minus_product={host_over_prod}",
         })
 
     ratio = None
@@ -450,21 +450,21 @@ def _rank_h(early, late):
         pp = float(late.get("product_presents") or 0)
         if pp > 0:
             ratio = hf / pp
-    except Exception:
+    except Exception:  # noqa: BLE001
         ratio = None
     if ratio is not None and ratio > 1.8 and late_bad:
         hints.append({
             "id": "H4",
             "title": "busy-wake host_frames residual",
             "severity_hint": "med",
-            "evidence": "host/product ratio=%.2f" % ratio,
+            "evidence": f"host/product ratio={ratio:.2f}",
         })
     else:
         hints.append({
             "id": "H4",
             "title": "busy-wake host_frames residual",
             "severity_hint": "low",
-            "evidence": "host/product ratio=%s" % ratio,
+            "evidence": f"host/product ratio={ratio}",
         })
 
     if (l_p99 is not None and l_p99 > 66.0) or stall or (not advances):
@@ -473,7 +473,7 @@ def _rank_h(early, late):
             "id": "H5",
             "title": "present starvation / large inter-present gaps",
             "severity_hint": sev,
-            "evidence": "p99_late=%s stall=%s advances=%s max_gap=%s" % (
+            "evidence": "p99_late={} stall={} advances={} max_gap={}".format(
                 l_p99, stall, advances, late.get("max_inter_present_ms")),
         })
     else:
@@ -481,7 +481,7 @@ def _rank_h(early, late):
             "id": "H5",
             "title": "present starvation / large inter-present gaps",
             "severity_hint": "low",
-            "evidence": "p99_late=%s advances=%s" % (l_p99, advances),
+            "evidence": f"p99_late={l_p99} advances={advances}",
         })
 
     order = {"high": 0, "med": 1, "low": 2}
@@ -509,27 +509,27 @@ def probe():
         try:
             if bool(getattr(renpy.store, "main_menu", False)):
                 break
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(0.2)
 
     mm = False
     try:
         mm = bool(getattr(renpy.store, "main_menu", False))
-    except Exception:
+    except Exception:  # noqa: BLE001
         mm = False
     report["main_menu"] = mm
-    lines.append("main_menu=%s" % mm)
-    _log("main_menu=%s frames=%s product=%s" % (mm, _frame_count(), _product_presents()))
+    lines.append(f"main_menu={mm}")
+    _log(f"main_menu={mm} frames={_frame_count()} product={_product_presents()}")
 
     time.sleep(0.3)
     report["path_cache_pre"] = _path_cache_snapshot()
-    lines.append("path_cache_pre=%s" % report["path_cache_pre"])
+    lines.append("path_cache_pre={}".format(report["path_cache_pre"]))
 
     early = _sample_window("early_0_3s", 3.0)
     report["windows"]["early_0_3s"] = early
-    lines.append("early=%s" % early)
-    _log("early p99=%s advances=%s nframes=%s inflight=%s" % (
+    lines.append(f"early={early}")
+    _log("early p99={} advances={} nframes={} inflight={}".format(
         early.get("p99_inter_present_ms"),
         early.get("frame_index_advances"),
         early.get("path_cache_nframes_end"),
@@ -538,8 +538,8 @@ def probe():
 
     late = _sample_window("late_3_15s", 12.0)
     report["windows"]["late_3_15s"] = late
-    lines.append("late=%s" % late)
-    _log("late p99=%s advances=%s nframes=%s inflight=%s host_minus_product=%s" % (
+    lines.append(f"late={late}")
+    _log("late p99={} advances={} nframes={} inflight={} host_minus_product={}".format(
         late.get("p99_inter_present_ms"),
         late.get("frame_index_advances"),
         late.get("path_cache_nframes_end"),
@@ -563,8 +563,8 @@ def probe():
         "hang": False,
         "crash": False,
     }
-    lines.append("ac_m_soak=%s" % report["ac_m_soak"])
-    lines.append("ac_z=%s" % report["ac_z"])
+    lines.append("ac_m_soak={}".format(report["ac_m_soak"]))
+    lines.append("ac_z={}".format(report["ac_z"]))
 
     e_p99 = early.get("p99_inter_present_ms")
     report["early_p99_inter_present_ms"] = e_p99
@@ -578,26 +578,26 @@ def probe():
     hints = _rank_h(early, late)
     report["h_rank_hints"] = hints
     for i, h in enumerate(hints, 1):
-        lines.append("H%d_rank=%s severity=%s evidence=%s" % (i, h["id"], h["severity_hint"], h["evidence"]))
-        _log("H rank %s %s %s" % (h["id"], h["severity_hint"], h["evidence"]))
+        lines.append("H%d_rank=%s severity=%s evidence=%s" % (i, h["id"], h["severity_hint"], h["evidence"]))  # noqa: UP031
+        _log("H rank {} {} {}".format(h["id"], h["severity_hint"], h["evidence"]))
 
     report["ok"] = True
     report["measured"] = bool(mm)
     report["pass"] = bool(report["ac_m_soak"].get("pass") and not stall)
-    lines.append("ok=%s" % report["ok"])
-    lines.append("measured=%s" % report["measured"])
-    lines.append("pass=%s" % report["pass"])
+    lines.append("ok={}".format(report["ok"]))
+    lines.append("measured={}".format(report["measured"]))
+    lines.append("pass={}".format(report["pass"]))
 
     out_txt.parent.mkdir(parents=True, exist_ok=True)
     out_txt.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
     out_json.write_text(json.dumps(report, indent=2, default=str) + chr(10), encoding="utf-8")
-    _log("wrote %s pass=%s" % (out_json, report["pass"]))
+    _log("wrote {} pass={}".format(out_json, report["pass"]))
     time.sleep(0.3)
     _quit()
 
 
 def main():
-    open("/tmp/hmc_menu_video_soak_probe.log", "w").write("start" + chr(10))
+    open("/tmp/hmc_menu_video_soak_probe.log", "w").write("start" + chr(10))  # noqa: SIM115
     base = _base()
     game = os.environ.get("RENPY_HOST_GAME") or str(base / "host" / "playtests" / "HuangmeiC")
     os.environ["RENPY_HOST_BASE"] = str(base)
@@ -613,17 +613,16 @@ def main():
     try:
         _stubs()
         import bootstrap as boot
-        import renpy_host
 
         for name, call in (
             ("import_renpy", boot.stage_import_renpy),
             ("import_all", boot.stage_import_all),
             ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
         ):
-            good, missing, error, extra = call()
-            _log("stage %s good=%s missing=%s error=%r" % (name, good, missing, error))
+            good, missing, error, _extra = call()
+            _log(f"stage {name} good={good} missing={missing} error={error!r}")
             if not good:
-                _log("bootstrap fail %s" % name)
+                _log(f"bootstrap fail {name}")
                 _quit()
                 return
         import renpy
@@ -632,8 +631,8 @@ def main():
         try:
             import renpy_main_host
             renpy_main_host.install(renpy)
-        except Exception as e:
-            _log("main_host: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main_host: {e}")
         try:
             import renpy.arguments
             basedir = getattr(renpy.config, "basedir", None) or game
@@ -643,11 +642,11 @@ def main():
                 try:
                     renpy.arguments.register_command("run", renpy.arguments.run, True)
                     renpy.arguments.register_command("quit", renpy.arguments.quit)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             renpy.game.args = renpy.arguments.bootstrap()
-        except Exception as e:
-            _log("args fail %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"args fail {e}")
             _quit()
             return
         threading.Thread(target=probe, daemon=True).start()
@@ -656,13 +655,13 @@ def main():
             renpy.main.main()
         except SystemExit:
             pass
-        except Exception as e:
-            _log("main exc %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main exc {e}")
             _log(traceback.format_exc())
         finally:
             _quit()
-    except Exception as e:
-        _log("main outer exc %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"main outer exc {e}")
         _log(traceback.format_exc())
         _quit()
 

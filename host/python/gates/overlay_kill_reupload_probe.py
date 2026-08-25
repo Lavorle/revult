@@ -1,9 +1,11 @@
 """After kill_textures, re-drawing overlay-like full image must re-upload (not blank)."""
 import os
 from pathlib import Path
+
 import renpy_host
 from renpy.pygame.surface import Surface
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
 try:
@@ -61,7 +63,7 @@ try:
 
     w,h,rgba = present(ov)
     m0 = left_dark(rgba,w,h)
-    lines.append("before kill left_mean=%.1f" % m0)
+    lines.append(f"before kill left_mean={m0:.1f}")
     if m0 > 50:
         ok=False; lines.append("FAIL before not dark")
 
@@ -70,7 +72,7 @@ try:
     # Old handle must not be reusable from Python cache alone — re-upload
     w,h,rgba = present(ov)
     m1 = left_dark(rgba,w,h)
-    lines.append("after kill+reupload left_mean=%.1f" % m1)
+    lines.append(f"after kill+reupload left_mean={m1:.1f}")
     if m1 > 50:
         ok=False; lines.append("FAIL after not dark (dead handle?)")
     else:
@@ -91,7 +93,7 @@ try:
     img.blit(tex,0,0)
     root.blit(img,0,0)
     dest = draw._reverse_dest_size(img, tex, (VW,VH))
-    lines.append("reverse dest=%s" % (dest,))
+    lines.append(f"reverse dest={dest}")
     draw.draw_screen(root, flip=True)
     w,h,rgba = renpy_host.read_game_rt_rgba()
     m2 = left_dark(rgba,w,h)
@@ -101,19 +103,19 @@ try:
         for x in range(20,80,2):
             i=(y*w+x)*4; rs+=rgba[i]+rgba[i+1]+rgba[i+2]; n+=1
     top = rs/(3*n)
-    lines.append("after reverse left_mean=%.1f top_mean=%.1f" % (m2, top))
+    lines.append(f"after reverse left_mean={m2:.1f} top_mean={top:.1f}")
     if m2 > 50 or top > 60:
         ok=False; lines.append("FAIL reverse overlay incomplete")
     else:
         lines.append("PASS reverse full")
 
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok=False
     import traceback
-    lines.append("EXC %r" % e)
+    lines.append(f"EXC {e!r}")
     lines.append(traceback.format_exc())
 
-body=("ok=%s\n"%ok)+"\n".join(lines)+"\n"
+body=(f"ok={ok}\n")+"\n".join(lines)+"\n"
 out.write_text(body)
 print(body)
 renpy_host.request_quit()

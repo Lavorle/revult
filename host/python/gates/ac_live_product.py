@@ -19,6 +19,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -37,13 +38,13 @@ def _base():
 
 def _log(msg, lines=None):
     try:
-        sys.__stdout__.write("[ac_live_product] %s\n" % msg)
+        sys.__stdout__.write(f"[ac_live_product] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        open("/tmp/ac_live_product.log", "a").write(msg + "\n")
-    except Exception:
+        open("/tmp/ac_live_product.log", "a").write(msg + "\n")  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
     if lines is not None:
         lines.append(msg)
@@ -54,20 +55,20 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
 def _pre_main_host_stubs(lines):
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound", lines)
-    except Exception as e:
-        _log("renpysound soft-fail: %s" % e, lines)
+    except Exception as e:  # noqa: BLE001
+        _log(f"renpysound soft-fail: {e}", lines)
     try:
         import renpy_uguu_host as _uguu
 
@@ -77,18 +78,18 @@ def _pre_main_host_stubs(lines):
             import renpy
 
             renpy.uguu = _uguu
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _log("uguu stub", lines)
-    except Exception as e:
-        _log("uguu soft-fail: %s" % e, lines)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu soft-fail: {e}", lines)
     try:
         import renpy_ecsign_host as _ecsign
 
         sys.modules["renpy.ecsign"] = _ecsign
         _log("ecsign stub", lines)
-    except Exception as e:
-        _log("ecsign soft-fail: %s" % e, lines)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign soft-fail: {e}", lines)
 
 
 def run():
@@ -115,18 +116,18 @@ def run():
     if gates not in sys.path:
         sys.path.insert(0, gates)
 
-    import renpy_host  # type: ignore
     import bootstrap as boot
+    import renpy_host  # type: ignore
 
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        rec("stage %s good=%s err=%r" % (name, good, err))
+        good, _miss, err, _extra = call()
+        rec(f"stage {name} good={good} err={err!r}")
         if not good:
-            body = "ok=False\nerror=%s\nphase=bootstrap\n" % err
+            body = f"ok=False\nerror={err}\nphase=bootstrap\n"
             out.write_text(body)
             evid.write_text(body)
             _request_quit()
@@ -137,7 +138,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     try:
@@ -145,8 +146,8 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:
-        rec("main_host: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        rec(f"main_host: {e}")
 
     try:
         import renpy.arguments
@@ -158,13 +159,13 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
-        rec("args command=%s" % getattr(args, "command", None))
-    except Exception as e:
-        rec("args fail: %s" % e)
+        rec("args command={}".format(getattr(args, "command", None)))
+    except Exception as e:  # noqa: BLE001
+        rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
     _pre_main_host_stubs(lines)
@@ -185,8 +186,9 @@ def run():
     }
 
     try:
-        import renpy.display.transition as tr
         import renpy.display.render as render_mod
+
+        import renpy.display.transition as tr
 
         _orig_dissolve_render = tr.Dissolve.render
 
@@ -213,11 +215,10 @@ def run():
                     state["mid_count"] = int(state["mid_count"]) + 1
                 if len(state["completes"]) <= 50:
                     rec(
-                        "Dissolve.render st=%.4f complete=%s u=%s T=%s"
-                        % (entry["st"], entry["complete"], entry["u"], entry["time"])
+                        "Dissolve.render st={:.4f} complete={} u={} T={}".format(entry["st"], entry["complete"], entry["u"], entry["time"])
                     )
-            except Exception as e:
-                rec("hook log soft: %s" % e)
+            except Exception as e:  # noqa: BLE001
+                rec(f"hook log soft: {e}")
             return rv
 
         tr.Dissolve.render = _hooked_dissolve_render  # type: ignore
@@ -225,10 +226,10 @@ def run():
         rec("Dissolve.render hook installed")
         try:
             render_mod.models = True
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        state["error"] = "hook_fail: %s" % e
+    except Exception as e:  # noqa: BLE001
+        state["error"] = f"hook_fail: {e}"
         rec(state["error"])
         rec(traceback.format_exc())
 
@@ -246,7 +247,7 @@ def run():
                     cur = int(getattr(prefs, "transitions", -1))
                     if cur < 2:
                         prefs.transitions = 2
-                        rec("set prefs.transitions %s -> 2 (enable, not zero)" % cur)
+                        rec(f"set prefs.transitions {cur} -> 2 (enable, not zero)")
                     state["transitions_pref"] = int(prefs.transitions)
                     state["transitions_forced_zero"] = False
                 else:
@@ -254,15 +255,15 @@ def run():
                 try:
                     _renpy.game.less_updates = False
                     state["less_updates"] = bool(_renpy.game.less_updates)
-                except Exception as e:
-                    rec("less_updates soft: %s" % e)
+                except Exception as e:  # noqa: BLE001
+                    rec(f"less_updates soft: {e}")
                 try:
                     import renpy.display.render as rm
 
                     rm.models = True
                     state["models"] = bool(rm.models)
-                except Exception as e:
-                    rec("models soft: %s" % e)
+                except Exception as e:  # noqa: BLE001
+                    rec(f"models soft: {e}")
                 try:
                     _renpy.config.performance_test = False
                     _renpy.config.has_music = False
@@ -272,10 +273,10 @@ def run():
                             prefs.performance_test = False
                         if hasattr(prefs, "text_cps"):
                             prefs.text_cps = 0
-                except Exception as e:
-                    rec("prefs soft: %s" % e)
-            except Exception as e:
-                rec("prefs block: %s" % e)
+                except Exception as e:  # noqa: BLE001
+                    rec(f"prefs soft: {e}")
+            except Exception as e:  # noqa: BLE001
+                rec(f"prefs block: {e}")
 
             state["phase"] = "injecting"
             rec("begin Start inject (Enter only)")
@@ -288,16 +289,16 @@ def run():
                     mm = getattr(_renpy.store, "main_menu", None)
                     if i % 5 == 0:
                         rec(
-                            "pulse#%d main_menu=%r mid_count=%s completes=%s"
+                            "pulse#%d main_menu=%r mid_count=%s completes=%s"  # noqa: UP031
                             % (i, mm, state["mid_count"], len(state["completes"]))
                         )
                     if mm is False:
                         state["left_main_menu"] = True
                         state["started"] = True
-                        rec("left main_menu at pulse#%d" % i)
+                        rec("left main_menu at pulse#%d" % i)  # noqa: UP031
                         break
-                except Exception as e:
-                    rec("status: %s" % e)
+                except Exception as e:  # noqa: BLE001
+                    rec(f"status: {e}")
                 time.sleep(0.25)
 
             state["phase"] = "observing"
@@ -315,7 +316,7 @@ def run():
                     if mm is False:
                         state["left_main_menu"] = True
                         state["started"] = True
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
 
             try:
@@ -323,22 +324,21 @@ def run():
                 if prefs is not None and hasattr(prefs, "transitions"):
                     state["transitions_pref"] = int(prefs.transitions)
                 state["less_updates"] = bool(getattr(_renpy.game, "less_updates", None))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
             state["phase"] = "quitting"
             rec(
-                "request_quit mid_count=%s completes=%s started=%s transitions_pref=%s"
-                % (
+                "request_quit mid_count={} completes={} started={} transitions_pref={}".format(
                     state["mid_count"],
                     len(state["completes"]),
                     state["started"],
                     state["transitions_pref"],
                 )
             )
-        except Exception as e:
-            state["error"] = "%s: %s" % (type(e).__name__, e)
-            rec("injector exc: %s" % state["error"])
+        except Exception as e:  # noqa: BLE001
+            state["error"] = f"{type(e).__name__}: {e}"
+            rec("injector exc: {}".format(state["error"]))
             rec(traceback.format_exc())
         finally:
             _request_quit()
@@ -351,8 +351,8 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:
-        rec("main exit %s: %s" % (type(e).__name__, e))
+    except BaseException as e:  # noqa: BLE001
+        rec(f"main exit {type(e).__name__}: {e}")
 
     mids = [
         e
@@ -370,9 +370,9 @@ def run():
     if not state["hook_installed"]:
         reason_parts.append("hook_not_installed")
     if len(mids) < 2:
-        reason_parts.append("mid_count=%s<2" % len(mids))
+        reason_parts.append(f"mid_count={len(mids)}<2")
     if state["transitions_pref"] is not None and int(state["transitions_pref"]) < 2:
-        reason_parts.append("transitions_pref=%s<2" % state["transitions_pref"])
+        reason_parts.append("transitions_pref={}<2".format(state["transitions_pref"]))
     if state["transitions_forced_zero"]:
         reason_parts.append("transitions_forced_zero")
     if not state["started"] and not state["left_main_menu"]:
@@ -383,18 +383,18 @@ def run():
 
     body = [
         "gate=ac_live_product",
-        "ok=%s" % ok,
+        f"ok={ok}",
         "path_kind=product_interact_dissolve_hook",
-        "hook_installed=%s" % state["hook_installed"],
-        "transitions_pref=%s" % state["transitions_pref"],
-        "transitions_forced_zero=%s" % state["transitions_forced_zero"],
-        "less_updates=%s" % state["less_updates"],
-        "models=%s" % state["models"],
-        "started=%s" % state["started"],
-        "left_main_menu=%s" % state["left_main_menu"],
-        "injects=%s" % state["injects"],
-        "complete_samples=%s" % len(state["completes"]),
-        "mid_count=%s" % len(mids),
+        "hook_installed={}".format(state["hook_installed"]),
+        "transitions_pref={}".format(state["transitions_pref"]),
+        "transitions_forced_zero={}".format(state["transitions_forced_zero"]),
+        "less_updates={}".format(state["less_updates"]),
+        "models={}".format(state["models"]),
+        "started={}".format(state["started"]),
+        "left_main_menu={}".format(state["left_main_menu"]),
+        "injects={}".format(state["injects"]),
+        "complete_samples={}".format(len(state["completes"])),
+        f"mid_count={len(mids)}",
         "mid_completes=%s" % [round(float(e["complete"]), 4) for e in mids[:20]],
         "all_completes=%s"
         % [
@@ -402,15 +402,15 @@ def run():
             for e in state["completes"][:40]
             if e.get("complete") is not None
         ],
-        "phase=%s" % state["phase"],
-        "reason=%s" % reason,
+        "phase={}".format(state["phase"]),
+        f"reason={reason}",
         "notes=AC-LIVE requires >=2 Dissolve.render completes in (0.15,0.85) under product path without transitions=0",
     ]
     body.extend(lines[-100:])
     text = "\n".join(body) + "\n"
     out.write_text(text)
     evid.write_text(text)
-    _log("WROTE %s ok=%s reason=%s" % (out, ok, reason))
+    _log(f"WROTE {out} ok={ok} reason={reason}")
     _request_quit()
 
 

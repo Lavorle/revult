@@ -19,6 +19,7 @@ import os
 import time
 import traceback
 from typing import Any
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -54,7 +55,7 @@ def inject_key_pulse(key: int = K_RETURN, hold_ms: int = 30) -> dict:
         h.wait_until(deadline)
         h.inject_key(int(key), False)
         out["injected"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
@@ -72,17 +73,17 @@ def inject_mouse_click(x: int = 640, y: int = 360, button: int = 1, hold_ms: int
         h = _host()
         # Keep host_pygame mouse pos in sync for get_pos() consumers.
         try:
-            import renpy.pygame as pygame
+            from renpy import pygame
 
             pygame.mouse.set_pos((int(x), int(y)))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         h.inject_mouse(int(x), int(y), int(button), True)
         deadline = h.get_ticks_ms() + max(1, int(hold_ms))
         h.wait_until(deadline)
         h.inject_mouse(int(x), int(y), int(button), False)
         out["injected"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
@@ -94,7 +95,7 @@ def inject_text(text: str = " ") -> dict:
         h = _host()
         h.inject_text(str(text))
         out["injected"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
@@ -112,7 +113,7 @@ def queue_renpy_event(name: str = "dismiss", up: bool = False) -> dict:
 
         renpy.exports.queue_event(name, up=bool(up))
         out["queued"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
@@ -142,7 +143,7 @@ def advance_dialogue_pulse() -> dict:
         r = inject_mouse_click(640, 360)
         if r.get("injected"):
             out["injected"] += 1
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
@@ -155,15 +156,15 @@ def in_main_menu() -> bool:
         if getattr(renpy.store, "main_menu", False):
             return True
         try:
-            import renpy.game as game
+            from renpy import game
 
             ctx = game.context()
             if getattr(ctx, "_main_menu", False):
                 return True
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return False
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -179,7 +180,7 @@ def activate_main_menu_start(label: str = "start") -> dict:
     """
     out: dict = {"started": False, "label": label, "reason": "", "error": ""}
     import renpy
-    import renpy.game as game
+    from renpy import game
 
     if not in_main_menu():
         out["reason"] = "not_main_menu"
@@ -200,7 +201,7 @@ def activate_main_menu_start(label: str = "start") -> dict:
             renpy.display.behavior.run(Start(label))
         except game.CONTROL_EXCEPTIONS:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out["error"] = f"Start:{type(e).__name__}: {e}"
             # Fall through to direct JumpOut.
     raise game.JumpOutException(label)
@@ -211,7 +212,7 @@ def pump_ms(ms: int = 16) -> None:
     try:
         h = _host()
         h.wait_until(h.get_ticks_ms() + max(0, int(ms)))
-    except Exception:
+    except Exception:  # noqa: BLE001
         time.sleep(max(0, int(ms)) / 1000.0)
 
 
@@ -223,12 +224,12 @@ def drain_events(max_n: int = 64) -> list[dict]:
     seen: list[dict] = []
     try:
         h = _host()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return seen
     for _ in range(max(0, int(max_n))):
         try:
             ev = h.poll_event()
-        except Exception:
+        except Exception:  # noqa: BLE001
             break
         if ev is None:
             break
@@ -247,17 +248,17 @@ def interface_ready() -> tuple[bool, str, Any]:
     """
     try:
         import renpy
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, f"renpy_import:{type(e).__name__}", None
 
     iface = getattr(getattr(renpy, "display", None), "interface", None)
     if iface is None:
         # Also check renpy.game.interface (Interface.__init__ sets both).
         try:
-            import renpy.game as game
+            from renpy import game
 
             iface = getattr(game, "interface", None)
-        except Exception:
+        except Exception:  # noqa: BLE001
             iface = None
 
     if iface is None:
@@ -268,7 +269,7 @@ def interface_ready() -> tuple[bool, str, Any]:
 def script_ready() -> tuple[bool, str]:
     """True when renpy.game.script has been created (post load_script)."""
     try:
-        import renpy.game as game
+        from renpy import game
 
         script = getattr(game, "script", None)
         if script is None:
@@ -280,11 +281,11 @@ def script_ready() -> tuple[bool, str]:
             if v is not None:
                 try:
                     n = len(v)  # type: ignore[arg-type]
-                except Exception:
+                except Exception:  # noqa: BLE001
                     n = True
                 break
         return True, f"script_present:{n}"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, f"script_error:{type(e).__name__}:{e}"
 
 
@@ -301,12 +302,12 @@ def snapshot_context() -> dict:
     }
     try:
         import renpy
-        import renpy.game as game
+        from renpy import game
 
         ctx = None
         try:
             ctx = game.context()
-        except Exception:
+        except Exception:  # noqa: BLE001
             ctxs = getattr(game, "contexts", None) or []
             ctx = ctxs[-1] if ctxs else None
 
@@ -321,7 +322,7 @@ def snapshot_context() -> dict:
                     layers = getattr(sl, "layers", None)
                     if layers is not None:
                         out["scene_layers"] = list(layers) if not isinstance(layers, list) else layers
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
         iface = getattr(getattr(renpy, "display", None), "interface", None)
@@ -330,7 +331,7 @@ def snapshot_context() -> dict:
         if iface is not None:
             out["interaction_counter"] = getattr(iface, "interaction_counter", None)
             out["ticks"] = getattr(iface, "ticks", None)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
@@ -351,7 +352,7 @@ def _resolve_wgpu_draw():
             name = type(draw).__name__
             if name == "WgpuDraw" or getattr(draw, "info", {}).get("renderer") == "wgpu":
                 return draw, f"product:{name}"
-    except Exception as e:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     try:
@@ -365,12 +366,12 @@ def _resolve_wgpu_draw():
 
             vw = int(getattr(renpy.config, "screen_width", vw) or vw)
             vh = int(getattr(renpy.config, "screen_height", vh) or vh)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         if not d.init((vw, vh)):
             return None, "wgpu_init_failed"
         return d, "surrogate:WgpuDraw"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return None, f"wgpu_import:{type(e).__name__}:{e}"
 
 
@@ -383,7 +384,7 @@ def _ensure_interface_started(iface=None):
     """
     try:
         import renpy
-        import renpy.game as game
+        from renpy import game
 
         if iface is None:
             iface = getattr(getattr(renpy, "display", None), "interface", None)
@@ -397,7 +398,7 @@ def _ensure_interface_started(iface=None):
         if draw is None:
             return False, "draw_still_none"
         return True, type(draw).__name__
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, f"{type(e).__name__}:{e}"
 
 
@@ -412,7 +413,7 @@ def _rebuild_product_root(iface=None):
     """
     try:
         import renpy
-        import renpy.game as game
+        from renpy import game
 
         if iface is None:
             iface = getattr(getattr(renpy, "display", None), "interface", None)
@@ -425,7 +426,7 @@ def _rebuild_product_root(iface=None):
         try:
             ctx = game.context()
             sl = getattr(ctx, "scene_lists", None)
-        except Exception:
+        except Exception:  # noqa: BLE001
             sl = None
         if sl is None:
             return None
@@ -445,18 +446,18 @@ def _rebuild_product_root(iface=None):
                 d = None
                 try:
                     d = sl.make_layer(layer, getattr(iface, "layer_properties", {}).get(layer, {}))
-                except Exception:
+                except Exception:  # noqa: BLE001
                     try:
                         d = sl.get_layer(layer)
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         d = None
                 if d is not None:
                     mb.add(d)
             if getattr(mb, "children", None) or getattr(mb, "layers", None) is not None:
                 return mb
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
     return None
 
@@ -470,21 +471,21 @@ def _surrogate_surftree(vw: int = 1280, vh: int = 720):
 
     class _SurrogateModel:
         __slots__ = (
-            "width",
-            "height",
+            "blits",
+            "cached_model",
+            "children",
             "color",
+            "height",
+            "indices",
             "mesh",
             "ndc",
+            "pipeline",
             "shaders",
             "texture",
             "textures",
-            "vertices",
-            "indices",
-            "pipeline",
             "uniforms",
-            "children",
-            "cached_model",
-            "blits",
+            "vertices",
+            "width",
         )
 
         def __init__(self):
@@ -515,7 +516,7 @@ def _rt_exists() -> tuple[bool, int, int]:
         w, hgt, rgba = h.read_game_rt_rgba()
         if w and hgt and rgba is not None and len(rgba) > 0:
             return True, int(w), int(hgt)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return False, 0, 0
 
@@ -580,7 +581,7 @@ def ensure_frame_present(*, force: bool = False) -> dict:
                 if draw2 is not None:
                     draw, draw_src = draw2, draw_src2
                     out["draw_source"] = draw_src
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["interface_start_error"] = f"{type(e).__name__}: {e}"
 
     # --- Attempt 1: product Interface.surftree --------------------------------
@@ -596,7 +597,7 @@ def ensure_frame_present(*, force: bool = False) -> dict:
                     out["product_surftree_error"] = "draw_screen returned but RT absent"
                 else:
                     out["surftree"] = "absent"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out["product_surftree_error"] = f"{type(e).__name__}: {e}"
 
         # --- Attempt 2: product Interface.draw_screen with root widget --------
@@ -625,11 +626,11 @@ def ensure_frame_present(*, force: bool = False) -> dict:
                         draw.draw_screen(root, flip=True)
                         if _verify("product_draw_screen_root", type(root).__name__):
                             return out
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         out["product_interface_error"] = f"{type(e).__name__}: {e}"
                 else:
                     out["product_root"] = "absent"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out["product_interface_error"] = f"{type(e).__name__}: {e}"
 
         # --- Attempt 2b: render_screen from rebuilt root → draw_screen -------
@@ -646,12 +647,12 @@ def ensure_frame_present(*, force: bool = False) -> dict:
                     draw.draw_screen(surftree, flip=True)
                     try:
                         iface.surftree = surftree
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
                     if _verify("product_render_screen", type(surftree).__name__):
                         return out
                     out["product_render_screen_error"] = "draw_screen returned but RT absent"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out["product_render_screen_error"] = f"{type(e).__name__}: {e}"
 
         # --- Attempt 3: surrogate solid tree ----------------------------------
@@ -662,14 +663,14 @@ def ensure_frame_present(*, force: bool = False) -> dict:
 
                 vw = int(getattr(renpy.config, "screen_width", vw) or vw)
                 vh = int(getattr(renpy.config, "screen_height", vh) or vh)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             tree = _surrogate_surftree(int(vw), int(vh))
             draw.draw_screen(tree, flip=True)
             if _verify("surrogate_solid", type(tree).__name__):
                 return out
             out["surrogate_error"] = "draw_screen returned but RT absent"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out["surrogate_error"] = f"{type(e).__name__}: {e}"
             out["traceback"] = traceback.format_exc()
     else:
@@ -683,7 +684,7 @@ def ensure_frame_present(*, force: bool = False) -> dict:
         if _verify("raw_host_present"):
             return out
         out["error"] = (out.get("error") or "") + ";raw_present_no_rt"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"raw_present_failed:{type(e).__name__}:{e}"
 
     if not out.get("error"):
@@ -725,7 +726,7 @@ def try_read_frame(*, ensure_present: bool = True, force_present: bool = False) 
                         soft.append(f"{k}={pres[k]}")
                 if soft:
                     out["present_error"] = ";".join(soft)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out["present_error"] = f"ensure:{type(e).__name__}: {e}"
 
     try:
@@ -739,7 +740,7 @@ def try_read_frame(*, ensure_present: bool = True, force_present: bool = False) 
             # Cheap non-clear probe: any channel non-zero in a sparse sample.
             step = max(1, len(rgba) // 4096)
             out["frame_nonzero"] = any(rgba[i] for i in range(0, len(rgba), step))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["frame_error"] = f"{type(e).__name__}: {e}"
     return out
 
@@ -819,7 +820,7 @@ def smoke_advance(
             w = int(getattr(renpy.config, "screen_width", 1280) or 1280)
             h = int(getattr(renpy.config, "screen_height", 720) or 720)
             x, y = w // 2, h // 2
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         injects.append({"kind": "mouse", **inject_mouse_click(x, y)})
         pump_ms(32)
@@ -852,20 +853,20 @@ def smoke_advance(
     before = result["before"]
     after = result["after"]
     reasons = []
-    if before.get("label") is not None and after.get("label") is not None:
+    if before.get("label") is not None and after.get("label") is not None:  # noqa: SIM102
         if before.get("label") != after.get("label"):
             reasons.append("label_changed")
     if (before.get("interaction_counter") is not None) and (after.get("interaction_counter") is not None):
         try:
             if int(after["interaction_counter"]) > int(before["interaction_counter"]):
                 reasons.append("interaction_counter_up")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     if (before.get("ticks") is not None) and (after.get("ticks") is not None):
         try:
             if int(after["ticks"]) > int(before["ticks"]):
                 reasons.append("ticks_up")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     # Successful injects into a live interface counts as partial progress but
     # NOT "advanced" — advanced requires a context/label/counter change.
@@ -966,9 +967,7 @@ def _is_clearish_rgb(r: int, g: int, b: int, tol: int = NONBLANK_CLEAR_TOL) -> b
         return True
     if rgb == BLACK_RGB:
         return True
-    if rgb == MAGENTA_STUB_RGB:
-        return True
-    return False
+    return rgb == MAGENTA_STUB_RGB
 
 
 def analyze_frame_nonblank(
@@ -1064,7 +1063,7 @@ def analyze_frame_nonblank(
         return out
 
     # Reject known clear / stub colors via mean proximity (full RGB).
-    mean_i = (int(round(mr)), int(round(mg)), int(round(mb)))
+    mean_i = (round(mr), round(mg), round(mb))
     if _rgb_dist(mean_i, GPU_IDLE_CLEAR_RGB) <= clear_tol:
         reasons.append(f"gpu_idle_clear mean={mean_i}")
         out["reject"] = "gpu_idle_clear"
@@ -1121,7 +1120,7 @@ def read_present_ownership() -> dict:
         out["last_product_present"] = bool(h.last_product_present())
         out["product_presents"] = int(h.product_presents())
         out["idle_clears_after_present"] = int(h.idle_clears_after_present())
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
@@ -1152,7 +1151,7 @@ def capture_with_present_ownership(*, force_present: bool = True) -> dict:
         h = _host()
         try:
             h.reset_present_stats()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out["present_error"] = f"reset_present_stats:{type(e).__name__}:{e}"
 
         # Force a product (or fallback) present so counters cover this cycle.
@@ -1173,7 +1172,7 @@ def capture_with_present_ownership(*, force_present: bool = True) -> dict:
             out["frame_bytes"] = len(rgba) if rgba is not None else 0
             out["frame_ok"] = out["frame_bytes"] > 0 and out["frame_w"] > 0 and out["frame_h"] > 0
             out["rgba"] = rgba
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             out["frame_error"] = f"readback:{type(e).__name__}:{e}"
 
         own = read_present_ownership()
@@ -1198,7 +1197,7 @@ def capture_with_present_ownership(*, force_present: bool = True) -> dict:
             out["nonblank_ok"] = False
 
         out["ok"] = bool(out["ownership_ok"] and out["nonblank_ok"] and out["frame_ok"])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         out["frame_error"] = f"{type(e).__name__}: {e}"
         out["ok"] = False
     return out
@@ -1240,7 +1239,7 @@ def stage_first_interact(*, max_secs: float | None = None) -> tuple[bool, list, 
 
     try:
         result = smoke_advance(max_secs=max_secs)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["interact_stage"] = "error"
         extra["interact_error"] = f"{type(e).__name__}: {e}"
         extra["traceback"] = traceback.format_exc()
@@ -1289,30 +1288,30 @@ def stage_first_interact(*, max_secs: float | None = None) -> tuple[bool, list, 
 
 
 __all__ = [
+    "ARENA_RT_CLEAR_RGB",
+    "GPU_IDLE_CLEAR_RGB",
+    "K_ESCAPE",
     "K_RETURN",
     "K_SPACE",
-    "K_ESCAPE",
+    "activate_main_menu_start",
+    "advance_dialogue_pulse",
+    "analyze_frame_nonblank",
+    "capture_with_present_ownership",
+    "drain_events",
+    "ensure_frame_present",
+    "in_main_menu",
     "inject_key_pulse",
     "inject_mouse_click",
     "inject_text",
-    "queue_renpy_event",
-    "advance_dialogue_pulse",
-    "in_main_menu",
-    "activate_main_menu_start",
-    "pump_ms",
-    "drain_events",
     "interface_ready",
-    "script_ready",
-    "snapshot_context",
-    "ensure_frame_present",
-    "try_read_frame",
-    "smoke_advance",
-    "stage_first_interact",
-    "analyze_frame_nonblank",
+    "pump_ms",
+    "queue_renpy_event",
     "read_present_ownership",
-    "capture_with_present_ownership",
-    "GPU_IDLE_CLEAR_RGB",
-    "ARENA_RT_CLEAR_RGB",
+    "script_ready",
+    "smoke_advance",
+    "snapshot_context",
+    "stage_first_interact",
+    "try_read_frame",
 ]
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

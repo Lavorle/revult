@@ -7,6 +7,7 @@ Baseline: testcases/wgpu_golden/G08_mask/baseline.rgba
 
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:

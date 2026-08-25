@@ -14,6 +14,7 @@ Proves:
 import os
 import sys
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -37,11 +38,11 @@ def _safe_write(msg):
     data = (msg if msg.endswith("\n") else msg + "\n").encode("utf-8", "replace")
     try:
         os.write(1, data)
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             sys.__stdout__.write(msg if msg.endswith("\n") else msg + "\n")
             sys.__stdout__.flush()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -78,7 +79,7 @@ except ComposerError as e:
     ok = False
     notes.append(f"FAIL: composer.get raised ComposerError: {e}")
     result = None
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
     notes.append(f"FAIL: composer.get {type(e).__name__}: {e}")
     result = None
@@ -163,11 +164,11 @@ if result is not None and int(result.pipeline) > 0:
                 notes.append("FAIL: RT is essentially black after composed draw")
             else:
                 notes.append("draw_non_black=True")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         ok = False
         notes.append(f"FAIL: draw {type(e).__name__}: {e}")
 
-msg = "gate=composer_get_basic\nok=%s\n%s\n" % (
+msg = "gate=composer_get_basic\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

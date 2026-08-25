@@ -1,5 +1,8 @@
 """Dump product surftree after load_all_textures + RT stats. Gate: tq_visual_diag"""
-import os, sys, time, types, traceback
+import os
+import sys
+import traceback
+import types
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -24,6 +27,7 @@ def log(m):
 
 # bootstrap like tq_main_menu_frame
 import bootstrap as boot
+
 good, miss, err, extra = boot.stage_import_renpy()
 log(f"import_renpy good={good} err={err}")
 good, miss, err, extra = boot.stage_import_all()
@@ -31,7 +35,9 @@ log(f"import_all good={good} err={err}")
 good, miss, err, extra = boot.stage_set_game_dir(game if (game / "game").is_dir() else base)
 log(f"set_game_dir good={good}")
 
-import renpy, renpy_host
+import renpy_host
+
+import renpy
 from renpy.wgpu import draw as wdraw
 
 # uguu stubs
@@ -47,17 +53,17 @@ try:
     for _name in dir(_uguu):
         if not _name.startswith("_"):
             setattr(pkg, _name, getattr(_uguu, _name))
-    setattr(pkg, "uguu", _uguu)
-    setattr(pkg, "gl", _uguu)
+    pkg.uguu = _uguu
+    pkg.gl = _uguu
     log("uguu ok")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     log(f"uguu fail {e}")
 
 try:
     import renpy_ecsign_host as _ec
     sys.modules["renpy.common.ecsign"] = _ec
     log("ecsign ok")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     log(f"ecsign fail {e}")
 
 class HostStop(BaseException):
@@ -140,7 +146,7 @@ def hooked(self, surftree, flip=True):
                     log(f"RT #{n}: {w}x{h} mean=({mr:.1f},{mg:.1f},{mb:.1f}) nonclear_samples={non}")
                 else:
                     log(f"RT empty #{n}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 log(f"RT fail {e}")
             return rv
         return _orig(self, surftree, flip=flip)
@@ -150,7 +156,8 @@ def hooked(self, surftree, flip=True):
 
 wdraw.WgpuDraw.draw_screen = hooked
 
-import renpy.display.core as core
+from renpy.display import core
+
 _orig_i = core.Interface.interact
 _ic = {"n": 0}
 
@@ -180,7 +187,7 @@ except HostStop as hs:
     log(f"HostStop {hs.stage} {hs.detail}")
 except SystemExit as se:
     log(f"SystemExit {se}")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     log(f"main fail {type(e).__name__}: {e}")
     log(traceback.format_exc()[-1500:])
 

@@ -1,9 +1,11 @@
 """Simulate main_menu overlay: full 1280x720 tex, opaque left 280, reverse oversample."""
 import os
 from pathlib import Path
+
 import renpy_host
 from renpy.pygame.surface import Surface
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
 try:
@@ -76,7 +78,7 @@ try:
     draw.draw_screen(root, flip=True)
     w,h,rgba = renpy_host.read_game_rt_rgba()
     mL = left_mean(rgba,w,h); mC = scenic_mean(rgba,w,h)
-    lines.append("A identity left=%s center=%s" % (tuple(round(x,1) for x in mL), tuple(round(x,1) for x in mC)))
+    lines.append(f"A identity left={tuple(round(x,1) for x in mL)} center={tuple(round(x,1) for x in mC)}")
     # left should be darker than center
     if sum(mL)/3 >= sum(mC)/3 - 10:
         ok=False; lines.append("FAIL A left not darker")
@@ -91,20 +93,19 @@ try:
     img2.blit(tex, 0, 0)  # full 1280 tex, reverse scale-down
     root2.blit(img2, 0, 0)
     dest = draw._reverse_dest_size(img2, tex, (VW, VH))
-    lines.append("B dest=%s (expect full %dx%d)" % (dest, VW, VH))
+    lines.append("B dest=%s (expect full %dx%d)" % (dest, VW, VH))  # noqa: UP031
     if dest != (VW, VH):
         ok=False; lines.append("FAIL B dest")
     draw.draw_screen(root2, flip=True)
     w,h,rgba = renpy_host.read_game_rt_rgba()
     mL = left_mean(rgba,w,h); mC = scenic_mean(rgba,w,h)
-    lines.append("B reverse left=%s center=%s" % (tuple(round(x,1) for x in mL), tuple(round(x,1) for x in mC)))
+    lines.append(f"B reverse left={tuple(round(x,1) for x in mL)} center={tuple(round(x,1) for x in mC)}")
     if sum(mL)/3 >= sum(mC)/3 - 10:
         ok=False; lines.append("FAIL B left not darker (overlay incomplete)")
     else:
         lines.append("PASS B")
 
     # Case C: typewriter partial still partial
-    from renpy.wgpu.draw import HostTexture as HT
     # reuse full white line
     s = Surface((600, 72)); s.fill((255,255,255,255))
     full = draw.load_texture(s)
@@ -112,19 +113,19 @@ try:
     sub = full.subsurface((0,0,150,72))
     parent.blit(sub, 0, 0)
     destc = draw._reverse_dest_size(parent, sub, (400, 48))
-    lines.append("C tw dest=%s expect ~100x48" % (destc,))
+    lines.append(f"C tw dest={destc} expect ~100x48")
     if abs(destc[0]-100)>2:
         ok=False; lines.append("FAIL C")
     else:
         lines.append("PASS C")
 
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok=False
     import traceback
-    lines.append("EXCEPTION %r" % e)
+    lines.append(f"EXCEPTION {e!r}")
     lines.append(traceback.format_exc())
 
-body = ("ok=%s\n" % ok) + "\n".join(lines) + "\n"
+body = (f"ok={ok}\n") + "\n".join(lines) + "\n"
 out.write_text(body)
 print(body)
 renpy_host.request_quit()

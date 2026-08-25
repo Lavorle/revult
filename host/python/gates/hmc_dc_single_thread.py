@@ -4,8 +4,13 @@ Runs inside interact_core via interact_callbacks so no second force-redraw
 thread races MultiBox children. Opens preferences kinds and samples RT +
 surftree after the product draw.
 """
-import os, sys, threading, time, traceback
+import os
+import sys
+import threading
+import time
+import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -19,15 +24,15 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[dc_st] %s\n" % m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[dc_st] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_dc_single_thread.log", "a").write(m + "\n")
+    open("/tmp/hmc_dc_single_thread.log", "a").write(m + "\n")  # noqa: SIM115
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()
-    except Exception:
+        import renpy_host; renpy_host.request_quit()  # noqa: I001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _clear_falsey(n):
@@ -38,12 +43,15 @@ def _clear_falsey(n):
 def _pre():
     import types
     try:
-        import renpy.audio.renpysound_host as h, renpy.audio as a
+        import renpy.audio as a
+        import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"] = h; a.renpysound = h
-    except Exception as e:
-        _log("sound %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"sound {e}")
     try:
-        import host_pygame, host_pygame.locals as loc, host_pygame.scrap as scrap
+        import host_pygame
+        import host_pygame.locals as loc
+        from host_pygame import scrap
         if not hasattr(host_pygame, "constants"):
             host_pygame.constants = loc
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
@@ -53,11 +61,11 @@ def _pre():
         if not hasattr(rpg, "constants"):
             rpg.constants = host_pygame.constants
         try: rpg.scrap = scrap
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
         try: rpg.import_as_pygame()
-        except Exception: pass
-    except Exception as e:
-        _log("pygame %s" % e)
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"] = u; sys.modules["renpy.uguu.gl"] = u
@@ -67,15 +75,15 @@ def _pre():
             if n.startswith("GL_") or n in ("clear_errors", "get_error"):
                 setattr(pkg, n, getattr(u, n))
         pkg.uguu = u; pkg.gl = u
-        import renpy; renpy.uguu = pkg
-    except Exception as e:
-        _log("uguu %s" % e)
+        import renpy; renpy.uguu = pkg  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"] = e
-        import renpy; renpy.ecsign = e
-    except Exception as e:
-        _log("ecsign %s" % e)
+        import renpy; renpy.ecsign = e  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign {e}")
 
 _STATE = {
     "phase": "wait_menu",
@@ -134,7 +142,7 @@ def _count_bg(st):
                     try:
                         import renpy_host
                         bg_alive = bool(renpy_host.texture_alive(int(node.handle)))
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         bg_alive = "?"
             if (w, h) == (1920, 1080):
                 n1920 += 1
@@ -154,20 +162,20 @@ def _count_bg(st):
                         cw = getattr(child, "width", None) or getattr(child, "w", None)
                         chh = getattr(child, "height", None) or getattr(child, "h", None)
                         walk.layout_kids.append((type(child).__name__, cw, chh, len(getattr(child, "children", None) or [])))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             for c in getattr(node, "children", None) or []:
                 child = c[0] if isinstance(c, (list, tuple)) else c
                 walk(child, depth + 1)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         for attr in ("cached_texture", "cached_model"):
             try:
                 v = getattr(node, attr, None)
                 if v is not None:
                     walk(v, depth + 1)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
     walk.layout_nch = None
     walk.layout_kids = None
@@ -196,25 +204,25 @@ def _callback():
             # hide then show
             try:
                 renpy.display.screen.hide_screen("preferences")
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             for n in ("dialog_config_1", "dialog_config_2", "confirm"):
                 try:
                     renpy.display.screen.hide_screen(n)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             renpy.display.screen.show_screen("preferences", kind=kind)
             try:
                 renpy.exports.restart_interaction()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 try:
                     renpy.game.interface.restart_interaction = True
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             _STATE["phase"] = "hold"
             _STATE["frames_on_kind"] = 0
             _STATE["current_kind"] = kind
-            _log("opened %s" % kind)
+            _log(f"opened {kind}")
             return
 
         if _STATE["phase"] == "hold":
@@ -243,21 +251,21 @@ def _callback():
                             stl = d.style
                             if stl["xsize"] == 1849 or stl["ysize"] == 846:
                                 return d
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110
                             pass
                         try:
                             for c in d.visit() or []:
                                 r = find_f(c, depth + 1)
                                 if r is not None:
                                     return r
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110
                             pass
                         try:
                             for c in list(getattr(d, "children", None) or [])[:20]:
                                 r = find_f(c, depth + 1)
                                 if r is not None:
                                     return r
-                        except Exception:
+                        except Exception:  # noqa: BLE001, S110
                             pass
                         return None
                     f = find_f(scr)
@@ -268,10 +276,10 @@ def _callback():
                         for c in ch[:6]:
                             try:
                                 fixed_kids.append(type(c).__name__ + ":" + repr(c)[:60])
-                            except Exception:
+                            except Exception:  # noqa: BLE001
                                 fixed_kids.append("?")
-            except Exception as e:
-                fixed_kids = ["err:%s" % e]
+            except Exception as e:  # noqa: BLE001
+                fixed_kids = [f"err:{e}"]
 
             panel = _sample_panel()
             rec = {
@@ -289,11 +297,10 @@ def _callback():
             pmean = tuple(round(x, 1) for x in panel["panel"]) if panel else None
             pdark = round(panel["panel_dark"], 3) if panel else None
             fmean = tuple(round(x, 1) for x in panel["full"]) if panel else None
-            line = "RESULT kind=%s n1849=%s n1920=%s bg_alive=%s layout_nch=%s fixed_nch=%s panel=%s dark=%s full=%s kids=%s" % (
-                kind, n1849, n1920, bg_alive, layout_nch, fixed_nch, pmean, pdark, fmean, layout_kids)
+            line = f"RESULT kind={kind} n1849={n1849} n1920={n1920} bg_alive={bg_alive} layout_nch={layout_nch} fixed_nch={fixed_nch} panel={pmean} dark={pdark} full={fmean} kids={layout_kids}"
             _STATE["lines"].append(line)
             _log(line)
-            _STATE["lines"].append("  fixed_kids=%s" % fixed_kids)
+            _STATE["lines"].append(f"  fixed_kids={fixed_kids}")
 
             _STATE["ki"] += 1
             _STATE["phase"] = "open"
@@ -310,12 +317,12 @@ def _callback():
                     n1849 = r.get("n1849") or 0
                     if dark > 0.5 or n1849 < 1:
                         ok = False
-            _STATE["lines"].append("ok=%s" % ok)
+            _STATE["lines"].append(f"ok={ok}")
             out.write_text("\n".join(_STATE["lines"]) + "\n")
-            _log("wrote %s ok=%s" % (out, ok))
+            _log(f"wrote {out} ok={ok}")
             _STATE["done"] = True
             _quit()
-    except Exception:
+    except Exception:  # noqa: BLE001
         tb = traceback.format_exc()
         _log(tb)
         _STATE["lines"].append(tb)
@@ -347,23 +354,23 @@ def main():
     for p in (str(base / "host" / "python" / "gates"), str(base / "host" / "python")):
         if p not in sys.path:
             sys.path.insert(0, p)
-    open("/tmp/hmc_dc_single_thread.log", "w").write("start\n")
-    import renpy_host, bootstrap as boot
+    open("/tmp/hmc_dc_single_thread.log", "w").write("start\n")  # noqa: SIM115
+    import bootstrap as boot
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        _log("stage %s good=%s err=%r" % (name, good, err))
+        good, _miss, err, _extra = call()
+        _log(f"stage {name} good={good} err={err!r}")
         if not good:
             _quit(); return
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)
-    except Exception as e:
-        _log("main_host %s" % e)
+        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"main_host {e}")
     try:
         import renpy.arguments
         basedir = getattr(renpy.config, "basedir", None) or game
@@ -373,31 +380,31 @@ def main():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:
-        _log("args %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"args {e}")
     _pre()
     # Install callback on main thread path
     try:
         renpy.config.interact_callbacks.append(_callback)
         _log("interact_callback installed")
-    except Exception as e:
-        _log("callback install fail %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"callback install fail {e}")
     threading.Thread(target=_worker_watchdog, daemon=True).start()
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:
-        _log("main exit %s" % e)
+    except BaseException as e:  # noqa: BLE001
+        _log(f"main exit {e}")
 
 if __name__ == "__main__":
     main()
 else:
     try:
         main()
-    except Exception:
+    except Exception:  # noqa: BLE001
         traceback.print_exc()
         _quit()
 

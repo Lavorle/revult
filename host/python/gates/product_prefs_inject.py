@@ -31,13 +31,13 @@ def _base():
 
 def _log(msg):
     try:
-        sys.__stdout__.write("[product-prefs-inject] %s\n" % msg)
+        sys.__stdout__.write(f"[product-prefs-inject] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        open("/tmp/product-prefs-inject.log", "a").write(msg + "\n")
-    except Exception:
+        open("/tmp/product-prefs-inject.log", "a").write(msg + "\n")  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -46,21 +46,21 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
 def _pre_main_host_stubs():
     """Minimal copy of product._pre_main_host_stubs (avoid importing product.py)."""
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:
-        _log("renpysound soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"renpysound soft-fail: {e}")
     try:
         import renpy_uguu_host as _uguu
 
@@ -70,18 +70,18 @@ def _pre_main_host_stubs():
             import renpy
 
             renpy.uguu = _uguu
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _log("uguu stub")
-    except Exception as e:
-        _log("uguu soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu soft-fail: {e}")
     try:
         import renpy_ecsign_host as _ecsign
 
         sys.modules["renpy.ecsign"] = _ecsign
         _log("ecsign stub")
-    except Exception as e:
-        _log("ecsign soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign soft-fail: {e}")
 
 
 def run():
@@ -104,18 +104,18 @@ def run():
     if gates not in sys.path:
         sys.path.insert(0, gates)
 
-    import renpy_host  # type: ignore
     import bootstrap as boot
+    import renpy_host  # type: ignore
 
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        rec("stage %s good=%s err=%r" % (name, good, err))
+        good, _miss, err, _extra = call()
+        rec(f"stage {name} good={good} err={err!r}")
         if not good:
-            out.write_text("ok=False\nerror=%s\n" % err)
+            out.write_text(f"ok=False\nerror={err}\n")
             _request_quit()
             return
 
@@ -124,15 +124,15 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     try:
         import renpy_main_host
 
         renpy_main_host.install(renpy)
-    except Exception as e:
-        rec("main_host: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        rec(f"main_host: {e}")
 
     try:
         import renpy.arguments
@@ -144,13 +144,13 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
-        rec("args command=%s" % getattr(args, "command", None))
-    except Exception as e:
-        rec("args fail: %s" % e)
+        rec("args command={}".format(getattr(args, "command", None)))
+    except Exception as e:  # noqa: BLE001
+        rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
     _pre_main_host_stubs()
@@ -179,20 +179,20 @@ def run():
                     scr = None
                     try:
                         scr = renpy.display.screen.get_screen("preferences")
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
                     mm = getattr(renpy.store, "main_menu", None)
                     if i % 3 == 0:
-                        rec("pulse#%d prefs_screen=%r main_menu=%r" % (i, scr is not None, mm))
+                        rec("pulse#%d prefs_screen=%r main_menu=%r" % (i, scr is not None, mm))  # noqa: UP031
                     if scr is not None:
-                        rec("Preferences opened at pulse#%d" % i)
+                        rec("Preferences opened at pulse#%d" % i)  # noqa: UP031
                         state["prefs"] = True
                         break
-                except Exception as e:
-                    rec("status: %s" % e)
+                except Exception as e:  # noqa: BLE001
+                    rec(f"status: {e}")
                 time.sleep(0.2)
-        except Exception as e:
-            rec("inject exc: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            rec(f"inject exc: {e}")
             rec(traceback.format_exc())
         time.sleep(1.5)
         state["phase"] = "quitting"
@@ -207,23 +207,23 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:
-        rec("main exit %s: %s" % (type(e).__name__, e))
+    except BaseException as e:  # noqa: BLE001
+        rec(f"main exit {type(e).__name__}: {e}")
 
     prefs_ok = bool(state.get("prefs"))
     try:
         scr = renpy.display.screen.get_screen("preferences")
         if scr is not None:
             prefs_ok = True
-        rec("prefs_screen=%r prefs_ok=%s" % (scr is not None, prefs_ok))
-    except Exception as e:
-        rec("post-check: %s" % e)
+        rec(f"prefs_screen={scr is not None!r} prefs_ok={prefs_ok}")
+    except Exception as e:  # noqa: BLE001
+        rec(f"post-check: {e}")
 
     ok = bool(prefs_ok)
-    body = ["ok=%s" % ok, "injects=%s" % state["injects"], "phase=%s" % state["phase"], "prefs=%s" % prefs_ok]
+    body = [f"ok={ok}", "injects={}".format(state["injects"]), "phase={}".format(state["phase"]), f"prefs={prefs_ok}"]
     body.extend(lines)
     out.write_text("\n".join(body) + "\n")
-    rec("wrote %s ok=%s" % (out, ok))
+    rec(f"wrote {out} ok={ok}")
     _request_quit()
 
 

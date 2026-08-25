@@ -16,6 +16,7 @@ Note: no from __future__; host run_file prepends imports.
 import os
 import sys
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -37,14 +38,14 @@ try:
     import renpy_display_accelerator_host as _acc  # type: ignore
 
     sys.modules["renpy.display.accelerator"] = _acc
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     notes.append(f"FAIL: import accelerator host: {type(e).__name__}: {e}")
     ok = False
 
 # Minimal renpy.display.transform.uniforms so final_render loops them.
 class _TFMod:
-    uniforms = {"u_animation", "u_transition"}
-    gl_properties = set()
+    uniforms = {"u_animation", "u_transition"}  # noqa: RUF012
+    gl_properties = set()  # noqa: RUF012
 
 
 sys.modules.setdefault(
@@ -166,7 +167,7 @@ def _run_case(name, state_kw, checks):
         else:
             renpy.config.crop_relative_default = True
         rv = rt.render(1920, 1080, 0.0, 0.0)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         notes.append(f"{name}: FAIL render {type(e).__name__}: {e}")
         ok = False
         return
@@ -177,7 +178,7 @@ def _run_case(name, state_kw, checks):
     for label, pred in checks:
         try:
             good = bool(pred(rv, shaders, uniforms))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             good = False
             notes.append(f"{name}.{label}: exc {type(e).__name__}:{e}")
         if not good:

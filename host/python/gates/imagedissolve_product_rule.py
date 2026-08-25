@@ -23,6 +23,7 @@ Hard-timeout friendly: pure draw path, no interact.
 import os
 import sys
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -32,7 +33,8 @@ except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host  # type: ignore
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 _base = Path(os.environ.get("RENPY_HOST_BASE") or str(Path.cwd()))
 out = _base / "host" / "target" / "gate-imagedissolve_product_rule.txt"
@@ -170,7 +172,7 @@ for _ in range(3):
     renpy_host.begin_frame()
     try:
         draw.load_all_textures(root)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         ok = False
         notes.append(f"FAIL: load_all_textures {type(e).__name__}: {e}")
     draw._draw_node(root, 0.0, 0.0)
@@ -204,7 +206,7 @@ if left[2] > 200 and right[2] > 200 and left[0] < 40 and right[0] < 40:
     notes.append("FAIL: hard-cut all blue")
 
 notes.append(f"offset={offset} mult={mult}")
-msg = "gate=imagedissolve_product_rule\nok=%s\n%s\n" % (
+msg = "gate=imagedissolve_product_rule\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

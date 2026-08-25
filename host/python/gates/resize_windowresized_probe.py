@@ -11,8 +11,8 @@ product solid-blue recovery alone (needs product re-present).
 import os
 import traceback
 
-import renpy_host  # type: ignore
 import host_pygame.event as pev  # type: ignore
+import renpy_host  # type: ignore
 from host_pygame.locals import WINDOWRESIZED  # type: ignore
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -83,7 +83,7 @@ def main():
             # Nested pump so winit Resized is delivered.
             try:
                 renpy_host.pump_once(16)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
 
             d = renpy_host.poll_event()
@@ -136,7 +136,7 @@ def main():
         w1, h1 = renpy_host.window_size()
         lines.append(f"NOTE: window_size after={w1}x{h1}")
 
-    except Exception:
+    except Exception:  # noqa: BLE001
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())

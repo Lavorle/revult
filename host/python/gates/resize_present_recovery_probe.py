@@ -16,9 +16,10 @@ import os
 import traceback
 from pathlib import Path
 
-import renpy_host  # type: ignore
 import host_pygame.event as pev  # type: ignore
+import renpy_host  # type: ignore
 from host_pygame.locals import WINDOWRESIZED  # type: ignore
+
 from renpy.wgpu.draw import WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -176,7 +177,7 @@ def main():
         while renpy_host.get_ticks_ms() < deadline:
             try:
                 renpy_host.pump_once(16)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
 
             d = renpy_host.poll_event()
@@ -287,7 +288,7 @@ def main():
         idle_clears = int(renpy_host.idle_clears_after_present())
         lines.append(f"NOTE: idle_clears_after_present={idle_clears}")
 
-    except Exception:
+    except Exception:  # noqa: BLE001
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())

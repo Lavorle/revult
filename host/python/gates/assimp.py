@@ -13,6 +13,7 @@ Note: no `from __future__` — host run_file prepends imports before this source
 import os
 import tempfile
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -22,6 +23,7 @@ except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host
+
 from renpy.wgpu import model as model_mod
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
@@ -88,7 +90,7 @@ try:
     d.draw_model_mesh(mesh_quad, texture=tex)
     renpy_host.end_frame_present()
     wgpu_ok = True
-except Exception as e:  # pragma: no cover - defensive
+except Exception as e:  # pragma: no cover - defensive  # noqa: BLE001
     wgpu_ok = False
     wgpu_err = repr(e)
 else:

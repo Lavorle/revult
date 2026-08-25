@@ -1,9 +1,13 @@
 """diag dissolve dual-draw slots"""
-import os, sys, traceback
+import os
+import sys
+import traceback
 from pathlib import Path
+
 import renpy_host
 from renpy.pygame.surface import Surface
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
 try:
@@ -23,9 +27,9 @@ lines = []
 def rec(m):
     lines.append(str(m))
     try:
-        sys.__stdout__.write("[diag] %s\n" % m)
+        sys.__stdout__.write(f"[diag] {m}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 try:
@@ -45,7 +49,7 @@ try:
     w,h=1280,720
     draw=WgpuDraw(); draw.init((w,h))
     try: draw.physical_size=renpy_host.window_size()
-    except Exception as e: rec("phys: %s"%e)
+    except Exception as e: rec(f"phys: {e}")  # noqa: BLE001
 
     def solid(rgba):
         s=Surface((w,h)); s.fill(rgba); return s
@@ -56,27 +60,27 @@ try:
     root.uniforms={"u_renpy_dissolve":0.5}
     root.blit(old,0,0); root.blit(new,0,0)
 
-    rec("is_dissolve=%s complete=%s" % (draw._is_dissolve_node(root), draw._dissolve_complete(root)))
-    rec("surface_like old=%s new=%s" % (draw._is_surface_like(old), draw._is_surface_like(new)))
+    rec(f"is_dissolve={draw._is_dissolve_node(root)} complete={draw._dissolve_complete(root)}")
+    rec(f"surface_like old={draw._is_surface_like(old)} new={draw._is_surface_like(new)}")
 
     draw.load_all_textures(root)
-    rec("after load cached_model=%s loaded=%s" % (bool(root.cached_model), root.loaded))
+    rec(f"after load cached_model={bool(root.cached_model)} loaded={root.loaded}")
     if root.cached_model is not None:
         cm=root.cached_model
-        rec("cm.shaders=%s uniforms=%s textures=%s" % (
+        rec("cm.shaders={} uniforms={} textures={}".format(
             getattr(cm,"shaders",None), getattr(cm,"uniforms",None),
             len(getattr(cm,"textures",None) or [])))
 
     kids=list(draw._iter_children(root))
-    rec("kids=%d" % len(kids))
+    rec("kids=%d" % len(kids))  # noqa: UP031
     textures=[]
     for i,(c,_,_) in enumerate(kids):
         tex=draw._child_to_texture(c)
-        rec(" child%d type=%s tex=%s handle=%s size=%s" % (
+        rec(" child%d type=%s tex=%s handle=%s size=%s" % (  # noqa: UP031
             i, type(c).__name__, type(tex).__name__ if tex else None,
             getattr(tex,"handle",None), (getattr(tex,"w",None), getattr(tex,"h",None))))
         if tex is not None: textures.append(tex)
-    rec("textures=%d" % len(textures))
+    rec("textures=%d" % len(textures))  # noqa: UP031
 
     def mean_rt():
         rw,rh,rgba=renpy_host.read_game_rt_rgba()
@@ -92,25 +96,25 @@ try:
         renpy_host.draw_model(pipe, int(m), textures[0].handle, textures[1].handle, [0.5]+[0.0]*15)
         renpy_host.end_frame_present()
         mr=mean_rt()
-        rec("DIRECT dual mean=(%.1f,%.1f,%.1f) pipe=%s handles=%s,%s" % (mr[0],mr[1],mr[2],pipe,textures[0].handle,textures[1].handle))
+        rec(f"DIRECT dual mean=({mr[0]:.1f},{mr[1]:.1f},{mr[2]:.1f}) pipe={pipe} handles={textures[0].handle},{textures[1].handle}")
         # also amount 0 and 1
         renpy_host.begin_frame()
         renpy_host.draw_model(pipe, int(m), textures[0].handle, textures[1].handle, [0.0]+[0.0]*15)
         renpy_host.end_frame_present()
-        mr=mean_rt(); rec("DIRECT amount0 mean=(%.1f,%.1f,%.1f)"%mr)
+        mr=mean_rt(); rec("DIRECT amount0 mean=({:.1f},{:.1f},{:.1f})".format(*mr))
         renpy_host.begin_frame()
         renpy_host.draw_model(pipe, int(m), textures[0].handle, textures[1].handle, [1.0]+[0.0]*15)
         renpy_host.end_frame_present()
-        mr=mean_rt(); rec("DIRECT amount1 mean=(%.1f,%.1f,%.1f)"%mr)
+        mr=mean_rt(); rec("DIRECT amount1 mean=({:.1f},{:.1f},{:.1f})".format(*mr))
 
     if len(textures)>=2:
         leaf=draw._make_model_leaf(w,h,textures[:2],shaders=("renpy.dissolve",),uniforms={"u_renpy_dissolve":0.5})
-        rec("leaf.textures len=%s shaders=%s uniforms=%s" % (len(leaf.textures or []), leaf.shaders, leaf.uniforms))
+        rec(f"leaf.textures len={len(leaf.textures or [])} shaders={leaf.shaders} uniforms={leaf.uniforms}")
         draw.draw_screen(leaf, flip=True)
-        mr=mean_rt(); rec("LEAF mean=(%.1f,%.1f,%.1f)"%mr)
+        mr=mean_rt(); rec("LEAF mean=({:.1f},{:.1f},{:.1f})".format(*mr))
 
     draw.draw_screen(root, flip=True)
-    mr=mean_rt(); rec("ROOT mean=(%.1f,%.1f,%.1f)"%mr)
+    mr=mean_rt(); rec("ROOT mean=({:.1f},{:.1f},{:.1f})".format(*mr))
 
     def ht_count(n, budget=None):
         if budget is None: budget=[120]
@@ -124,15 +128,15 @@ try:
             if total>8: return total
         return total
     if kids:
-        rec("ht_count old=%s new=%s" % (ht_count(kids[0][0]), ht_count(kids[-1][0])))
-except Exception as e:
-    rec("EXC %s"%e)
+        rec(f"ht_count old={ht_count(kids[0][0])} new={ht_count(kids[-1][0])}")
+except Exception as e:  # noqa: BLE001
+    rec(f"EXC {e}")
     rec(traceback.format_exc())
 
 out.write_text("\n".join(lines)+"\n")
 try:
-    sys.__stdout__.write("WROTE %s\n"%out); sys.__stdout__.flush()
-except Exception:
+    sys.__stdout__.write(f"WROTE {out}\n"); sys.__stdout__.flush()
+except Exception:  # noqa: BLE001, S110
     pass
 
 # ----------------------------------------------------------------------

@@ -19,6 +19,7 @@ Note: no from __future__; host run_file prepends imports.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -42,8 +43,8 @@ ok = True
 def log(msg):
     lines.append(msg)
     try:
-        os.write(1, ("[splash_cover_fit] %s\n" % msg).encode("utf-8", "replace"))
-    except Exception:
+        os.write(1, (f"[splash_cover_fit] {msg}\n").encode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -142,12 +143,10 @@ class FakeTransform:
 
 try:
     # --- Unit: fit cover math via RenderTransform ----------------------------
+
     from renpy_display_accelerator_host import RenderTransform
 
     # Patch renpy.display.render.render used inside RenderTransform to call child.render
-    import renpy  # type: ignore
-    import types
-    import sys
 
     # Ensure display.accelerator module is our host one (host already aliases it).
     child = FakeChild(3840, 2160)
@@ -158,17 +157,17 @@ try:
 
     rw = float(getattr(rv, "width", -1))
     rh = float(getattr(rv, "height", -1))
-    log("render_size=%.1fx%.1f expect=1920x1080" % (rw, rh))
+    log(f"render_size={rw:.1f}x{rh:.1f} expect=1920x1080")
     if abs(rw - 1920) > 1 or abs(rh - 1080) > 1:
         ok = False
-        log("FAIL cover render size wrong (got %.1fx%.1f)" % (rw, rh))
+        log(f"FAIL cover render size wrong (got {rw:.1f}x{rh:.1f})")
     else:
         log("PASS cover render size")
 
     rev = getattr(rv, "reverse", None) or getattr(t, "reverse", None)
     xdx = float(getattr(rev, "xdx", 1.0) or 1.0) if rev is not None else 1.0
     ydy = float(getattr(rev, "ydy", 1.0) or 1.0) if rev is not None else 1.0
-    log("reverse xdx=%.4f ydy=%.4f expect≈0.5" % (xdx, ydy))
+    log(f"reverse xdx={xdx:.4f} ydy={ydy:.4f} expect≈0.5")
     if abs(xdx - 0.5) > 1e-3 or abs(ydy - 0.5) > 1e-3:
         ok = False
         log("FAIL reverse scale not 0.5 (double-scale or no-scale)")
@@ -182,7 +181,7 @@ try:
     # (dest size path only needs HostTexture size + full UV, not pixel content)
     try:
         handle = renpy_host.create_texture_rgba(4, 4, bytes([255, 0, 0, 255] * 16))
-    except Exception:
+    except Exception:  # noqa: BLE001
         handle = 1
     ht = HostTexture(handle, 3840, 2160)  # full rect by default
     parent = FakeRender(1920, 1080)
@@ -190,7 +189,7 @@ try:
     parent.children = [(ht, 0, 0)]
 
     dw, dh = draw._reverse_dest_size(parent, ht, (1920, 1080))
-    log("reverse_dest=%dx%d expect=1920x1080" % (dw, dh))
+    log("reverse_dest=%dx%d expect=1920x1080" % (dw, dh))  # noqa: UP031
     if dw != 1920 or dh != 1080:
         ok = False
         log("FAIL reverse_dest full 2x under 0.5 not parent box")
@@ -202,7 +201,7 @@ try:
     dw2, dh2 = draw._reverse_dest_size(parent, ht_part, (1920, 1080))
     # child size for partial HostTexture is (w,h)=(400,48) via _node_size path —
     # if resolution fails, may fall back to parent; assert not balloon to full if partial known.
-    log("partial reverse_dest=%dx%d (typewriter must not balloon)" % (dw2, dh2))
+    log("partial reverse_dest=%dx%d (typewriter must not balloon)" % (dw2, dh2))  # noqa: UP031
     # 400*0.5=200, 48*0.5=24 expected when partial detected
     if dw2 == 1920 and dh2 == 1080:
         ok = False
@@ -212,7 +211,7 @@ try:
             log("PASS partial child*scale")
         else:
             ok = False
-            log("FAIL partial dest unexpected %dx%d expect≈200x24" % (dw2, dh2))
+            log("FAIL partial dest unexpected %dx%d expect≈200x24" % (dw2, dh2))  # noqa: UP031
 
     # --- logo@2 reverse dest (main menu automatic oversample) ---------------
     # logo@2.png is 1370×2132; with oversample=2 virtual size is 685×1066 and
@@ -225,7 +224,7 @@ try:
     logo_node.children = [(ht_logo, 0, 0)]
     ldw, ldh = draw._reverse_dest_size(logo_node, ht_logo, (logo_parent_w, logo_parent_h))
     log(
-        "logo@2 reverse_dest=%dx%d expect=%dx%d (not double %dx%d)"
+        "logo@2 reverse_dest=%dx%d expect=%dx%d (not double %dx%d)"  # noqa: UP031
         % (ldw, ldh, logo_parent_w, logo_parent_h, logo_tex_w, logo_tex_h)
     )
     if ldw != logo_parent_w or ldh != logo_parent_h:
@@ -244,7 +243,7 @@ try:
     draw.init((VW, VH))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     surf = Surface((TW, TH))
@@ -273,7 +272,7 @@ try:
     piece.cached_texture = full_tex
 
     dest_draw = draw._reverse_dest_size(piece, full_tex, (VW, VH))
-    log("pixel reverse_dest=%dx%d expect=%dx%d" % (dest_draw[0], dest_draw[1], VW, VH))
+    log("pixel reverse_dest=%dx%d expect=%dx%d" % (dest_draw[0], dest_draw[1], VW, VH))  # noqa: UP031
     if dest_draw != (VW, VH):
         ok = False
         log("FAIL pixel-path reverse_dest not virtual cover box")
@@ -286,9 +285,9 @@ try:
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         ok = False
-        log("FAIL read_game_rt_rgba: %s" % e)
+        log(f"FAIL read_game_rt_rgba: {e}")
         rw = rh = 0
         rgba = b""
 
@@ -310,8 +309,7 @@ try:
         c_bl = _sample(8 * sx, (VH - 9) * sy)
         c_br = _sample((VW - 9) * sx, (VH - 9) * sy)
         log(
-            "pixel samples center=%s tl=%s tr=%s bl=%s br=%s"
-            % (c_c, c_tl, c_tr, c_bl, c_br)
+            f"pixel samples center={c_c} tl={c_tl} tr={c_tr} bl={c_bl} br={c_br}"
         )
         # Cover fill: corners of virtual screen map to corners of 3840 tex.
         center_ok = _near(c_c, (255, 255, 255))
@@ -327,8 +325,7 @@ try:
         # clip to only top-left of texture and TR/BL/BR would be bg or wrong.
         fill_ok = center_ok and tl_ok and tr_ok and bl_ok and br_ok and not_letterbox
         log(
-            "pixel fill center_ok=%s tl=%s tr=%s bl=%s br=%s not_letterbox=%s"
-            % (center_ok, tl_ok, tr_ok, bl_ok, br_ok, not_letterbox)
+            f"pixel fill center_ok={center_ok} tl={tl_ok} tr={tr_ok} bl={bl_ok} br={br_ok} not_letterbox={not_letterbox}"
         )
         if fill_ok:
             log("PASS pixel cover fill 3840→1920 (no double-scale / letterbox)")
@@ -342,22 +339,22 @@ try:
     try:
         if handle and handle > 1:
             renpy_host.destroy_texture(handle)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
-    log("FAIL exception: %s: %s" % (type(e).__name__, e))
+    log(f"FAIL exception: {type(e).__name__}: {e}")
     import traceback
 
     log(traceback.format_exc())
 
-lines.append("ok=%s" % ok)
+lines.append(f"ok={ok}")
 out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-log("WROTE %s ok=%s" % (out, ok))
+log(f"WROTE {out} ok={ok}")
 try:
     renpy_host.request_quit()
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 if not ok:
     raise SystemExit(1)

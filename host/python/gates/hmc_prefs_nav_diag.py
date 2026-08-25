@@ -1,5 +1,9 @@
 """Inline diagnostic via renpy-host gate path."""
-import os, sys, time, threading, traceback
+import os
+import sys
+import threading
+import time
+import traceback
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -18,15 +22,15 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[diag] %s\n" % m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[diag] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_prefs_diag.log","a").write(m+"\n")
+    open("/tmp/hmc_prefs_diag.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()
-    except Exception:
+        import renpy_host; renpy_host.request_quit()  # noqa: I001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def run():
@@ -38,22 +42,23 @@ def run():
     os.environ.setdefault("RENPY_PERFORMANCE_TEST","0")
     gates = str(base/"host/python/gates")
     if gates not in sys.path: sys.path.insert(0, gates)
-    import renpy_host, bootstrap as boot
+    import bootstrap as boot
+    import renpy_host
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        _log("stage %s %s %s" % (name, good, err))
+        good, _miss, err, _extra = call()
+        _log(f"stage {name} {good} {err}")
         if not good:
             _quit(); return
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)
-    except Exception as e:
-        _log("main_host %s"%e)
+        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"main_host {e}")
     import renpy.arguments
     basedir = str(base/"host/playtests/HuangmeiC")
     sys.argv = [sys.argv[0] if sys.argv else "renpy-host", basedir, "run"]
@@ -61,31 +66,32 @@ def run():
         if not getattr(renpy.arguments, "commands", None):
             renpy.arguments.register_command("run", renpy.arguments.run, True)
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:
-        _log("args %s"%e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"args {e}")
     # stubs
     try:
         import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h
         renpy.audio.renpysound=h
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
     try:
-        import host_pygame, host_pygame.locals as loc, host_pygame.scrap as scrap
+        import host_pygame
+        import host_pygame.locals as loc
         if not hasattr(host_pygame,"constants"): host_pygame.constants=loc
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.import_as_pygame()
-        except Exception: pass
-    except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception: pass  # noqa: BLE001, S110
 
     def dump_disp(d, depth=0, path="", acc=None, budget=None):
         if acc is None: acc=[]
@@ -102,16 +108,16 @@ def run():
             ua = getattr(st, "u_animation", None)
             ut = getattr(st, "u_transition", None)
             if sh or mc is not None or ua is not None or ut is not None:
-                extra = " shader=%r mc=%s u_anim=%s u_trans=%s" % (sh, type(mc).__name__ if mc is not None else None, ua, ut)
+                extra = f" shader={sh!r} mc={type(mc).__name__ if mc is not None else None} u_anim={ua} u_trans={ut}"
         # Model
         if name == "Model" or "Model" in name:
             texs = getattr(d, "textures", None)
-            extra += " ntex=%s shaders=%s" % (len(texs) if texs else 0, getattr(d,"shaders",None))
+            extra += " ntex={} shaders={}".format(len(texs) if texs else 0, getattr(d,"shaders",None))
         # selected flag on button
         if name == "Button" or name.endswith("Button"):
-            extra += " selected=%s focus=%s" % (getattr(d,"selected",None), getattr(d,"focusable",None))
+            extra += " selected={} focus={}".format(getattr(d,"selected",None), getattr(d,"focusable",None))
         if extra or name in ("Model","Transform","ATLTransform","Button","ImageReference","Image"):
-            acc.append("%s%s %s%s" % ("  "*depth, path, name, extra))
+            acc.append("{}{} {}{}".format("  "*depth, path, name, extra))
         # children
         kids = []
         for attr in ("child","children","offset_children","in_current_store"):
@@ -126,14 +132,14 @@ def run():
                     else:
                         kids.append(it)
         # displayable-specific
-        if hasattr(d, "displayable") and getattr(d,"displayable") is not None:
+        if hasattr(d, "displayable") and d.displayable is not None:
             kids.append(d.displayable)
         # screen displayable
         if hasattr(d, "child") and d.child is not None and d.child not in kids:
             kids.append(d.child)
         for i,k in enumerate(kids):
             if k is not None and k is not d:
-                dump_disp(k, depth+1, path+"/%d"%i, acc, budget)
+                dump_disp(k, depth+1, path+"/%d"%i, acc, budget)  # noqa: UP031
         return acc
 
     def probe():
@@ -142,45 +148,45 @@ def run():
             try:
                 if getattr(renpy.store,"main_menu",None):
                     break
-            except Exception: pass
+            except Exception: pass  # noqa: BLE001, S110
             time.sleep(0.1)
-        _log("main_menu ok models=%s" % getattr(renpy.display.render,"models",None))
+        _log("main_menu ok models={}".format(getattr(renpy.display.render,"models",None)))
         # Check dissolve_transform exists in store
         try:
             dt = getattr(renpy.store, "dissolve_transform", None)
-            _log("store.dissolve_transform=%r type=%s" % (dt, type(dt).__name__ if dt else None))
-        except Exception as e:
-            _log("store.dissolve_transform err %s"%e)
+            _log(f"store.dissolve_transform={dt!r} type={type(dt).__name__ if dt else None}")
+        except Exception as e:  # noqa: BLE001
+            _log(f"store.dissolve_transform err {e}")
         # uniforms registered?
         try:
             import renpy.display.transform as tf
-            _log("transform.uniforms has u_animation=%s u_transition=%s all=%s" % (
-                "u_animation" in tf.uniforms, "u_transition" in tf.uniforms, sorted(list(tf.uniforms))[:30]))
-        except Exception as e:
-            _log("uniforms err %s"%e)
+            _log("transform.uniforms has u_animation={} u_transition={} all={}".format(
+                "u_animation" in tf.uniforms, "u_transition" in tf.uniforms, sorted(tf.uniforms)[:30]))
+        except Exception as e:  # noqa: BLE001
+            _log(f"uniforms err {e}")
         # shader_part
         try:
             from renpy.gl2.gl2shadercache import shader_part
-            _log("shader_part image_dissolve=%s keys_sample=%s" % (
-                "image_dissolve" in shader_part, [k for k in shader_part.keys() if "dissolve" in k or "matrix" in k][:20]))
-        except Exception as e:
-            _log("shader_part err %s"%e)
+            _log("shader_part image_dissolve={} keys_sample={}".format(
+                "image_dissolve" in shader_part, [k for k in shader_part if "dissolve" in k or "matrix" in k][:20]))
+        except Exception as e:  # noqa: BLE001
+            _log(f"shader_part err {e}")
 
         # Show preferences
         try:
             renpy.store.Show("preferences", kind="sound_config")()
             renpy.restart_interaction()
-        except Exception as e:
-            _log("Show fail %s"%e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"Show fail {e}")
             try:
                 renpy.display.screen.show_screen("preferences", kind="sound_config")
-            except Exception as e2:
-                _log("show_screen fail %s"%e2)
+            except Exception as e2:  # noqa: BLE001
+                _log(f"show_screen fail {e2}")
         time.sleep(0.5)
         for _ in range(5):
             try:
                 import interact_helpers as ih
-                ready,why,iface=ih.interface_ready()
+                ready,_why,iface=ih.interface_ready()
                 if ready and iface:
                     root=ih._rebuild_product_root(iface)
                     if root is not None:
@@ -189,8 +195,8 @@ def run():
                         st=renpy.display.render.render_screen(root,w,h)
                         renpy.display.draw.draw_screen(st, flip=True)
                         iface.surftree=st
-            except Exception as e:
-                _log("redraw %s"%e)
+            except Exception as e:  # noqa: BLE001
+                _log(f"redraw {e}")
             time.sleep(0.05)
 
         scr = renpy.display.screen.get_screen("preferences")
@@ -198,18 +204,18 @@ def run():
         # screen scope kind
         try:
             scope = getattr(scr, "scope", None) or {}
-            _log("scope.kind=%r keys=%s" % (scope.get("kind"), list(scope.keys())[:20] if isinstance(scope,dict) else None))
-        except Exception as e:
-            _log("scope err %s"%e)
+            _log("scope.kind={!r} keys={}".format(scope.get("kind"), list(scope.keys())[:20] if isinstance(scope,dict) else None))
+        except Exception as e:  # noqa: BLE001
+            _log(f"scope err {e}")
         try:
             raw = getattr(scr, "raw_child", None) or getattr(scr, "child", None)
             _log("screen.child type=%s" % (type(raw).__name__ if raw else None))
             lines = dump_disp(raw)
             for ln in lines[:120]:
                 _log("D "+ln)
-            _log("displayable dump n=%d" % len(lines))
-        except Exception as e:
-            _log("dump err %s"%e)
+            _log("displayable dump n=%d" % len(lines))  # noqa: UP031
+        except Exception as e:  # noqa: BLE001
+            _log(f"dump err {e}")
             _log(traceback.format_exc())
 
         # Try calling dissolve_transform and rendering it
@@ -219,18 +225,18 @@ def run():
                 new="gui/preferences/common/navigation_selected.png",
                 rule="images/rule/00.png",
             )
-            _log("dt instance type=%s child=%s" % (type(dt).__name__, type(getattr(dt,"child",None)).__name__ if getattr(dt,"child",None) else None))
+            _log("dt instance type={} child={}".format(type(dt).__name__, type(getattr(dt,"child",None)).__name__ if getattr(dt,"child",None) else None))
             st = getattr(dt, "state", None)
-            _log("dt.state shader=%r u_anim=%s u_trans=%s" % (
+            _log("dt.state shader={!r} u_anim={} u_trans={}".format(
                 getattr(st,"shader",None), getattr(st,"u_animation",None), getattr(st,"u_transition",None)))
             # force update
             try:
                 dt._update(0.5, 0.5, 179, 64)
-            except Exception as e:
-                _log("dt._update %s"%e)
+            except Exception as e:  # noqa: BLE001
+                _log(f"dt._update {e}")
             try:
                 rv = renpy.display.render.render(dt, 179, 64, 0.5, 0.5)
-                _log("dt.render type=%s size=%s shaders=%s uniforms=%s mesh=%s children=%s" % (
+                _log("dt.render type={} size={} shaders={} uniforms={} mesh={} children={}".format(
                     type(rv).__name__,
                     (getattr(rv,"width",None), getattr(rv,"height",None)),
                     getattr(rv,"shaders",None),
@@ -240,23 +246,23 @@ def run():
                 ))
                 # walk children
                 for i,(ch,x,y) in enumerate(getattr(rv,"children",None) or ()):
-                    _log("  child%d type=%s mesh=%s shaders=%s nch=%s at=%s,%s" % (
+                    _log("  child%d type=%s mesh=%s shaders=%s nch=%s at=%s,%s" % (  # noqa: UP031
                         i, type(ch).__name__,
                         type(getattr(ch,"mesh",None)).__name__ if getattr(ch,"mesh",None) is not None else getattr(ch,"mesh",None),
                         getattr(ch,"shaders",None),
                         len(getattr(ch,"children",None) or ()),
                         x,y))
-            except Exception as e:
-                _log("dt.render FAIL %s"%e)
+            except Exception as e:  # noqa: BLE001
+                _log(f"dt.render FAIL {e}")
                 _log(traceback.format_exc())
-        except Exception as e:
-            _log("dt call FAIL %s"%e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"dt call FAIL {e}")
             _log(traceback.format_exc())
 
         # Full RT yellow scan (scale-aware)
         try:
             rw,rh,rt = renpy_host.read_game_rt_rgba()
-            yellow=0; n=0; maxb=0
+            yellow=0; n=0; 
             for y in range(0,rh,2):
                 for x in range(0,rw,2):
                     o=(y*rw+x)*4
@@ -265,7 +271,7 @@ def run():
                     n+=1
                     if r>180 and g>140 and b<90:
                         yellow+=1
-            _log("full_rt %dx%d yellow_frac=%.5f yellow=%d n=%d" % (rw,rh, yellow/float(n) if n else -1, yellow, n))
+            _log("full_rt %dx%d yellow_frac=%.5f yellow=%d n=%d" % (rw,rh, yellow/float(n) if n else -1, yellow, n))  # noqa: UP031
             # sample scaled tab0 (image_config is default selected if kind failed)
             sx,sy = rw/1920.0, rh/1080.0
             for ti, name in enumerate(["image_config","game_config_1","text_config","sound_config"]):
@@ -279,12 +285,12 @@ def run():
                         if a<40: continue
                         ns+=1; rs+=r; gs+=g; bs+=b
                         if r>180 and g>140 and b<90: ys+=1
-                _log("tab[%s] mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d rect=%s" % (
+                _log("tab[%s] mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d rect=%s" % (  # noqa: UP031
                     name,
                     rs/ns if ns else 0, gs/ns if ns else 0, bs/ns if ns else 0,
                     ys/float(ns) if ns else -1, ns, (x0,y0,x1,y1)))
-        except Exception as e:
-            _log("rt scan %s"%e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"rt scan {e}")
 
         time.sleep(0.2)
         _quit()
@@ -293,8 +299,8 @@ def run():
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:
-        _log("main exit %s"%e)
+    except BaseException as e:  # noqa: BLE001
+        _log(f"main exit {e}")
 
 if __name__=="__main__":
     run()

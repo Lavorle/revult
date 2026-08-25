@@ -13,6 +13,7 @@ Writes host/target/gate-is_pixel_opaque_probe.txt with ok=True/False.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -22,6 +23,7 @@ except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host
+
 from renpy.wgpu.draw import WgpuDraw
 
 
@@ -83,7 +85,7 @@ if c_trans is not False:
 only_what = draw.is_pixel_opaque(empty)
 notes.append(f"signature_only_what={only_what}")
 
-msg = "gate=is_pixel_opaque_probe\nok=%s\n%s\n" % (
+msg = "gate=is_pixel_opaque_probe\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

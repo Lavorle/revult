@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
+
 import renpy_host
-from renpy.wgpu.draw import HostTexture, WgpuDraw
+
+from renpy.wgpu.draw import WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
 try:
@@ -42,7 +44,10 @@ class R:
         self.children.append((c,float(x),float(y),False,True))
     def get_size(self): return self.width,self.height
 
-import struct,zlib
+import struct
+import zlib
+
+
 def png_rgba(path):
     data=path.read_bytes(); pos=8; w=h=None; raw=b""; ct=None
     while pos < len(data):
@@ -54,19 +59,20 @@ def png_rgba(path):
             raw+=chunk
         elif typ==b'IEND':
             break
-    rows=zlib.decompress(raw); bpp={2:3,6:4,0:1,4:2}.get(ct,4)
+    zlib.decompress(raw); {2:3,6:4,0:1,4:2}.get(ct,4)
     # only handle RGBA
-    out=bytearray()
-    stride=w*4
-    i=0
+    bytearray()
+    w*4
     # re-decode properly via simple path if already RGBA
     # use gate's decoder by import
     return w,h,None
 
 # import decoder from gate
 import sys
+
 sys.path.insert(0,str(base/"host/python/gates"))
-from hmc_chrome_residual import png_rgba as pr, build_frame, samp, near_bg, BG as BGx
+from hmc_chrome_residual import near_bg, samp
+from hmc_chrome_residual import png_rgba as pr
 
 draw=WgpuDraw(); draw.init((VW,VH))
 rel="flowchart/common/preview_background.png"

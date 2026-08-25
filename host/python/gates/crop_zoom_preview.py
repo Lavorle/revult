@@ -23,6 +23,7 @@ Note: no from __future__; host run_file prepends imports.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -32,6 +33,7 @@ except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host  # type: ignore
+
 from renpy.wgpu.draw import WgpuDraw
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
@@ -107,7 +109,7 @@ def _present(draw, tree):
         draw.draw_screen(tree, flip=True)
         try:
             renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     w, h, rgba = renpy_host.read_game_rt_rgba()
     assert w > 0 and h > 0 and len(rgba) == w * h * 4, (w, h, len(rgba))
@@ -146,8 +148,8 @@ def _build_crop_zoom_tree(draw, vw, vh, slot_x, slot_y, crop_w, crop_h, zoom, sr
     clip.blit(mid, 0, -crop_y)
     clip.blit(overlay, 0, 0)
 
-    zw = max(1, int(round(crop_w * zoom)))
-    zh = max(1, int(round(crop_h * zoom)))
+    zw = max(1, round(crop_w * zoom))
+    zh = max(1, round(crop_h * zoom))
     rev = FakeRender(zw, zh, reverse=_M(zoom, zoom))
     rev.blit(clip, 0, 0)
 
@@ -163,11 +165,11 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     # text_config numbers
-    crop_x, crop_y, crop_w, crop_h = 0, 825, 1920, 255
+    _crop_x, crop_y, crop_w, crop_h = 0, 825, 1920, 255
     zoom = 0.42
     # full_fill child is larger; host intermediate-clip only needs crop band size.
     src_w, src_h = 1920, 1080

@@ -20,6 +20,7 @@ import struct
 import traceback
 import zlib
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -31,7 +32,7 @@ except ImportError:
 import renpy_host  # type: ignore
 
 _base = Path(os.environ.get("RENPY_HOST_BASE") or str(Path.cwd()))
-if not (_base / "renpy").is_dir():
+if not (_base / "renpy").is_dir():  # noqa: SIM102
     # host/ cwd → parent
     if (_base.parent / "renpy").is_dir():
         _base = _base.parent
@@ -50,17 +51,17 @@ def _log(lines, msg):
 def _write(lines, ok, **extra):
     body = list(lines)
     for k, v in extra.items():
-        body.append("%s=%s" % (k, v))
-    body.append("ok=%s" % ok)
+        body.append(f"{k}={v}")
+    body.append(f"ok={ok}")
     text = "\n".join(body) + "\n"
     out.write_text(text)
-    print("[fade_product_solid] WROTE", out, "ok=%s" % ok, flush=True)
+    print("[fade_product_solid] WROTE", out, f"ok={ok}", flush=True)
 
 
 def _request_quit():
     try:
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -83,14 +84,14 @@ def _png_rgba(path):
     pos = 8
     w = h = None
     raw = b""
-    color_type = bit_depth = None
+    color_type = None
     while pos < len(data):
         length = struct.unpack(">I", data[pos : pos + 4])[0]
         ctype = data[pos + 4 : pos + 8]
         chunk = data[pos + 8 : pos + 8 + length]
         pos += 12 + length
         if ctype == b"IHDR":
-            w, h, bit_depth, color_type = struct.unpack(">IIBB", chunk[:10])
+            w, h, _bit_depth, color_type = struct.unpack(">IIBB", chunk[:10])
         elif ctype == b"IDAT":
             raw += chunk
         elif ctype == b"IEND":
@@ -185,19 +186,20 @@ def _luma(m):
 def _bootstrap(lines):
     import bootstrap as boot
 
-    good, miss, err, extra = boot.stage_import_renpy()
-    _log(lines, "import_renpy good=%s err=%s" % (good, err))
+    good, miss, err, extra = boot.stage_import_renpy()  # noqa: RUF059
+    _log(lines, f"import_renpy good={good} err={err}")
     if not good:
-        raise RuntimeError("import_renpy failed: %s" % err)
-    good, miss, err, extra = boot.stage_import_all()
-    _log(lines, "import_all good=%s err=%s missing=%s" % (good, err, miss))
+        raise RuntimeError(f"import_renpy failed: {err}")
+    good, miss, err, _extra = boot.stage_import_all()
+    _log(lines, f"import_all good={good} err={err} missing={miss}")
     if not good:
-        raise RuntimeError("import_all failed: %s" % err)
+        raise RuntimeError(f"import_all failed: {err}")
 
-    import renpy.game as game
     import renpy.display.render as render_mod
     import renpy.style as style_mod
+
     import renpy.display.displayable as disp_mod
+    from renpy import game
 
     render_mod.models = True
     game.less_updates = False
@@ -231,8 +233,8 @@ def _bootstrap(lines):
 
     try:
         render_mod.render_ready()
-    except Exception as e:
-        _log(lines, "render_ready softfail %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(lines, f"render_ready softfail {e}")
 
     return (
         bool(game.less_updates),
@@ -255,8 +257,7 @@ def _sample_fade(draw, f, stages, lines, label):
         stage_means[name] = m
         _log(
             lines,
-            "%s stage=%s st=%.3f complete=%s shaders=%s uniforms=%s mean=(%.1f,%.1f,%.1f)"
-            % (label, name, st, oc, shaders, uniforms, m[0], m[1], m[2]),
+            f"{label} stage={name} st={st:.3f} complete={oc} shaders={shaders} uniforms={uniforms} mean=({m[0]:.1f},{m[1]:.1f},{m[2]:.1f})",
         )
     return stage_means
 
@@ -268,19 +269,19 @@ def main():
         less_updates, models, transitions_pref = _bootstrap(lines)
         _log(
             lines,
-            "less_updates=%s models=%s transitions_pref=%s"
-            % (less_updates, models, transitions_pref),
+            f"less_updates={less_updates} models={models} transitions_pref={transitions_pref}",
         )
 
-        from renpy.display.displayable import Displayable
         from renpy.display.render import Render
-        from renpy.display.transition import Fade, MultipleTransition
+
+        from renpy.display.displayable import Displayable
         from renpy.display.imagelike import Solid
+        from renpy.display.transition import Fade, MultipleTransition
         from renpy.wgpu.draw import WgpuDraw
 
         class ProductImage(Displayable):
             def __init__(self, surf, tag="img"):
-                super(ProductImage, self).__init__()
+                super().__init__()
                 self.surf = surf
                 self.tag = tag
 
@@ -299,20 +300,20 @@ def main():
         try:
             ow, oh, orgba, old_tag = _load_image_rgba(game_dir / "gui" / "main_menu.png")
             old_surf = _fit(VW, VH, ow, oh, orgba)
-        except Exception as e:
-            old_tag = "solid_red_fallback(%s)" % e
+        except Exception as e:  # noqa: BLE001
+            old_tag = f"solid_red_fallback({e})"
             old_surf = _Surf(VW, VH, bytes([220, 40, 40, 255]) * (VW * VH))
         try:
             nw, nh, nrgba, new_tag = _load_image_rgba(
                 game_dir / "images" / "bg lecturehall.jpg"
             )
             new_surf = _fit(VW, VH, nw, nh, nrgba)
-        except Exception as e:
-            new_tag = "solid_blue_fallback(%s)" % e
+        except Exception as e:  # noqa: BLE001
+            new_tag = f"solid_blue_fallback({e})"
             new_surf = _Surf(VW, VH, bytes([40, 40, 220, 255]) * (VW * VH))
 
         used_product = ("fallback" not in old_tag) and ("fallback" not in new_tag)
-        _log(lines, "old=%s new=%s used_product=%s" % (old_tag, new_tag, used_product))
+        _log(lines, f"old={old_tag} new={new_tag} used_product={used_product}")
 
         old = ProductImage(old_surf, old_tag)
         new = ProductImage(new_surf, new_tag)
@@ -324,7 +325,7 @@ def main():
         draw.init((VW, VH))
         try:
             draw.physical_size = renpy_host.window_size()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         # Solid.render needs renpy.display.draw.draw_to_virt
         import renpy.display as renpy_display
@@ -332,9 +333,9 @@ def main():
 
         # Probe A: hold=0 product default timing
         f0 = Fade(0.5, 0.0, 0.5, old_widget=old, new_widget=new, widget=solid_black)
-        _log(lines, "fade0 type=%s delay=%s" % (type(f0).__name__, getattr(f0, "delay", None)))
+        _log(lines, "fade0 type={} delay={}".format(type(f0).__name__, getattr(f0, "delay", None)))
         if not isinstance(f0, MultipleTransition):
-            raise RuntimeError("Fade hold0 not MultipleTransition")
+            raise RuntimeError("Fade hold0 not MultipleTransition")  # noqa: TRY004
 
         stages0 = {
             "st0": 0.0,
@@ -403,23 +404,8 @@ def main():
 
         ok = bool(ac)
         reason = (
-            "hold0: out_darkens=%s boundary_black=%s in_brightens=%s late_ok=%s st0_ok=%s lums=%s; "
-            "hold01: out=%s black=%s in=%s st0=%s lums=%s soft_hold01=%s product=%s solid=True"
-            % (
-                a_out,
-                a_black,
-                a_in,
-                a_late,
-                a_st0,
-                a_lums,
-                b_out,
-                b_black,
-                b_in,
-                b_st0,
-                b_lums,
-                soft_hold01,
-                used_product,
-            )
+            f"hold0: out_darkens={a_out} boundary_black={a_black} in_brightens={a_in} late_ok={a_late} st0_ok={a_st0} lums={a_lums}; "
+            f"hold01: out={b_out} black={b_black} in={b_in} st0={b_st0} lums={b_lums} soft_hold01={soft_hold01} product={used_product} solid=True"
         )
         _log(lines, ("PASS " if ok else "FAIL ") + reason)
 
@@ -435,10 +421,10 @@ def main():
             soft_hold01=soft_hold01,
             reason=reason,
         )
-    except Exception as e:
-        _log(lines, "EXCEPTION %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(lines, f"EXCEPTION {e}")
         _log(lines, traceback.format_exc())
-        _write(lines, False, reason="exception:%s" % e)
+        _write(lines, False, reason=f"exception:{e}")
     finally:
         _request_quit()
 

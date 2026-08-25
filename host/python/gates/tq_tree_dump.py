@@ -1,5 +1,7 @@
 """Wrap tq_main_menu_frame with surftree dump. Gate: tq_tree_dump"""
-import os, sys, traceback
+import os
+import sys
+import traceback
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -25,8 +27,9 @@ def L(m):
     lines.append(str(m))
     print(f"[tq_tree_dump] {m}", flush=True)
 
-import renpy.wgpu.draw as wdraw
 import renpy_host
+
+import renpy.wgpu.draw as wdraw
 
 stats = {"nodes":0,"mesh_true":0,"ht_tex":0,"ht_child":0,"cached_model":0,"size0":0}
 
@@ -51,7 +54,7 @@ def summarize(node, depth=0, acc=None, budget=150):
     try:
         if (not tw or not th) and hasattr(node, "get_size"):
             tw, th = node.get_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     if not tw or not th: stats["size0"] += 1
     tex = getattr(node, "texture", None)
@@ -109,7 +112,7 @@ def hooked(self, surftree, flip=True):
                         non += 1
                 L(f"RT #{n} mean=({mr:.1f},{mg:.1f},{mb:.1f}) nonclear={non}")
             return rv
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             L(f"hook {type(e).__name__}: {e}")
             L(traceback.format_exc()[-1200:])
             return _orig(self, surftree, flip=flip)
@@ -119,11 +122,12 @@ wdraw.WgpuDraw.draw_screen = hooked
 L("hook installed")
 
 import tq_main_menu_frame as tq
+
 try:
     tq.run()
 except SystemExit:
     pass
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     L(f"tq.run fail {e}")
     L(traceback.format_exc()[-1000:])
 
@@ -132,7 +136,7 @@ L(f"wrote {outp} draws={_n['i']}")
 print("ok=diag", flush=True)
 try:
     renpy_host.request_quit()
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 
 # HARNESS MIGRATION (thin wrapper, original logic preserved)

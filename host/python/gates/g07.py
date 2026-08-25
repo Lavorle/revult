@@ -9,7 +9,9 @@ Procedural MVP (no system assimp). Real assimp.pyx remains on SDL tree.
 
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
+
 from renpy.wgpu import model as model_mod
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:

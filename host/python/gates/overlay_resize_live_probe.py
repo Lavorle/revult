@@ -1,5 +1,9 @@
 """Live product: left overlay darkness full-height before/after enlarge."""
-import os, sys, time, threading, traceback
+import os
+import sys
+import threading
+import time
+import traceback
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -23,9 +27,9 @@ os.environ.setdefault("RENPY_PERFORMANCE_TEST", "0")
 os.environ.pop("RENPY_SKIP_MAIN_MENU", None)
 os.environ.pop("RENPY_SKIP_SPLASHSCREEN", None)
 
-import renpy_host
 import bootstrap as boot
 import product as prod
+import renpy_host
 
 lines = []
 ok = True
@@ -55,7 +59,7 @@ def worker():
             try:
                 if bool(getattr(__import__('renpy').store, 'main_menu', False)):
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             time.sleep(0.05)
         time.sleep(0.5)
@@ -64,11 +68,11 @@ def worker():
             renpy_host.pump_once(16)
             time.sleep(0.03)
         w0, h0, rows0 = sample_profile()
-        lines.append("before size=%dx%d" % (w0, h0))
+        lines.append("before size=%dx%d" % (w0, h0))  # noqa: UP031
         for y, m in rows0:
-            lines.append("  y=%d mean=%s" % (y, tuple(round(v,1) for v in m)))
+            lines.append("  y=%d mean=%s" % (y, tuple(round(v,1) for v in m)))  # noqa: UP031
         dark0 = all(sum(m)/3 < 100 for _, m in rows0)
-        lines.append("before_dark_all=%s" % dark0)
+        lines.append(f"before_dark_all={dark0}")
 
         renpy_host.request_window_size(1920, 1080)
         for _ in range(40):
@@ -78,27 +82,27 @@ def worker():
             import renpy
             renpy.game.interface.force_redraw = True
             renpy.exports.restart_interaction()
-        except Exception as e:
-            lines.append("restart %r" % e)
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"restart {e!r}")
         time.sleep(1.0)
         for _ in range(30):
             renpy_host.pump_once(16)
             time.sleep(0.02)
 
         w1, h1, rows1 = sample_profile()
-        lines.append("after size=%dx%d" % (w1, h1))
+        lines.append("after size=%dx%d" % (w1, h1))  # noqa: UP031
         for y, m in rows1:
-            lines.append("  y=%d mean=%s" % (y, tuple(round(v,1) for v in m)))
+            lines.append("  y=%d mean=%s" % (y, tuple(round(v,1) for v in m)))  # noqa: UP031
         dark1 = all(sum(m)/3 < 110 for _, m in rows1)
-        lines.append("after_dark_all=%s" % dark1)
+        lines.append(f"after_dark_all={dark1}")
         size_ok = (w1, h1) != (w0, h0)
-        lines.append("size_changed=%s" % size_ok)
+        lines.append(f"size_changed={size_ok}")
         ok = bool(dark0 and dark1 and size_ok)
         if not dark1:
             lines.append("FAIL overlay not dark full-height after resize")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         ok = False
-        lines.append("EXCEPTION %r" % e)
+        lines.append(f"EXCEPTION {e!r}")
         lines.append(traceback.format_exc())
     finally:
         state["done"] = True
@@ -123,15 +127,15 @@ try:
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:
-        lines.append("main %s" % type(e).__name__)
-except Exception as e:
+    except BaseException as e:  # noqa: BLE001
+        lines.append(f"main {type(e).__name__}")
+except Exception as e:  # noqa: BLE001
     ok = False
-    lines.append("boot EXC %r" % e)
+    lines.append(f"boot EXC {e!r}")
     lines.append(traceback.format_exc())
     prod._request_quit()
 
-body = ("ok=%s\n" % ok) + "\n".join(lines) + "\n"
+body = (f"ok={ok}\n") + "\n".join(lines) + "\n"
 outp = base / "host" / "target" / "gate-overlay_resize_live_probe.txt"
 outp.write_text(body)
 print(body)

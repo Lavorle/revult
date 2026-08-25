@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -28,7 +29,7 @@ if str(_HOST_PY) not in sys.path:
     sys.path.insert(0, str(_HOST_PY))
 
 # Load Surface without importing host_pygame package (it pulls renpy_host).
-import importlib.util  # noqa: E402
+import importlib.util
 
 _surf_spec = importlib.util.spec_from_file_location(
     "host_pygame_surface_gate",
@@ -39,23 +40,24 @@ assert _surf_spec and _surf_spec.loader
 _surf_spec.loader.exec_module(_surf_mod)
 Surface = _surf_mod.Surface  # type: ignore
 
-from renpy_text_ftfont_host import FTFace, FTFont, init as ft_init  # noqa: E402
+from renpy_text_ftfont_host import FTFace, FTFont
+from renpy_text_ftfont_host import init as ft_init
 
 
 class _Glyph:
     """Minimal stand-in for renpy.text.textsupport.Glyph (no renpy import)."""
 
     __slots__ = (
-        "character",
-        "glyph",
         "advance",
-        "width",
         "ascent",
+        "character",
         "descent",
+        "glyph",
         "line_spacing",
+        "width",
         "x",
-        "y",
         "x_offset",
+        "y",
         "y_offset",
     )
 
@@ -102,7 +104,7 @@ def _make_glyphs(font: FTFont, s: str):
                 else:
                     box = font._font.getbbox(ch)
                     adv = float(box[2] - box[0]) if box else adv
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         g.advance = adv
         g.width = adv

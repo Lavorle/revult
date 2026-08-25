@@ -31,8 +31,8 @@ import sys
 import threading
 import time
 import traceback
-import types
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -79,23 +79,23 @@ def _style_default_exists() -> bool:
         import renpy.style as style_mod
 
         styles = getattr(style_mod, "styles", None)
-        if styles is not None:
+        if styles is not None:  # noqa: SIM102
             # Style registry keys are tuples: ('default',) or 'default'.
             if ("default",) in styles or "default" in styles:
                 return True
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        import renpy.store as store
+        from renpy import store
 
         st = getattr(store, "style", None)
         if st is not None:
             try:
                 d = st.default  # may raise if missing
                 return d is not None
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return False
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return False
 
@@ -209,7 +209,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -274,7 +274,7 @@ def prepare_run_args(base: Path, basedir: str | None = None):
         try:
             renpy.arguments.register_command("run", renpy.arguments.run, True)
             renpy.arguments.register_command("quit", renpy.arguments.quit)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             extra["register_command_error"] = f"{type(e).__name__}: {e}"
 
     args = renpy.arguments.bootstrap()
@@ -297,7 +297,7 @@ def probe_main_helpers(base: Path):
 
     try:
         main_mod, have, how = ensure_renpy_main(base)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, ["renpy.__main__"], f"{type(e).__name__}: {e}", extra
 
     extra["renpy.__main__"] = getattr(main_mod, "__name__", str(main_mod))
@@ -347,17 +347,17 @@ def probe_main_helpers(base: Path):
         try:
             saves = main_mod.path_to_saves(gamedir)
             extra["path_to_saves"] = saves
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Soft: save_directory may be unset; still count helper present.
             extra["path_to_saves_error"] = f"{type(e).__name__}: {e}"
             try:
                 saves = main_mod.path_to_saves(gamedir, save_directory="the_question")
                 extra["path_to_saves"] = saves
-            except Exception as e2:
+            except Exception as e2:  # noqa: BLE001
                 missing.append("path_to_saves")
                 return False, missing, f"path_to_saves failed: {e2}", extra
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, missing or ["helpers_runtime"], f"{type(e).__name__}: {e}\n{traceback.format_exc()}", extra
 
     extra["main_helpers"] = "ok"
@@ -381,7 +381,7 @@ def stage_prepare_args(base: Path):
             return False, ["arguments.command"], f"expected command=run, got {cmd!r}", extra
     except SystemExit as e:
         return False, ["arguments"], f"arguments SystemExit: {e}", extra
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, ["arguments"], f"{type(e).__name__}: {e}\n{traceback.format_exc()}", extra
 
     # Confirm renpy.main is importable and main is callable.
@@ -391,7 +391,7 @@ def stage_prepare_args(base: Path):
         extra["renpy.main"] = "imported"
         extra["renpy.main.main"] = callable(getattr(renpy_main, "main", None))
         extra["renpy.main.run"] = callable(getattr(renpy_main, "run", None))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, ["renpy.main"], f"renpy.main not importable: {e}", extra
 
     # logdir + renpy_base (bootstrap sets these before main).
@@ -403,13 +403,13 @@ def stage_prepare_args(base: Path):
         renpy.config.logdir = logdir
         os.makedirs(logdir, 0o777, exist_ok=True)
         extra["logdir"] = logdir
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["logdir_error"] = f"{type(e).__name__}: {e}"
 
     try:
         renpy.importer.init_importer()
         extra["importer"] = "ok"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["importer"] = f"{type(e).__name__}: {e}"
 
     extra["shared.ensure_renpy_main"] = True
@@ -428,8 +428,8 @@ def _install_host_stop_hooks(state: dict) -> None:
     3. Script.load_script → mark script_loaded.
     """
     import renpy
-    import renpy.display.core as core
     import renpy.main as renpy_main
+    from renpy.display import core
 
     OrigInterface = core.Interface
 
@@ -441,7 +441,7 @@ def _install_host_stop_hooks(state: dict) -> None:
             try:
                 draw = getattr(renpy.display, "draw", None)
                 state["draw_type"] = type(draw).__name__ if draw is not None else None
-            except Exception:
+            except Exception:  # noqa: BLE001
                 state["draw_type"] = "?"
 
     core.Interface = HostInterface  # type: ignore[misc,assignment]
@@ -469,7 +469,7 @@ def _install_host_stop_hooks(state: dict) -> None:
                 )
             state["style_default_exists"] = _style_default_exists()
             state["style_default_exists_after_execute"] = state["style_default_exists"]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             state["post_init_probe_error"] = f"{type(e).__name__}: {e}"
 
         # Hard gate: do not product-interact without styles/initcode.
@@ -535,13 +535,13 @@ def _install_host_stop_hooks(state: dict) -> None:
             try:
                 renpy.config.auto_choice_delay = 0.05
                 state["auto_choice_delay"] = 0.05
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             try:
                 renpy.config.skip_delay = 1
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             state["run_entry_prefs_error"] = f"{type(e).__name__}: {e}"
 
         iface = getattr(getattr(renpy, "game", None), "interface", None)
@@ -566,7 +566,7 @@ def _install_host_stop_hooks(state: dict) -> None:
                 before_ctx = ih.snapshot_context()
             else:
                 before_ctx = state.get("interact_before") or {}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             state["interact_snapshot_error"] = f"{type(e).__name__}: {e}"
 
         # Do not zero interact_count on every run restart — N-cap is total product interacts.
@@ -596,7 +596,7 @@ def _install_host_stop_hooks(state: dict) -> None:
                                 state["main_menu_started"] = True
                         except BaseException as je:
                             try:
-                                import renpy.game as game
+                                from renpy import game
 
                                 if isinstance(je, game.CONTROL_EXCEPTIONS):
                                     state["main_menu_started"] = True
@@ -623,10 +623,10 @@ def _install_host_stop_hooks(state: dict) -> None:
                     ) + int(pulse.get("injected") or 0)
                     if pulse.get("error"):
                         state["inject_error"] = pulse["error"]
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     # Re-raise product control exceptions (Start/JumpOut).
                     try:
-                        import renpy.game as game
+                        from renpy import game
 
                         if isinstance(e, game.CONTROL_EXCEPTIONS):
                             raise
@@ -647,7 +647,7 @@ def _install_host_stop_hooks(state: dict) -> None:
             except BaseException as e:
                 # Product control exceptions must not be treated as interact errors.
                 try:
-                    import renpy.game as game
+                    from renpy import game
 
                     if isinstance(e, game.CONTROL_EXCEPTIONS):
                         raise
@@ -672,18 +672,18 @@ def _install_host_stop_hooks(state: dict) -> None:
                         state["frame_presented"] = True
                     if fr.get("error"):
                         state["present_error"] = fr.get("error")
-                except Exception as pe:
+                except Exception as pe:  # noqa: BLE001
                     state["present_error"] = f"{type(pe).__name__}: {pe}"
                 try:
                     import interact_helpers as ih
 
                     after = ih.snapshot_context()
                     state["interact_after"] = after
-                    if before_ctx.get("label") is not None and after.get("label") is not None:
+                    if before_ctx.get("label") is not None and after.get("label") is not None:  # noqa: SIM102
                         if before_ctx.get("label") != after.get("label"):
                             state["advanced"] = True
                             state["advanced_reason"] = "label_changed"
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
                 raise
 
@@ -693,7 +693,7 @@ def _install_host_stop_hooks(state: dict) -> None:
                 after = ih.snapshot_context()
                 state["interact_after"] = after
                 reasons = []
-                if before_ctx.get("label") is not None and after.get("label") is not None:
+                if before_ctx.get("label") is not None and after.get("label") is not None:  # noqa: SIM102
                     if before_ctx.get("label") != after.get("label"):
                         reasons.append("label_changed")
                 bi = before_ctx.get("interaction_counter")
@@ -709,7 +709,7 @@ def _install_host_stop_hooks(state: dict) -> None:
                 if reasons:
                     state["advanced"] = True
                     state["advanced_reason"] = ",".join(reasons)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 state["advance_probe_error"] = f"{type(e).__name__}: {e}"
 
             # Task #34: ensure a product/surrogate present so frame_ok can pass.
@@ -728,7 +728,7 @@ def _install_host_stop_hooks(state: dict) -> None:
                         state["frame_presented"] = True
                     if fr.get("error"):
                         state["present_error"] = fr.get("error")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     state["present_error"] = f"{type(e).__name__}: {e}"
 
             # N-based HostStop only in limited mode. Unlimited exits via
@@ -756,7 +756,7 @@ def _install_host_stop_hooks(state: dict) -> None:
             # Product control flow (Start → JumpOutException) must reach
             # renpy.game.invoke_in_new_context handlers, not become HostStop.
             try:
-                import renpy.game as game
+                from renpy import game
 
                 if isinstance(e, game.CONTROL_EXCEPTIONS):
                     raise
@@ -812,14 +812,14 @@ def _install_host_stop_hooks(state: dict) -> None:
                     state["initcode_len"] = len(getattr(self, "initcode", []) or [])
                     state["initcode_len_after_load"] = state["initcode_len"]
                     state["style_default_exists_after_load"] = _style_default_exists()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     state["load_script_probe_error"] = f"{type(e).__name__}: {e}"
                 return rv
 
             _load_script._host_wrapped = True  # type: ignore[attr-defined]
             script_mod.Script.load_script = _load_script  # type: ignore[assignment]
             state["load_script_wrapped"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         state["load_script_wrap_error"] = f"{type(e).__name__}: {e}"
 
 
@@ -843,7 +843,7 @@ def _start_wall_clock_watchdog(state: dict, max_secs: float, base: Path | None =
             try:
                 state["watchdog_heartbeat"] = time.time()
                 state["watchdog_alive_secs"] = round(max_secs - (deadline - time.time()), 1)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             time.sleep(0.25)
         if state.get("done"):
@@ -853,16 +853,16 @@ def _start_wall_clock_watchdog(state: dict, max_secs: float, base: Path | None =
             import renpy_host
 
             renpy_host.request_quit()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         # Also try product QuitException path if interface exists.
         try:
-            import renpy.game as game
+            from renpy import game
 
             if getattr(game, "interface", None) is not None:
                 # Cannot raise into main thread; set a flag product may poll.
                 state["force_quit"] = True
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         # Partial report — main thread may never reach finally.
         if base is not None and not state.get("watchdog_report_written"):
@@ -897,7 +897,7 @@ def _start_wall_clock_watchdog(state: dict, max_secs: float, base: Path | None =
                     extra={k: v for k, v in extra.items() if v is not None},
                 )
                 state["watchdog_report_written"] = True
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
     t = threading.Thread(target=_watch, name="host-main-watchdog", daemon=True)
@@ -951,27 +951,28 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
                     # 0 = no transitions (preferences.py Preference("transitions", 2))
                     prefs.transitions = 0
                     extra["preferences.transitions"] = 0
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             try:
                 renpy.config.has_music = False
                 renpy.config.main_menu_music = None
                 extra["has_music"] = False
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["performance_test_error"] = f"{type(e).__name__}: {e}"
 
     # Re-assert renpy.__main__ helpers (import_all may have reset pointer).
     try:
         ensure_renpy_main(base)
         extra["path_helpers_reasserted"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, ["renpy.__main__"], f"path helpers reassert failed: {e}", extra
 
     # Re-bind host renpysound + pygame.constants after import_all (attribute form).
     try:
         import sys as _sys
+
         import renpy.audio.renpysound_host as _rs_host
 
         _sys.modules["renpy.audio.renpysound"] = _rs_host
@@ -979,11 +980,12 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
 
         _ra.renpysound = _rs_host
         extra["renpysound_rebound"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["renpysound_rebound"] = f"{type(e).__name__}: {e}"
 
     try:
         import sys as _sys
+
         import host_pygame
         import host_pygame.locals as _loc
 
@@ -996,14 +998,15 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
         if not hasattr(rpg, "constants"):
             rpg.constants = host_pygame.constants
         extra["pygame_constants"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["pygame_constants"] = f"{type(e).__name__}: {e}"
 
     # Force renpy.uguu host stub (SDL Class B; enums only for config.init).
     # Always overwrite — setdefault is wrong if a failed import left a broken entry.
     try:
-        import renpy_uguu_host as _uguu
         import types as _types
+
+        import renpy_uguu_host as _uguu
 
         sys.modules["renpy.uguu.uguu"] = _uguu
         sys.modules["renpy.uguu.gl"] = _uguu
@@ -1016,10 +1019,10 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
         for _name in dir(_uguu):
             if _name.startswith("GL_") or _name in ("clear_errors", "get_error"):
                 setattr(pkg, _name, getattr(_uguu, _name))
-        setattr(pkg, "uguu", _uguu)
-        setattr(pkg, "gl", _uguu)
+        pkg.uguu = _uguu
+        pkg.gl = _uguu
         extra["uguu_stub"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["uguu_stub_error"] = f"{type(e).__name__}: {e}"
 
     # host_pygame.constants alias + pygame.import_as_pygame registration.
@@ -1031,13 +1034,13 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
             rpg.constants = rpg.locals  # type: ignore[attr-defined]
         try:
             rpg.import_as_pygame()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             extra["import_as_pygame_error"] = f"{type(e).__name__}: {e}"
         sys.modules.setdefault(
             "renpy.pygame.constants", getattr(rpg, "constants", rpg.locals)
         )
         extra["pygame.constants"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["pygame.constants_error"] = f"{type(e).__name__}: {e}"
 
     # Ensure renpy.audio.renpysound package attribute is bound (embed may only
@@ -1047,7 +1050,7 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
 
         rs = sys.modules.get("renpy.audio.renpysound")
         if rs is not None and not hasattr(audio_pkg, "renpysound"):
-            setattr(audio_pkg, "renpysound", rs)
+            audio_pkg.renpysound = rs
             extra["renpysound_bound"] = True
         elif hasattr(audio_pkg, "renpysound"):
             extra["renpysound_bound"] = "already"
@@ -1056,11 +1059,11 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
                 import renpy.audio.renpysound_host as _rs_host
 
                 sys.modules["renpy.audio.renpysound"] = _rs_host
-                setattr(audio_pkg, "renpysound", _rs_host)
+                audio_pkg.renpysound = _rs_host
                 extra["renpysound_bound"] = "installed_host"
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 extra["renpysound_error"] = f"{type(e).__name__}: {e}"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["renpysound_bind_error"] = f"{type(e).__name__}: {e}"
 
     # Re-assert host ecsign (OpenSSL 3.x blocks ECDSA+SHA1 in stock .so).
@@ -1072,11 +1075,11 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
         try:
             import renpy as _renpy_pkg
 
-            setattr(_renpy_pkg, "ecsign", _ecsign)
-        except Exception:
+            _renpy_pkg.ecsign = _ecsign
+        except Exception:  # noqa: BLE001, S110
             pass
         extra["ecsign_host"] = getattr(_ecsign, "__file__", "renpy_ecsign_host")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["ecsign_host_error"] = f"{type(e).__name__}: {e}"
 
     state["reached"] = "early_main"
@@ -1098,7 +1101,7 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
         extra["host_stop"] = hs.stage
         extra["host_stop_detail"] = hs.detail
         state["reached"] = hs.stage or state.get("reached") or "run_entered"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # Keep partial progress if we already reached a success stage.
         tb = traceback.format_exc()
         extra["main_error"] = f"{type(e).__name__}: {e}"
@@ -1150,7 +1153,7 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
         extra["style_default_exists"] = _style_default_exists()
         if "style_default_exists" not in state:
             state["style_default_exists"] = extra["style_default_exists"]
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["post_probe_error"] = f"{type(e).__name__}: {e}"
 
     for k in (
@@ -1189,7 +1192,7 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
     if "style_default_exists" not in extra:
         try:
             extra["style_default_exists"] = _style_default_exists()
-        except Exception:
+        except Exception:  # noqa: BLE001
             extra["style_default_exists"] = False
 
     # Promote task #31 report fields from limited interact if present.
@@ -1230,8 +1233,8 @@ def stage_early_main(base: Path, state: dict, budget_remaining: float):
             return (
                 False,
                 ["initcode"] if init_len < 100 else ["style_default"],
-                f"init incomplete after main: initcode_len={init_len} "
-                f"style_default_exists={style_ok}",
+                (f"init incomplete after main: initcode_len={init_len} "
+                f"style_default_exists={style_ok}"),
                 extra,
             )
     if ok:
@@ -1285,7 +1288,7 @@ def stage_first_interact_soft(budget_remaining: float = 5.0, state: dict | None 
                 extra["present_draw_source"] = fr.get("present_draw_source")
             if fr.get("present_error"):
                 extra["present_error"] = fr.get("present_error")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             extra["frame_error"] = f"{type(e).__name__}: {e}"
         return True, [], "", extra
 
@@ -1312,13 +1315,13 @@ def stage_first_interact_soft(budget_remaining: float = 5.0, state: dict | None 
                 extra["present_draw_source"] = fr.get("present_draw_source")
             if fr.get("present_error"):
                 extra["present_error"] = fr.get("present_error")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             extra["frame_error"] = f"{type(e).__name__}: {e}"
         return True, [], extra["interact_reason"], extra
 
     try:
         import interact_helpers as ih
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["interact_stage"] = "import_failed"
         extra["interact_error"] = f"{type(e).__name__}: {e}"
         return False, ["interact_helpers"], f"interact_helpers import failed: {e}", extra
@@ -1335,7 +1338,7 @@ def stage_first_interact_soft(budget_remaining: float = 5.0, state: dict | None 
     max_secs = max(1.0, min(float(budget_remaining), 15.0))
     try:
         ok_adv, miss, err, adv_extra = ih.stage_first_interact(max_secs=max_secs)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         extra["interact_stage"] = "error"
         extra["interact_error"] = f"{type(e).__name__}: {e}"
         extra["traceback"] = traceback.format_exc()
@@ -1568,7 +1571,7 @@ def run() -> None:
         ok = reached in SUCCESS_MAIN_STAGES
         notes_parts.append(f"outer HostStop at {reached}")
         extra_all["host_stop"] = reached
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if not tb:
             tb = traceback.format_exc()
         if not missing:

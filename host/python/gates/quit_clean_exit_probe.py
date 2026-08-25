@@ -19,6 +19,7 @@ Sequence:
 import os
 import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -28,7 +29,6 @@ except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host  # type: ignore
-
 
 # SDL3 / host_pygame QUIT type (host_pygame.locals.QUIT = 0x100)
 QUIT_TYPE = 0x100
@@ -95,7 +95,7 @@ def main():
                 )
             else:
                 note(f"PASS: wait_until returned promptly ({waited}ms < 4500ms)")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Some host builds may raise QuitException / HostStop from wait_until.
             t3 = int(renpy_host.get_ticks_ms())
             waited = t3 - t2
@@ -134,7 +134,7 @@ def main():
         )
         note("path=request_quit → should_exit → wait_until (cooperative Q-A)")
 
-    except Exception:
+    except Exception:  # noqa: BLE001
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())
@@ -148,7 +148,7 @@ def main():
     # Always signal quit so the host process exits even on failure.
     try:
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     if not ok:

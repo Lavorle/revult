@@ -15,6 +15,7 @@ from pathlib import Path
 
 import renpy_host  # type: ignore
 from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -89,7 +90,7 @@ def main():
     draw.init((w, h))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     old = _solid_surface(w, h, (255, 0, 0, 255))
@@ -101,8 +102,8 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[dissolve_blend]", msg, flush=True)
         return
@@ -116,8 +117,7 @@ def main():
     blended = (mr > 40 and mb > 40) and not clear_like
     ok = blended and not hard_red and not hard_blue
     msg = (
-        "ok=%s mean=(%.1f,%.1f,%.1f) blended=%s hard_red=%s hard_blue=%s clear_like=%s"
-        % (ok, mr, mg, mb, blended, hard_red, hard_blue, clear_like)
+        f"ok={ok} mean=({mr:.1f},{mg:.1f},{mb:.1f}) blended={blended} hard_red={hard_red} hard_blue={hard_blue} clear_like={clear_like}"
     )
     out.write_text(msg + "\n")
     print("[dissolve_blend]", msg, flush=True)
@@ -142,7 +142,7 @@ def _harness_run_one(case):
     draw.init((w, h))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     old = _solid_surface(w, h, old_rgba)
     new = _solid_surface(w, h, new_rgba)

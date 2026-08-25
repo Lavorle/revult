@@ -10,6 +10,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -26,18 +27,18 @@ def _log(msg):
         sys.__stdout__.write("[hmc_feel_latency] " + str(msg))
         sys.__stdout__.write(chr(10))
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        open("/tmp/hmc_feel_latency_freeze_probe.log", "a").write(str(msg) + chr(10))
-    except Exception:
+        open("/tmp/hmc_feel_latency_freeze_probe.log", "a").write(str(msg) + chr(10))  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _quit():
     try:
         import renpy_host
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _clear_falsey(name):
@@ -48,17 +49,17 @@ def _stubs():
     import types
 
     try:
-        import renpy.audio.renpysound_host as h
         import renpy.audio as a
+        import renpy.audio.renpysound_host as h
 
         sys.modules["renpy.audio.renpysound"] = h
         a.renpysound = h
-    except Exception as e:
-        _log("sound %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"sound {e}")
     try:
         import host_pygame
         import host_pygame.locals as loc
-        import host_pygame.scrap as scrap
+        from host_pygame import scrap
 
         if not hasattr(host_pygame, "constants"):
             host_pygame.constants = loc
@@ -71,14 +72,14 @@ def _stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = scrap
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        _log("pygame %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
 
@@ -95,8 +96,8 @@ def _stubs():
         import renpy
 
         renpy.uguu = pkg
-    except Exception as e:
-        _log("uguu %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
 
@@ -104,8 +105,8 @@ def _stubs():
         import renpy
 
         renpy.ecsign = e
-    except Exception as e:
-        _log("ecsign %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign {e}")
 
 def _product_presents():
     import renpy_host
@@ -123,7 +124,7 @@ def _screen_live(name):
     import renpy
     try:
         return renpy.display.screen.get_screen(name) is not None
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 def _target_ready(kind):
@@ -163,8 +164,8 @@ def _wait_first_interactive(target_kind, t_action, timeout_s=5.0, stall_s=2.0):
             if (now - last_progress_t) >= stall_s:
                 stall = True
             time.sleep(0.002)
-        except Exception as e:
-            crash_exc = "%s: %s" % (type(e).__name__, e)
+        except Exception as e:  # noqa: BLE001
+            crash_exc = f"{type(e).__name__}: {e}"
             break
     elapsed = (time.monotonic() - t0) * 1000.0
     if first_ms is None and elapsed >= timeout_s * 1000.0:
@@ -191,7 +192,7 @@ def _take_host_gaps():
         peek = getattr(renpy_host, "inter_present_gaps_ms", None)
         if peek is not None:
             return [float(x) for x in list(peek())]
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return []
 
@@ -233,7 +234,7 @@ def _sample_continuous(label, seconds=3.0):
     if gaps:
         sg = sorted(gaps)
         max_gap_ms = float(sg[-1])
-        idx = min(len(sg) - 1, int(round(0.99 * (len(sg) - 1))))
+        idx = min(len(sg) - 1, round(0.99 * (len(sg) - 1)))
         p99 = float(sg[idx])
     return {
         "label": label,
@@ -256,7 +257,7 @@ def _force_redraw():
         if iface is not None:
             iface.force_redraw = True
             iface.restart_interaction = True
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _show_prefs(kind="sound_config"):
@@ -265,22 +266,22 @@ def _show_prefs(kind="sound_config"):
         renpy.display.screen.show_screen("preferences", kind=kind)
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _force_redraw()
         return True, "show_screen"
-    except Exception as e1:
+    except Exception as e1:  # noqa: BLE001
         try:
             renpy.store.ShowMenu("preferences")()
             renpy.display.screen.show_screen("preferences", kind=kind)
             try:
                 renpy.restart_interaction()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             _force_redraw()
             return True, "ShowMenu"
-        except Exception as e2:
-            return False, "fail:%s/%s" % (e1, e2)
+        except Exception as e2:  # noqa: BLE001
+            return False, f"fail:{e1}/{e2}"
 
 def _hide_prefs():
     import renpy
@@ -288,11 +289,11 @@ def _hide_prefs():
         renpy.display.screen.hide_screen("preferences")
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _force_redraw()
         return True, "hide_screen"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, str(e)
 
 def _show_confirm():
@@ -307,11 +308,11 @@ def _show_confirm():
         )
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _force_redraw()
         return True, "show_screen"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, str(e)
 
 def _hide_confirm():
@@ -320,11 +321,11 @@ def _hide_confirm():
         renpy.display.screen.hide_screen("confirm")
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _force_redraw()
         return True, "hide_screen"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, str(e)
 
 def _attempt_take_focuses_repro():
@@ -332,17 +333,17 @@ def _attempt_take_focuses_repro():
     result = {"attempted": True, "crash": False, "error": None, "steps": []}
     try:
         ok, how = _show_prefs("sound_config")
-        result["steps"].append("open_prefs:%s:%s" % (ok, how))
+        result["steps"].append(f"open_prefs:{ok}:{how}")
         time.sleep(0.4)
         ok, how = _hide_prefs()
-        result["steps"].append("hide_prefs:%s:%s" % (ok, how))
+        result["steps"].append(f"hide_prefs:{ok}:{how}")
         time.sleep(0.3)
         try:
             renpy.display.focus.take_focuses()
             result["steps"].append("take_focuses:ok")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             result["crash"] = True
-            result["error"] = "%s: %s" % (type(e).__name__, e)
+            result["error"] = f"{type(e).__name__}: {e}"
             result["steps"].append("take_focuses:CRASH")
             result["traceback"] = traceback.format_exc()
             return result
@@ -353,22 +354,22 @@ def _attempt_take_focuses_repro():
             time.sleep(0.15)
             try:
                 renpy.display.focus.take_focuses()
-                result["steps"].append("cycle%d_take_focuses:ok" % i)
-            except Exception as e:
+                result["steps"].append("cycle%d_take_focuses:ok" % i)  # noqa: UP031
+            except Exception as e:  # noqa: BLE001
                 result["crash"] = True
-                result["error"] = "%s: %s" % (type(e).__name__, e)
-                result["steps"].append("cycle%d_take_focuses:CRASH" % i)
+                result["error"] = f"{type(e).__name__}: {e}"
+                result["steps"].append("cycle%d_take_focuses:CRASH" % i)  # noqa: UP031
                 result["traceback"] = traceback.format_exc()
                 return result
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         result["crash"] = True
-        result["error"] = "%s: %s" % (type(e).__name__, e)
+        result["error"] = f"{type(e).__name__}: {e}"
         result["traceback"] = traceback.format_exc()
     return result
 
 def probe():
+
     import renpy
-    import renpy_host
     out_txt = _base() / "host" / "target" / "gate-hmc_feel_latency_freeze_probe.txt"
     out_json = _base() / "host" / "target" / "gate-hmc_feel_latency_freeze_probe.json"
     lines = []
@@ -386,27 +387,27 @@ def probe():
         try:
             if bool(getattr(renpy.store, "main_menu", False)):
                 break
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(0.2)
     mm = bool(getattr(renpy.store, "main_menu", False))
-    _log("main_menu=%s frames=%s product=%s" % (mm, _frame_count(), _product_presents()))
-    lines.append("main_menu=%s" % mm)
+    _log(f"main_menu={mm} frames={_frame_count()} product={_product_presents()}")
+    lines.append(f"main_menu={mm}")
     report["main_menu"] = mm
     cont_mm = _sample_continuous("main_menu", 3.0)
     report["continuous"]["main_menu"] = cont_mm
-    lines.append("continuous_main_menu=%s" % cont_mm)
+    lines.append(f"continuous_main_menu={cont_mm}")
     t_action = time.monotonic()
     ok, how = _show_prefs("sound_config")
     m_open = _wait_first_interactive("prefs", t_action)
     m_open["action_ok"] = ok
     m_open["action_how"] = how
     report["measurements"]["prefs_open"] = m_open
-    lines.append("prefs_open=%s" % m_open)
+    lines.append(f"prefs_open={m_open}")
     time.sleep(0.3)
     cont_prefs = _sample_continuous("prefs_idle", 2.5)
     report["continuous"]["prefs_idle"] = cont_prefs
-    lines.append("continuous_prefs_idle=%s" % cont_prefs)
+    lines.append(f"continuous_prefs_idle={cont_prefs}")
     t_action = time.monotonic()
     ok, how = _show_prefs("text_config")
     m_page = _wait_first_interactive("prefs", t_action)
@@ -414,7 +415,7 @@ def probe():
     m_page["action_how"] = how
     m_page["page"] = "text_config"
     report["measurements"]["prefs_page"] = m_page
-    lines.append("prefs_page=%s" % m_page)
+    lines.append(f"prefs_page={m_page}")
     time.sleep(0.2)
     t_action = time.monotonic()
     ok, how = _show_prefs("dialog_config_1")
@@ -423,14 +424,14 @@ def probe():
     m_page2["action_how"] = how
     m_page2["page"] = "dialog_config_1"
     report["measurements"]["prefs_page_2"] = m_page2
-    lines.append("prefs_page_2=%s" % m_page2)
+    lines.append(f"prefs_page_2={m_page2}")
     t_action = time.monotonic()
     ok, how = _hide_prefs()
     m_ret = _wait_first_interactive("main_menu", t_action)
     m_ret["action_ok"] = ok
     m_ret["action_how"] = how
     report["measurements"]["prefs_return"] = m_ret
-    lines.append("prefs_return=%s" % m_ret)
+    lines.append(f"prefs_return={m_ret}")
     time.sleep(0.3)
     t_action = time.monotonic()
     ok, how = _show_confirm()
@@ -438,7 +439,7 @@ def probe():
     m_copen["action_ok"] = ok
     m_copen["action_how"] = how
     report["measurements"]["confirm_open"] = m_copen
-    lines.append("confirm_open=%s" % m_copen)
+    lines.append(f"confirm_open={m_copen}")
     time.sleep(0.2)
     t_action = time.monotonic()
     ok, how = _hide_confirm()
@@ -446,11 +447,11 @@ def probe():
     m_cclose["action_ok"] = ok
     m_cclose["action_how"] = how
     report["measurements"]["confirm_close"] = m_cclose
-    lines.append("confirm_close=%s" % m_cclose)
+    lines.append(f"confirm_close={m_cclose}")
     time.sleep(0.2)
     repro = _attempt_take_focuses_repro()
     report["take_focuses_repro"] = repro
-    lines.append("take_focuses_repro=%s" % repro)
+    lines.append(f"take_focuses_repro={repro}")
     stall_any = any(bool((report["measurements"].get(k) or {}).get("stall_ge_2s")) for k in report["measurements"])
     hang_any = any(bool((report["measurements"].get(k) or {}).get("hang_suspect")) for k in report["measurements"])
     crash_any = bool(repro.get("crash")) or any((report["measurements"].get(k) or {}).get("crash_exc") for k in report["measurements"])
@@ -460,19 +461,19 @@ def probe():
         "crash": crash_any,
         "take_focuses_none": bool(repro.get("crash")) and "NoneType" in str(repro.get("error") or ""),
     }
-    lines.append("ac_z=%s" % report["ac_z"])
+    lines.append("ac_z={}".format(report["ac_z"]))
     fi_keys = ["prefs_open", "prefs_page", "prefs_page_2", "prefs_return", "confirm_open", "confirm_close"]
     fi_vals = []
     for k in fi_keys:
         v = (report["measurements"].get(k) or {}).get("first_interactive_ms")
-        lines.append("first_interactive_ms_%s=%s" % (k, v))
+        lines.append(f"first_interactive_ms_{k}={v}")
         if v is not None:
             fi_vals.append(float(v))
     report["first_interactive_max_ms"] = max(fi_vals) if fi_vals else None
     report["first_interactive_min_ms"] = min(fi_vals) if fi_vals else None
     report["ac_t_pass_lt_200ms"] = bool(fi_vals) and all(v < 200.0 for v in fi_vals)
-    lines.append("ac_t_pass_lt_200ms=%s" % report["ac_t_pass_lt_200ms"])
-    lines.append("first_interactive_max_ms=%s" % report["first_interactive_max_ms"])
+    lines.append("ac_t_pass_lt_200ms={}".format(report["ac_t_pass_lt_200ms"]))
+    lines.append("first_interactive_max_ms={}".format(report["first_interactive_max_ms"]))
     p99s = [c.get("p99_inter_present_ms") for c in report["continuous"].values() if c.get("p99_inter_present_ms") is not None]
     report["p99_inter_present_max_ms"] = max(p99s) if p99s else None
     report["ac_f_proxy_p99_le_66"] = bool(p99s) and all(v <= 66.0 for v in p99s)
@@ -488,30 +489,30 @@ def probe():
         and float(mm_p99) <= 8.3
         and float(prefs_p99) <= 8.3
     )
-    lines.append("p99_inter_present_max_ms=%s" % report["p99_inter_present_max_ms"])
-    lines.append("ac_f_proxy_p99_le_66=%s" % report["ac_f_proxy_p99_le_66"])
-    lines.append("ac_p99_main_menu_ms=%s" % mm_p99)
-    lines.append("ac_p99_prefs_idle_ms=%s" % prefs_p99)
-    lines.append("ac_p99_pass_le_8_3=%s" % report["ac_p99_pass_le_8_3"])
+    lines.append("p99_inter_present_max_ms={}".format(report["p99_inter_present_max_ms"]))
+    lines.append("ac_f_proxy_p99_le_66={}".format(report["ac_f_proxy_p99_le_66"]))
+    lines.append(f"ac_p99_main_menu_ms={mm_p99}")
+    lines.append(f"ac_p99_prefs_idle_ms={prefs_p99}")
+    lines.append("ac_p99_pass_le_8_3={}".format(report["ac_p99_pass_le_8_3"]))
     h_hints = []
     if report["ac_z"].get("take_focuses_none") or report["ac_z"].get("crash"):
         h_hints.append({"id": "H2", "title": "take_focuses / screen_render None crash", "evidence": repro.get("error") or "crash path", "severity_hint": "high"})
     high_lat = [k for k in fi_keys if ((report["measurements"].get(k) or {}).get("first_interactive_ms") or 0) >= 200]
     if high_lat:
-        h_hints.append({"id": "H3", "title": "transition RT rebuild / full-tree invalidate", "evidence": "high first_interactive on %s" % high_lat, "severity_hint": "high"})
+        h_hints.append({"id": "H3", "title": "transition RT rebuild / full-tree invalidate", "evidence": f"high first_interactive on {high_lat}", "severity_hint": "high"})
     if stall_any or hang_any:
-        h_hints.append({"id": "H4", "title": "event_wait / can_block / nested pump stalls", "evidence": "stall=%s hang=%s" % (stall_any, hang_any), "severity_hint": "high"})
+        h_hints.append({"id": "H4", "title": "event_wait / can_block / nested pump stalls", "evidence": f"stall={stall_any} hang={hang_any}", "severity_hint": "high"})
     h_hints.append({"id": "H1", "title": "about_to_wait always window.request_redraw busy-wake residual", "evidence": "host/renpy-host/src/main.rs about_to_wait", "severity_hint": "med"})
     max_p99 = report.get("p99_inter_present_max_ms")
     if max_p99 is not None and max_p99 > 40:
-        h_hints.append({"id": "H5", "title": "PresentMode Fifo present-wait", "evidence": "p99_inter_present_ms=%s" % max_p99, "severity_hint": "low-med"})
+        h_hints.append({"id": "H5", "title": "PresentMode Fifo present-wait", "evidence": f"p99_inter_present_ms={max_p99}", "severity_hint": "low-med"})
     else:
-        h_hints.append({"id": "H5", "title": "PresentMode Fifo present-wait", "evidence": "not dominant p99=%s" % max_p99, "severity_hint": "low"})
+        h_hints.append({"id": "H5", "title": "PresentMode Fifo present-wait", "evidence": f"not dominant p99={max_p99}", "severity_hint": "low"})
     order = {"H2": 0, "H4": 1, "H3": 2, "H1": 3, "H5": 4}
     h_hints.sort(key=lambda h: order.get(h["id"], 9))
     report["h_rank_hints"] = h_hints
     for i, h in enumerate(h_hints, 1):
-        lines.append("H%d_rank=%s severity=%s evidence=%s" % (i, h["id"], h["severity_hint"], h["evidence"]))
+        lines.append("H%d_rank=%s severity=%s evidence=%s" % (i, h["id"], h["severity_hint"], h["evidence"]))  # noqa: UP031
     report["ok"] = True
     report["measured"] = True
     lines.append("ok=True")
@@ -519,12 +520,12 @@ def probe():
     out_txt.parent.mkdir(parents=True, exist_ok=True)
     out_txt.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
     out_json.write_text(json.dumps(report, indent=2, default=str) + chr(10), encoding="utf-8")
-    _log("wrote %s" % out_txt)
+    _log(f"wrote {out_txt}")
     time.sleep(0.3)
     _quit()
 
 def main():
-    open("/tmp/hmc_feel_latency_freeze_probe.log", "w").write("start" + chr(10))
+    open("/tmp/hmc_feel_latency_freeze_probe.log", "w").write("start" + chr(10))  # noqa: SIM115
     base = _base()
     game = os.environ.get("RENPY_HOST_GAME") or str(base / "host" / "playtests" / "HuangmeiC")
     os.environ["RENPY_HOST_BASE"] = str(base)
@@ -540,16 +541,15 @@ def main():
     try:
         _stubs()
         import bootstrap as boot
-        import renpy_host
         for name, call in (
             ("import_renpy", boot.stage_import_renpy),
             ("import_all", boot.stage_import_all),
             ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
         ):
-            good, missing, error, extra = call()
-            _log("stage %s good=%s missing=%s error=%r" % (name, good, missing, error))
+            good, missing, error, _extra = call()
+            _log(f"stage {name} good={good} missing={missing} error={error!r}")
             if not good:
-                _log("bootstrap fail %s" % name)
+                _log(f"bootstrap fail {name}")
                 _quit()
                 return
         import renpy
@@ -557,8 +557,8 @@ def main():
         try:
             import renpy_main_host
             renpy_main_host.install(renpy)
-        except Exception as e:
-            _log("main_host: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main_host: {e}")
         try:
             import renpy.arguments
             basedir = getattr(renpy.config, "basedir", None) or game
@@ -568,11 +568,11 @@ def main():
                 try:
                     renpy.arguments.register_command("run", renpy.arguments.run, True)
                     renpy.arguments.register_command("quit", renpy.arguments.quit)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             renpy.game.args = renpy.arguments.bootstrap()
-        except Exception as e:
-            _log("args fail %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"args fail {e}")
             _quit()
             return
         threading.Thread(target=probe, daemon=True).start()
@@ -581,13 +581,13 @@ def main():
             renpy.main.main()
         except SystemExit:
             pass
-        except Exception as e:
-            _log("main exc %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main exc {e}")
             _log(traceback.format_exc())
         finally:
             _quit()
-    except Exception as e:
-        _log("main outer exc %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"main outer exc {e}")
         _log(traceback.format_exc())
         _quit()
 

@@ -53,17 +53,17 @@ def _write(lines, ok, **extra):
     # Flatten artifact as key=value lines + final ok=
     body = list(lines)
     for k, v in extra.items():
-        body.append("%s=%s" % (k, v))
-    body.append("ok=%s" % ok)
+        body.append(f"{k}={v}")
+    body.append(f"ok={ok}")
     text = "\n".join(body) + "\n"
     out.write_text(text)
-    print("[dissolve_live_st] WROTE", out, "ok=%s" % ok, flush=True)
+    print("[dissolve_live_st] WROTE", out, f"ok={ok}", flush=True)
 
 
 def _request_quit():
     try:
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -87,7 +87,7 @@ class _Surf:
 def _png_rgba(path):
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise RuntimeError("not png: %s" % path)
+        raise RuntimeError(f"not png: {path}")
     pos = 8
     w = h = None
     raw = b""
@@ -107,7 +107,7 @@ def _png_rgba(path):
     if not w or not h:
         raise RuntimeError("bad png header")
     if bit_depth != 8 or color_type not in (2, 6):
-        raise RuntimeError("unsupported png ct=%s bd=%s" % (color_type, bit_depth))
+        raise RuntimeError(f"unsupported png ct={color_type} bd={bit_depth}")
     decomp = zlib.decompress(raw)
     bpp = 4 if color_type == 6 else 3
     stride = w * bpp + 1
@@ -138,7 +138,7 @@ def _png_rgba(path):
                 pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
                 scan[i] = (scan[i] + pr) & 0xFF
         elif filt != 0:
-            raise RuntimeError("bad filter %s" % filt)
+            raise RuntimeError(f"bad filter {filt}")
         prev = scan
         for x in range(w):
             si = x * bpp
@@ -209,19 +209,20 @@ def _bootstrap(lines):
     """Import renpy under host, seed styles/models/prefs for real Dissolve.render."""
     import bootstrap as boot
 
-    good, miss, err, extra = boot.stage_import_renpy()
-    _log(lines, "import_renpy good=%s err=%s" % (good, err))
+    good, miss, err, extra = boot.stage_import_renpy()  # noqa: RUF059
+    _log(lines, f"import_renpy good={good} err={err}")
     if not good:
-        raise RuntimeError("import_renpy failed: %s" % err)
-    good, miss, err, extra = boot.stage_import_all()
-    _log(lines, "import_all good=%s err=%s missing=%s" % (good, err, (miss or [])[:5]))
+        raise RuntimeError(f"import_renpy failed: {err}")
+    good, miss, err, _extra = boot.stage_import_all()
+    _log(lines, f"import_all good={good} err={err} missing={(miss or [])[:5]}")
     if not good:
-        raise RuntimeError("import_all failed: %s" % err)
+        raise RuntimeError(f"import_all failed: {err}")
 
-    import renpy.game as game
     import renpy.display.render as render_mod
     import renpy.style as style_mod
+
     import renpy.display.displayable as disp_mod
+    from renpy import game
 
     # AC-L0 nonsuppression
     render_mod.models = True
@@ -252,15 +253,15 @@ def _bootstrap(lines):
 
     try:
         render_mod.render_ready()
-    except Exception as e:
-        _log(lines, "render_ready softfail %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(lines, f"render_ready softfail {e}")
 
     less_updates = bool(game.less_updates)
     models = bool(render_mod.models)
     transitions_pref = int(getattr(game.preferences, "transitions", -1))
     _log(
         lines,
-        "less_updates=%s models=%s transitions_pref=%s" % (less_updates, models, transitions_pref),
+        f"less_updates={less_updates} models={models} transitions_pref={transitions_pref}",
     )
     return less_updates, models, transitions_pref
 
@@ -283,8 +284,9 @@ def main():
     try:
         less_updates, models, transitions_pref = _bootstrap(lines)
 
-        from renpy.display.displayable import Displayable
         from renpy.display.render import Render
+
+        from renpy.display.displayable import Displayable
         from renpy.display.transition import Dissolve
         from renpy.wgpu.draw import WgpuDraw
 
@@ -292,7 +294,7 @@ def main():
             """Displayable wrapping a preloaded product surface (real Displayable)."""
 
             def __init__(self, surf, tag="img"):
-                super(ProductImage, self).__init__()
+                super().__init__()
                 self.surf = surf
                 self.tag = tag
 
@@ -311,35 +313,35 @@ def main():
         try:
             ow, oh, orgba, old_tag = _load_image_rgba(game_dir / "gui" / "main_menu.png")
             old_surf = _fit(VW, VH, ow, oh, orgba)
-        except Exception as e:
-            old_tag = "solid_red_fallback(%s)" % e
+        except Exception as e:  # noqa: BLE001
+            old_tag = f"solid_red_fallback({e})"
             old_surf = _Surf(VW, VH, bytes([220, 40, 40, 255]) * (VW * VH))
-            _log(lines, "old load fail %s" % e)
+            _log(lines, f"old load fail {e}")
         try:
             nw, nh, nrgba, new_tag = _load_image_rgba(
                 game_dir / "images" / "bg lecturehall.jpg"
             )
             new_surf = _fit(VW, VH, nw, nh, nrgba)
-        except Exception as e:
-            new_tag = "solid_blue_fallback(%s)" % e
+        except Exception as e:  # noqa: BLE001
+            new_tag = f"solid_blue_fallback({e})"
             new_surf = _Surf(VW, VH, bytes([40, 40, 220, 255]) * (VW * VH))
-            _log(lines, "new load fail %s" % e)
+            _log(lines, f"new load fail {e}")
 
         used_product = ("fallback" not in old_tag) and ("fallback" not in new_tag)
-        _log(lines, "old=%s new=%s used_product=%s" % (old_tag, new_tag, used_product))
+        _log(lines, f"old={old_tag} new={new_tag} used_product={used_product}")
 
         old = ProductImage(old_surf, old_tag)
         new = ProductImage(new_surf, new_tag)
 
         # Real Dissolve class — not FakeRender forced-u.
         d = Dissolve(T, old_widget=old, new_widget=new)
-        _log(lines, "Dissolve class=%s time=%s delay=%s" % (type(d).__name__, d.time, d.delay))
+        _log(lines, f"Dissolve class={type(d).__name__} time={d.time} delay={d.delay}")
 
         draw = WgpuDraw()
         draw.init((VW, VH))
         try:
             draw.physical_size = renpy_host.window_size()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
         complete_ok = True
@@ -355,7 +357,7 @@ def main():
                 complete_ok = False
                 _log(
                     lines,
-                    "complete mismatch st=%s c=%s expected=%s" % (st, c, expected),
+                    f"complete mismatch st={st} c={c} expected={expected}",
                 )
             completes.append(float(c) if c is not None else float("nan"))
 
@@ -363,15 +365,14 @@ def main():
             uniforms = getattr(rv, "uniforms", None)
             _log(
                 lines,
-                "st=%.4f complete=%s shaders=%s uniforms=%s mesh=%s"
-                % (st, c, shaders, uniforms, getattr(rv, "mesh", None)),
+                "st={:.4f} complete={} shaders={} uniforms={} mesh={}".format(st, c, shaders, uniforms, getattr(rv, "mesh", None)),
             )
 
             draw.draw_screen(rv, flip=True)
             rw, rh, rgba = renpy_host.read_game_rt_rgba()
             m = _mean_rgb(rgba, rw, rh)
             means.append(m)
-            _log(lines, "  mean=(%.1f,%.1f,%.1f)" % m)
+            _log(lines, "  mean=({:.1f},{:.1f},{:.1f})".format(*m))
 
         # --- Pass criteria ---
         mid_completes = [c for c in completes if 0.2 <= c <= 0.8]
@@ -386,7 +387,7 @@ def main():
         mid_means = means[1:]
         eps = 12.0  # RGB L1 distance threshold for "same as endpoint"
         mid_not_hard_old = all(_dist(m, st0) > eps for m in mid_means)
-        mid_not_hard_new = all(_dist(m, st_last) > eps for m in mid_means[:2])  # first two mids
+        all(_dist(m, st_last) > eps for m in mid_means[:2])  # first two mids
         # Monotonic trend: st0 closer to old, last closer to new (luma or channel energy)
         # For product images: R tends to rise main_menu→lecturehall in this pair.
         # Use progressive distance: each mid should move away from st0 toward st_last.
@@ -417,22 +418,12 @@ def main():
         ok = bool(ac_l0 and ac_l1)
         if not ok:
             reason = (
-                "ac_l0=%s complete_ok=%s mid_count=%s clear=%s hard_old=%s "
-                "energy=%s product=%s progressive=%s"
-                % (
-                    ac_l0,
-                    complete_ok,
-                    mid_count,
-                    clear_like,
-                    not mid_not_hard_old,
-                    energy_ok,
-                    used_product,
-                    progressive,
-                )
+                f"ac_l0={ac_l0} complete_ok={complete_ok} mid_count={mid_count} clear={clear_like} hard_old={not mid_not_hard_old} "
+                f"energy={energy_ok} product={used_product} progressive={progressive}"
             )
-            _log(lines, "FAIL %s" % reason)
+            _log(lines, f"FAIL {reason}")
         else:
-            _log(lines, "PASS mid_count=%s progressive=%s" % (mid_count, progressive))
+            _log(lines, f"PASS mid_count={mid_count} progressive={progressive}")
 
         _write(
             lines,
@@ -443,15 +434,15 @@ def main():
             less_updates=less_updates,
             models=models,
             complete=completes,
-            means=["(%.1f,%.1f,%.1f)" % m for m in means],
+            means=["({:.1f},{:.1f},{:.1f})".format(*m) for m in means],
             mid_count=mid_count,
             used_product=used_product,
             old=old_tag,
             new=new_tag,
             reason=reason or "pass",
         )
-    except Exception as e:
-        _log(lines, "exception %s\n%s" % (e, traceback.format_exc()))
+    except Exception as e:  # noqa: BLE001
+        _log(lines, f"exception {e}\n{traceback.format_exc()}")
         _write(
             lines,
             False,
@@ -461,8 +452,8 @@ def main():
             less_updates=less_updates,
             models=models,
             complete=completes,
-            means=["(%.1f,%.1f,%.1f)" % m for m in means],
-            reason="exception:%s" % e,
+            means=["({:.1f},{:.1f},{:.1f})".format(*m) for m in means],
+            reason=f"exception:{e}",
             old=old_tag,
             new=new_tag,
         )

@@ -27,7 +27,8 @@ import sys
 from pathlib import Path
 
 import renpy_host  # type: ignore
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
 try:
@@ -174,11 +175,11 @@ try:
         renpy_host.end_frame_present()
         renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
     notes.append("matrixcolor_parent_promote=ok")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
     notes.append(f"FAIL: matrixcolor parent promote {type(e).__name__}: {e}")
 
-msg = "gate=dissolve_transform_atl\nok=%s\n%s\n" % (
+msg = "gate=dissolve_transform_atl\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

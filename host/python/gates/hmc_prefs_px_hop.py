@@ -40,15 +40,15 @@ def _base():
 
 
 def _log(msg):
-    line = "[hmc_prefs_px] %s\n" % msg
+    line = f"[hmc_prefs_px] {msg}\n"
     try:
         sys.__stdout__.write(line)
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        open("/tmp/hmc_prefs_px_hop.log", "a").write(msg + "\n")
-    except Exception:
+        open("/tmp/hmc_prefs_px_hop.log", "a").write(msg + "\n")  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -57,7 +57,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -73,13 +73,13 @@ def _pre_main_host_stubs():
     import types
 
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
-    except Exception as e:
-        _log("renpysound soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"renpysound soft-fail: {e}")
 
     try:
         import host_pygame
@@ -98,14 +98,14 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             rpg.import_as_pygame()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        _log("pygame soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame soft-fail: {e}")
 
     try:
         import renpy_uguu_host as _uguu
@@ -120,16 +120,16 @@ def _pre_main_host_stubs():
         for _name in dir(_uguu):
             if _name.startswith("GL_") or _name in ("clear_errors", "get_error"):
                 setattr(pkg, _name, getattr(_uguu, _name))
-        setattr(pkg, "uguu", _uguu)
-        setattr(pkg, "gl", _uguu)
+        pkg.uguu = _uguu
+        pkg.gl = _uguu
         try:
             import renpy
 
             renpy.uguu = pkg
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        _log("uguu soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu soft-fail: {e}")
 
     try:
         import renpy_ecsign_host as _ecsign
@@ -138,22 +138,23 @@ def _pre_main_host_stubs():
         try:
             import renpy as _renpy_pkg
 
-            setattr(_renpy_pkg, "ecsign", _ecsign)
-        except Exception:
+            _renpy_pkg.ecsign = _ecsign
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        _log("ecsign soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign soft-fail: {e}")
 
 
 def _force_product_redraw():
-    import renpy
     import interact_helpers as ih
+
+    import renpy
 
     info = {"path": None, "error": None}
     try:
         ready, why, iface = ih.interface_ready()
         if not ready or iface is None:
-            info["error"] = "iface:%s" % why
+            info["error"] = f"iface:{why}"
             return info
         root = ih._rebuild_product_root(iface)
         if root is None:
@@ -169,12 +170,12 @@ def _force_product_redraw():
         draw.draw_screen(surftree, flip=True)
         try:
             iface.surftree = surftree
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         info["path"] = "rebuild_render_screen"
         return info
-    except Exception as e:
-        info["error"] = "%s:%s" % (type(e).__name__, e)
+    except Exception as e:  # noqa: BLE001
+        info["error"] = f"{type(e).__name__}:{e}"
         return info
 
 
@@ -184,8 +185,8 @@ def _read_rt():
     pres = _force_product_redraw()
     try:
         rw, rh, rt = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        return None, None, None, {"error": "read:%s" % e, "present": pres}
+    except Exception as e:  # noqa: BLE001
+        return None, None, None, {"error": f"read:{e}", "present": pres}
     return rw, rh, rt, {"present": pres}
 
 
@@ -268,50 +269,52 @@ def _force_show_prefs(kind):
         renpy.display.screen.show_screen("preferences", kind=kind)
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return True, "show_screen_preferences_kind"
-    except Exception as e1:
+    except Exception as e1:  # noqa: BLE001
         try:
             renpy.store.ShowMenu("preferences")()
             renpy.display.screen.show_screen("preferences", kind=kind)
             return True, "ShowMenu+kind"
-        except Exception as e2:
-            return False, "%s|%s" % (e1, e2)
+        except Exception as e2:  # noqa: BLE001
+            return False, f"{e1}|{e2}"
 
 
 def _inject_hover(vx, vy):
-    import renpy
     import renpy_host
+
+    import renpy
 
     how = []
     try:
         renpy_host.inject_mouse(int(vx), int(vy), 0, False)
         how.append("inject_mouse")
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             renpy_host.inject_mouse(int(vx), int(vy), 0)
             how.append("inject_mouse3")
-        except Exception as e:
-            how.append("inject_fail:%s" % e)
+        except Exception as e:  # noqa: BLE001
+            how.append(f"inject_fail:{e}")
     try:
         renpy.display.focus.mouse_handler(None, int(vx), int(vy), default=False)
         how.append("mouse_handler")
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         renpy.restart_interaction()
         how.append("restart")
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return "+".join(how)
 
 
 def _click_nav_tab(tab_index):
     """Click a preferences top-nav tab (0-based) at virtual coords."""
-    import renpy
-    import renpy_host
     import hmc_prefs_nav_effects as _nav
+    import renpy_host
+
+    import renpy
 
     vx = 462 + (tab_index + 0.5) * 179
     vy = 47 + 32
@@ -320,13 +323,13 @@ def _click_nav_tab(tab_index):
     renpy_host.inject_mouse(int(wx), int(wy), 1, False)
     try:
         renpy.display.focus.mouse_handler(None, int(vx), int(vy), default=False)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         renpy.restart_interaction()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
-    return "click_tab%d@%d,%d" % (tab_index, wx, wy)
+    return "click_tab%d@%d,%d" % (tab_index, wx, wy)  # noqa: UP031
 
 
 def _kind_tab(kind):
@@ -363,7 +366,6 @@ def run():
     if gates not in sys.path:
         sys.path.insert(0, gates)
 
-    import renpy_host  # type: ignore
     import bootstrap as boot
 
     for name, call in (
@@ -371,10 +373,10 @@ def run():
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        rec("stage %s good=%s err=%r" % (name, good, err))
+        good, _miss, err, _extra = call()
+        rec(f"stage {name} good={good} err={err!r}")
         if not good:
-            out.write_text("ok=False\nerror=%s\n" % err)
+            out.write_text(f"ok=False\nerror={err}\n")
             _request_quit()
             return
 
@@ -383,7 +385,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     try:
@@ -391,8 +393,8 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:
-        rec("main_host: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        rec(f"main_host: {e}")
 
     try:
         import renpy.arguments
@@ -406,13 +408,13 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
-        rec("args command=%s basedir=%s" % (getattr(args, "command", None), basedir))
-    except Exception as e:
-        rec("args fail: %s" % e)
+        rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
+    except Exception as e:  # noqa: BLE001
+        rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
     _pre_main_host_stubs()
@@ -452,9 +454,9 @@ def run():
             try:
                 mm = getattr(renpy.store, "main_menu", None)
                 if mm:
-                    rec("main_menu at t=%.2f" % time.time())
+                    rec(f"main_menu at t={time.time():.2f}")
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             time.sleep(0.1)
         else:
@@ -466,13 +468,13 @@ def run():
         time.sleep(0.4)
 
         for idx, kind in enumerate(PX_SEQUENCE):
-            rec("=== hop %d %s ===" % (idx, kind))
+            rec("=== hop %d %s ===" % (idx, kind))  # noqa: UP031
             if idx == 0:
                 ok, via = _force_show_prefs(kind)
             else:
                 via = _click_nav_tab(_kind_tab(kind))
                 ok = True
-            rec("opened %s ok=%s via=%s" % (kind, ok, via))
+            rec(f"opened {kind} ok={ok} via={via}")
             if not ok:
                 state["pages_fail"].append(kind)
                 continue
@@ -485,14 +487,13 @@ def run():
 
             rw, rh, rt, meta = _read_rt()
             if not rw or not rh or not rt:
-                rec("FAIL empty rt on open: %s" % meta)
+                rec(f"FAIL empty rt on open: {meta}")
                 state["pages_fail"].append(kind)
                 continue
             base_s = _sample_regions(rt, rw, rh)
             broken, info = _is_broken(base_s)
             rec(
-                "baseline size=%sx%s broken=%s panel_mean=%s dark=%s"
-                % (
+                "baseline size={}x{} broken={} panel_mean={} dark={}".format(
                     rw,
                     rh,
                     broken,
@@ -526,7 +527,7 @@ def run():
                         page_broken += 1
                         state["broken"] += 1
                         rec(
-                            "BROKEN hop=%d cycle=%d pt=%d (%d,%d) how=%s info=%s panel=%s"
+                            "BROKEN hop=%d cycle=%d pt=%d (%d,%d) how=%s info=%s panel=%s"  # noqa: UP031
                             % (
                                 idx,
                                 cycle,
@@ -549,16 +550,16 @@ def run():
                             page_broken += 1
                             state["broken"] += 1
                             rec(
-                                "BROKEN unhover hop=%d cycle=%d pt=%d info=%s"
+                                "BROKEN unhover hop=%d cycle=%d pt=%d info=%s"  # noqa: UP031
                                 % (idx, cycle, i, info2)
                             )
 
             if page_broken == 0:
                 state["pages_ok"].append(kind)
-                rec("PASS hop %s" % kind)
+                rec(f"PASS hop {kind}")
             else:
                 state["pages_fail"].append(kind)
-                rec("FAIL hop %s broken_frames=%d" % (kind, page_broken))
+                rec("FAIL hop %s broken_frames=%d" % (kind, page_broken))  # noqa: UP031
 
             # PX-2: selected tab must show navigation_selected yellow on text_config.
             # Log on every text_config hop; only the final return gates ok.
@@ -584,7 +585,7 @@ def run():
                             tab = _nav._sample_band(rt, rw, rh, x0, y0, x1, y1, step=1)
                             yf = tab.get("yellow_frac", 0) if tab.get("ok") else 0
                             rec(
-                                "PX-2 tab%d yellow_frac=%.4f n=%s"
+                                "PX-2 tab%d yellow_frac=%.4f n=%s"  # noqa: UP031
                                 % (tab_index, yf, tab.get("n", 0) if tab.get("ok") else 0)
                             )
                             if tab_index == 2:
@@ -594,23 +595,21 @@ def run():
                             if tab2_yf >= 0.08:
                                 state["px2_ok"] = True
                                 rec(
-                                    "PASS PX-2 text_config selected yellow after hop frac=%.4f"
-                                    % tab2_yf
+                                    f"PASS PX-2 text_config selected yellow after hop frac={tab2_yf:.4f}"
                                 )
                             else:
                                 rec(
-                                    "FAIL PX-2 text_config selected yellow weak/absent frac=%.4f"
-                                    % tab2_yf
+                                    f"FAIL PX-2 text_config selected yellow weak/absent frac={tab2_yf:.4f}"
                                 )
                         else:
                             rec(
-                                "PX-2 text_config hop=%d yellow_frac=%.4f"
+                                "PX-2 text_config hop=%d yellow_frac=%.4f"  # noqa: UP031
                                 % (idx, tab2_yf)
                             )
                     else:
                         rec("FAIL PX-2 empty rt on text_config")
-                except Exception as e:
-                    rec("PX-2 sample exception: %s: %s" % (type(e).__name__, e))
+                except Exception as e:  # noqa: BLE001
+                    rec(f"PX-2 sample exception: {type(e).__name__}: {e}")
 
         state["phase"] = "done"
         ok = (
@@ -620,7 +619,7 @@ def run():
             and state["px2_ok"]
         )
         rec(
-            "summary pages_ok=%s pages_fail=%s broken=%d samples=%d px2=%.4f ok=%s"
+            "summary pages_ok=%s pages_fail=%s broken=%d samples=%d px2=%.4f ok=%s"  # noqa: UP031
             % (
                 state["pages_ok"],
                 state["pages_fail"],
@@ -632,15 +631,15 @@ def run():
         )
         report = [
             "gate=hmc_prefs_px_hop",
-            "ok=%s" % ok,
-            "broken=%d" % state["broken"],
-            "samples=%d" % state["samples"],
-            "pages_ok=%s" % ",".join(state["pages_ok"]),
-            "pages_fail=%s" % ",".join(state["pages_fail"]),
+            f"ok={ok}",
+            "broken=%d" % state["broken"],  # noqa: UP031
+            "samples=%d" % state["samples"],  # noqa: UP031
+            "pages_ok={}".format(",".join(state["pages_ok"])),
+            "pages_fail={}".format(",".join(state["pages_fail"])),
             "px1_ok=%s" % (state["broken"] == 0 and len(state["pages_fail"]) == 0),
-            "px2_ok=%s" % state["px2_ok"],
-            "px2_yellow_frac=%.4f" % state["px2_yellow_frac"],
-            "phase=%s" % state["phase"],
+            "px2_ok={}".format(state["px2_ok"]),
+            "px2_yellow_frac={:.4f}".format(state["px2_yellow_frac"]),
+            "phase={}".format(state["phase"]),
         ]
         report.extend("log." + ln for ln in lines)
         out.write_text("\n".join(report) + "\n")
@@ -651,17 +650,17 @@ def run():
         try:
             rec("entering renpy.main.main()")
             renpy.main.main()
-        except Exception as e:
-            rec("main exit %s: %s" % (type(e).__name__, e))
+        except Exception as e:  # noqa: BLE001
+            rec(f"main exit {type(e).__name__}: {e}")
         finally:
             if state["phase"] not in ("done", "fail"):
                 # probe may not have finished
                 try:
                     out.write_text(
-                        "ok=False\nphase=%s\nbroken=%d\n"
+                        "ok=False\nphase=%s\nbroken=%d\n"  # noqa: UP031
                         % (state["phase"], state["broken"])
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             _request_quit()
 

@@ -2,8 +2,13 @@
 
 Also tests process_redraws before render_screen.
 """
-import os, sys, threading, time, traceback
+import os
+import sys
+import threading
+import time
+import traceback
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -17,15 +22,15 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[dc_fix] %s\n" % m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[dc_fix] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_dc_fix_redraw.log", "a").write(m + "\n")
+    open("/tmp/hmc_dc_fix_redraw.log", "a").write(m + "\n")  # noqa: SIM115
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()
-    except Exception:
+        import renpy_host; renpy_host.request_quit()  # noqa: I001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _clear_falsey(n):
@@ -36,12 +41,15 @@ def _clear_falsey(n):
 def _pre():
     import types
     try:
-        import renpy.audio.renpysound_host as h, renpy.audio as a
+        import renpy.audio as a
+        import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"] = h; a.renpysound = h
-    except Exception as e:
-        _log("sound %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"sound {e}")
     try:
-        import host_pygame, host_pygame.locals as loc, host_pygame.scrap as scrap
+        import host_pygame
+        import host_pygame.locals as loc
+        from host_pygame import scrap
         if not hasattr(host_pygame, "constants"):
             host_pygame.constants = loc
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
@@ -51,11 +59,11 @@ def _pre():
         if not hasattr(rpg, "constants"):
             rpg.constants = host_pygame.constants
         try: rpg.scrap = scrap
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
         try: rpg.import_as_pygame()
-        except Exception: pass
-    except Exception as e:
-        _log("pygame %s" % e)
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame {e}")
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"] = u; sys.modules["renpy.uguu.gl"] = u
@@ -65,15 +73,15 @@ def _pre():
             if n.startswith("GL_") or n in ("clear_errors", "get_error"):
                 setattr(pkg, n, getattr(u, n))
         pkg.uguu = u; pkg.gl = u
-        import renpy; renpy.uguu = pkg
-    except Exception as e:
-        _log("uguu %s" % e)
+        import renpy; renpy.uguu = pkg  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"] = e
-        import renpy; renpy.ecsign = e
-    except Exception as e:
-        _log("ecsign %s" % e)
+        import renpy; renpy.ecsign = e  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign {e}")
 
 def _find_fixed_1849(d, acc=None, budget=None, depth=0, path=""):
     if acc is None:
@@ -90,17 +98,17 @@ def _find_fixed_1849(d, acc=None, budget=None, depth=0, path=""):
         if style is not None:
             try:
                 xs = style["xsize"]
-            except Exception:
+            except Exception:  # noqa: BLE001
                 try:
                     xs = style.xsize
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             try:
                 ys = style["ysize"]
-            except Exception:
+            except Exception:  # noqa: BLE001
                 try:
                     ys = style.ysize
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
         ch = list(getattr(d, "children", None) or [])
         # match layout fixed by size or by having background-like child
@@ -112,37 +120,37 @@ def _find_fixed_1849(d, acc=None, budget=None, depth=0, path=""):
                 r = repr(c)
                 if "background.png" in r:
                     is_layout = True
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         if is_layout or (t in ("Fixed", "MultiBox") and len(ch) >= 2 and depth >= 1):
             kids = []
             for i, c in enumerate(ch[:12]):
                 try:
                     kids.append((i, type(c).__name__, repr(c)[:120]))
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     kids.append((i, "?", str(e)))
             if xs == 1849 or ys == 846 or any("background" in (k[2] or "") for k in kids):
                 acc.append({"path": path, "type": t, "xsize": xs, "ysize": ys, "nch": len(ch), "kids": kids, "id": id(d)})
-    except Exception as e:
+    except Exception:  # noqa: BLE001, S110
         pass
     # visit
     try:
         if hasattr(d, "visit"):
             for i, c in enumerate(d.visit() or []):
-                _find_fixed_1849(c, acc, budget, depth + 1, path + "/v%d" % i)
-    except Exception:
+                _find_fixed_1849(c, acc, budget, depth + 1, path + "/v%d" % i)  # noqa: UP031
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         for i, c in enumerate(list(getattr(d, "children", None) or [])[:40]):
-            _find_fixed_1849(c, acc, budget, depth + 1, path + "/c%d" % i)
-    except Exception:
+            _find_fixed_1849(c, acc, budget, depth + 1, path + "/c%d" % i)  # noqa: UP031
+    except Exception:  # noqa: BLE001, S110
         pass
     for attr in ("child",):
         try:
             v = getattr(d, attr, None)
             if v is not None:
                 _find_fixed_1849(v, acc, budget, depth + 1, path + "/" + attr)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     return acc
 
@@ -158,7 +166,7 @@ def _render_children_brief(node):
         try:
             if hasattr(child, "get_size"):
                 w, h = child.get_size()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         ht = None
         if isinstance(child, HostTexture):
@@ -192,15 +200,15 @@ def _force_update_screens():
     # Clear updated_screens so ScreenDisplayable.update rebuilds
     try:
         renpy.display.screen.updated_screens.clear()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     # Force each shown screen to update
     try:
         sls = renpy.display.core.scene_lists()
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             sls = renpy.game.context().scene_lists
-        except Exception:
+        except Exception:  # noqa: BLE001
             sls = None
     updated = []
     if sls is not None:
@@ -218,13 +226,13 @@ def _force_update_screens():
                         if isinstance(disp, ScreenDisplayable):
                             try:
                                 renpy.display.screen.updated_screens.discard(disp)
-                            except Exception:
+                            except Exception:  # noqa: BLE001, S110
                                 pass
                             disp.update()
                             updated.append(getattr(disp, "screen_name", None) or getattr(disp, "tag", None))
-                    except Exception as e:
+                    except Exception:  # noqa: BLE001, S110
                         pass
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
     # Also get_screen preferences
     try:
@@ -233,12 +241,14 @@ def _force_update_screens():
             renpy.display.screen.updated_screens.discard(scr)
             scr.update()
             updated.append("preferences_direct")
-    except Exception as e:
-        updated.append("pref_err:%s" % e)
+    except Exception as e:  # noqa: BLE001
+        updated.append(f"pref_err:{e}")
     return updated
 
 def _redraw(do_process_redraws=True, do_update=True):
-    import renpy, interact_helpers as ih
+    import interact_helpers as ih
+
+    import renpy
     ready, why, iface = ih.interface_ready()
     if not ready:
         return "iface:" + why, None, {}
@@ -248,7 +258,7 @@ def _redraw(do_process_redraws=True, do_update=True):
     if do_process_redraws:
         try:
             meta["process_redraws"] = bool(renpy.display.render.process_redraws())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             meta["process_redraws_err"] = str(e)
     # Dump Fixed displayable before render
     try:
@@ -259,11 +269,11 @@ def _redraw(do_process_redraws=True, do_update=True):
                 try:
                     renpy.display.screen.updated_screens.discard(scr)
                     scr.update()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     meta["scr_update_err"] = str(e)
             fixes = _find_fixed_1849(scr)
             meta["fixed_disp"] = fixes[:4]
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         meta["fixed_disp_err"] = str(e)
 
     root = ih._rebuild_product_root(iface)
@@ -282,25 +292,25 @@ def _redraw(do_process_redraws=True, do_update=True):
         try:
             if hasattr(n, "get_size"):
                 ww, hh = n.get_size()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             if ww is not None and hh is not None and abs(float(ww) - 1849) < 1 and abs(float(hh) - 846) < 1:
                 found.append(n)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             for c in getattr(n, "children", None) or []:
                 child = c[0] if isinstance(c, (list, tuple)) else c
                 walk(child, depth + 1)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         for attr in ("cached_texture",):
             try:
                 v = getattr(n, attr, None)
                 if v is not None:
                     walk(v, depth + 1)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
     walk(st)
     meta["n_1849_renders"] = len(found)
@@ -312,25 +322,25 @@ def _redraw(do_process_redraws=True, do_update=True):
     try:
         if hasattr(draw, "load_all_textures"):
             draw.load_all_textures(st)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return "load:" + str(e), st, meta
     # Count draw cmds if possible
     try:
         import renpy_host
         meta["in_frame_before"] = renpy_host.in_frame() if hasattr(renpy_host, "in_frame") else None
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     draw.draw_screen(st, flip=True)
     try:
         import renpy_host
         meta["in_frame_after"] = renpy_host.in_frame() if hasattr(renpy_host, "in_frame") else None
         meta["sample"] = renpy_host.sample_texture_count() if hasattr(renpy_host, "sample_texture_count") else None
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     meta["panel"] = _sample_panel()
     try:
         iface.surftree = st
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return "ok", st, meta
 
@@ -339,10 +349,10 @@ def _hide():
     for n in ("preferences", "confirm", "load", "save", "appreciation", "flowchart", "dialog_config_1", "dialog_config_2"):
         try:
             renpy.display.screen.hide_screen(n)
-        except Exception:
+        except Exception:  # noqa: BLE001
             try:
                 renpy.store.Hide(n)()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
 def _show(kind):
@@ -350,7 +360,7 @@ def _show(kind):
     renpy.display.screen.show_screen("preferences", kind=kind)
     try:
         renpy.restart_interaction()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _worker():
@@ -363,10 +373,10 @@ def _worker():
             try:
                 if getattr(renpy.store, "main_menu", False):
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             time.sleep(0.2)
-        lines.append("main_menu=%s" % getattr(renpy.store, "main_menu", None))
+        lines.append("main_menu={}".format(getattr(renpy.store, "main_menu", None)))
 
         for kind, proc, upd in (
             ("dialog_config_2", True, True),
@@ -379,26 +389,26 @@ def _worker():
             time.sleep(0.12)
             try:
                 _show(kind)
-            except Exception as e:
-                lines.append("SHOW fail kind=%s %s" % (kind, e))
+            except Exception as e:  # noqa: BLE001
+                lines.append(f"SHOW fail kind={kind} {e}")
                 continue
             time.sleep(0.2)
-            rd, st, meta = _redraw(do_process_redraws=proc, do_update=upd)
+            rd, _st, meta = _redraw(do_process_redraws=proc, do_update=upd)
             panel = meta.get("panel")
             pmean = tuple(round(x, 1) for x in panel["mean"]) if panel else None
             pdark = round(panel["dark"], 3) if panel else None
-            lines.append("KIND=%s proc=%s upd=%s redraw=%s panel_mean=%s dark=%s n1849=%s r_nch=%s" % (
+            lines.append("KIND={} proc={} upd={} redraw={} panel_mean={} dark={} n1849={} r_nch={}".format(
                 kind, proc, upd, rd, pmean, pdark, meta.get("n_1849_renders"), meta.get("r1849_nch")))
-            lines.append("  updated=%s process_redraws=%s" % (meta.get("updated"), meta.get("process_redraws", meta.get("process_redraws_err"))))
+            lines.append("  updated={} process_redraws={}".format(meta.get("updated"), meta.get("process_redraws", meta.get("process_redraws_err"))))
             for f in (meta.get("fixed_disp") or [])[:3]:
-                lines.append("  fixed_disp path=%s nch=%d kids=%s" % (f.get("path"), f.get("nch"), f.get("kids")))
-            lines.append("  r1849_children=%s" % meta.get("r1849_children"))
-            lines.append("  sample=%s in_frame=%s/%s" % (meta.get("sample"), meta.get("in_frame_before"), meta.get("in_frame_after")))
+                lines.append("  fixed_disp path=%s nch=%d kids=%s" % (f.get("path"), f.get("nch"), f.get("kids")))  # noqa: UP031
+            lines.append("  r1849_children={}".format(meta.get("r1849_children")))
+            lines.append("  sample={} in_frame={}/{}".format(meta.get("sample"), meta.get("in_frame_before"), meta.get("in_frame_after")))
             _log(lines[-4])
 
         out.write_text("\n".join(lines) + "\n")
-        _log("wrote %s" % out)
-    except Exception:
+        _log(f"wrote {out}")
+    except Exception:  # noqa: BLE001
         tb = traceback.format_exc()
         lines.append(tb)
         out.write_text("\n".join(lines) + "\n")
@@ -420,23 +430,23 @@ def main():
     for p in (str(base / "host" / "python" / "gates"), str(base / "host" / "python")):
         if p not in sys.path:
             sys.path.insert(0, p)
-    open("/tmp/hmc_dc_fix_redraw.log", "w").write("start\n")
-    import renpy_host, bootstrap as boot
+    open("/tmp/hmc_dc_fix_redraw.log", "w").write("start\n")  # noqa: SIM115
+    import bootstrap as boot
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        _log("stage %s good=%s err=%r" % (name, good, err))
+        good, _miss, err, _extra = call()
+        _log(f"stage {name} good={good} err={err!r}")
         if not good:
             _quit(); return
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)
-    except Exception as e:
-        _log("main_host %s" % e)
+        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+    except Exception as e:  # noqa: BLE001
+        _log(f"main_host {e}")
     try:
         import renpy.arguments
         basedir = getattr(renpy.config, "basedir", None) or game
@@ -446,26 +456,26 @@ def main():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         renpy.game.args = renpy.arguments.bootstrap()
-    except Exception as e:
-        _log("args %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"args {e}")
     _pre()
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
     import renpy.main as m
     try:
         m.main()
-    except BaseException as e:
-        _log("main exit %s" % e)
+    except BaseException as e:  # noqa: BLE001
+        _log(f"main exit {e}")
 
 if __name__ == "__main__":
     main()
 else:
     try:
         main()
-    except Exception:
+    except Exception:  # noqa: BLE001
         traceback.print_exc()
         _quit()
 

@@ -13,6 +13,7 @@ draws a checker with a grayscale matrixcolor uniform, MAE vs golden.
 import os
 import sys
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -36,11 +37,11 @@ def _safe_write(msg):
     data = (msg if msg.endswith("\n") else msg + "\n").encode("utf-8", "replace")
     try:
         os.write(1, data)
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             sys.__stdout__.write(msg if msg.endswith("\n") else msg + "\n")
             sys.__stdout__.flush()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -71,7 +72,7 @@ except ComposerError as e:
     ok = False
     notes.append(f"FAIL: compose raised: {e}")
     result = None
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
     notes.append(f"FAIL: compose {type(e).__name__}: {e}")
     result = None
@@ -171,11 +172,11 @@ if result is not None and int(result.pipeline) > 0:
         if not mae_ok:
             ok = False
             notes.append("FAIL: MAE golden")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         ok = False
         notes.append(f"FAIL: draw/mae {type(e).__name__}: {e}")
 
-msg = "gate=composer_combo_matrixcolor\nok=%s\n%s\n" % (
+msg = "gate=composer_combo_matrixcolor\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

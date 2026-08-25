@@ -7,8 +7,8 @@ Note: run_file prepends imports before this source — no __future__ here.
 """
 
 import os
-import sys
 import traceback
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -17,10 +17,9 @@ except ImportError:
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
-import renpy_host  # type: ignore
-
 # host_pygame is installed by embed bootstrap before gates run.
 import host_pygame.event as pev  # type: ignore
+import renpy_host  # type: ignore
 from host_pygame.locals import KEYDOWN, KEYUP  # type: ignore
 
 
@@ -152,7 +151,7 @@ def main():
         else:
             lines.append("PASS: inject_key default unicode='' present")
 
-    except Exception:
+    except Exception:  # noqa: BLE001
         ok = False
         lines.append("EXCEPTION:")
         lines.append(traceback.format_exc())

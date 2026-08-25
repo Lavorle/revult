@@ -1,6 +1,10 @@
 """Assert main menu is entered even when SKIP_MAIN_MENU was '0' before product gate."""
-import os, sys, time, threading
+import os
+import sys
+import threading
+import time
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -34,30 +38,33 @@ os.environ.setdefault("RENPY_HOST_BUILD", "1")
 os.environ.setdefault("RENPY_HOST_GAME", str(base / "the_question"))
 os.environ.setdefault("RENPY_PERFORMANCE_TEST", "0")
 
-import renpy_host
 import bootstrap as boot
+import renpy_host
+
 boot.stage_import_renpy()
 boot.stage_import_all()
 boot.stage_set_game_dir(base)
 import renpy
+
 renpy.host_build = True
 try:
     import renpy_main_host
     renpy_main_host.install(renpy)
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 try:
-    import renpy.audio.renpysound_host as _rs
     import renpy.audio as _ra
+    import renpy.audio.renpysound_host as _rs
     sys.modules["renpy.audio.renpysound"] = _rs
     _ra.renpysound = _rs
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 import renpy.arguments
+
 sys.argv = [sys.argv[0] if sys.argv else "h", str(base/"the_question"), "run"]
 try:
     renpy.arguments.register_command("run", renpy.arguments.run, True)
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 renpy.game.args = renpy.arguments.bootstrap()
 
@@ -72,7 +79,7 @@ def watch():
                 seen["main_menu"] = True
                 renpy_host.request_quit()
                 return
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(0.05)
     renpy_host.request_quit()
@@ -82,7 +89,7 @@ t.start()
 try:
     import renpy.main as m
     m.main()
-except BaseException as e:
+except BaseException as e:  # noqa: BLE001
     print("exit", type(e).__name__, e)
 stop.set()
 ok = seen["main_menu"]

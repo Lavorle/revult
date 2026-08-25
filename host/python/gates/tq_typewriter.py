@@ -36,6 +36,7 @@ from pathlib import Path
 
 import renpy_host  # type: ignore
 from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -101,7 +102,7 @@ class FakeRender:
         # Product text path uses absolute_blit(tex.subsurface(...), (x,y)).
         try:
             xo, yo = pos
-        except Exception:
+        except Exception:  # noqa: BLE001
             xo, yo = 0, 0
         self.children.append((child, float(xo), float(yo), False, True))
         return self
@@ -116,12 +117,12 @@ def _safe_print(msg):
         # Prefer raw fd write to dodge renpy.log stdout wrapper.
         import sys
 
-        sys.__stdout__.write("[tq_typewriter] %s\n" % msg)
+        sys.__stdout__.write(f"[tq_typewriter] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             print("[tq_typewriter]", msg, flush=True)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -133,27 +134,27 @@ def _log(lines, msg):
 def _write(lines, ok, **extra):
     body = list(lines)
     for k, v in extra.items():
-        body.append("%s=%s" % (k, v))
-    body.append("ok=%s" % ok)
+        body.append(f"{k}={v}")
+    body.append(f"ok={ok}")
     text = "\n".join(body) + "\n"
     try:
         out.write_text(text)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # Last-ditch: write minimal ok line next to CWD target
         try:
             Path("target/gate-tq_typewriter.txt").write_text(
-                "ok=%s write_err=%s\n" % (ok, e)
+                f"ok={ok} write_err={e}\n"
             )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return
-    _safe_print("WROTE %s ok=%s" % (out, ok))
+    _safe_print(f"WROTE {out} ok={ok}")
 
 
 def _request_quit():
     try:
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -193,7 +194,7 @@ def _blits_typewriter_like(frac):
     """
     if frac <= 0.0:
         return []
-    w = max(1, int(round(frac * TW)))
+    w = max(1, round(frac * TW))
     w = min(TW, w)
     return [(0, 0, w, TH)]
 
@@ -265,12 +266,12 @@ def main():
     lines = []
     path_kind = "progressive_hosttexture_subsurface"
     try:
-        _log(lines, "start text_cps=%s st_fracs=%s TW=%s TH=%s" % (TEXT_CPS, ST_FRACS, TW, TH))
+        _log(lines, f"start text_cps={TEXT_CPS} st_fracs={ST_FRACS} TW={TW} TH={TH}")
         draw = WgpuDraw()
         draw.init((VW, VH))
         try:
             draw.physical_size = renpy_host.window_size()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
         full_tex = _make_line_tex(draw)
@@ -288,8 +289,7 @@ def main():
         is_ht = isinstance(full_tex, HostTexture)
         _log(
             lines,
-            "full_tex type=%s handle=%s size=%sx%s sub=%s"
-            % (
+            "full_tex type={} handle={} size={}x{} sub={}".format(
                 type(full_tex).__name__,
                 getattr(full_tex, "handle", None),
                 getattr(full_tex, "width", None),
@@ -307,16 +307,16 @@ def main():
                     False,
                     path_kind=path_kind,
                     text_cps=TEXT_CPS,
-                    reason="read_rt_empty frac=%s" % frac,
+                    reason=f"read_rt_empty frac={frac}",
                 )
                 return
             m = _coverage_metrics(rgba, rw, rh)
             m["frac"] = frac
-            m["expected_w"] = 0 if frac <= 0 else max(1, int(round(frac * TW)))
+            m["expected_w"] = 0 if frac <= 0 else max(1, round(frac * TW))
             samples.append(m)
             _log(
                 lines,
-                "st_frac=%.2f expected_w=%d ink_cols=%d coverage=%.3f "
+                "st_frac=%.2f expected_w=%d ink_cols=%d coverage=%.3f "  # noqa: UP031
                 "L/M/R=%d/%d/%d max_ink_x=%d empty=%s"
                 % (
                     frac,
@@ -378,7 +378,7 @@ def main():
                     self.ydy = float(ydy)
 
             mid_frac = 0.35
-            mid_w = max(1, int(round(mid_frac * TW)))
+            mid_w = max(1, round(mid_frac * TW))
             bg = Surface((VW, VH))
             bg.fill(BG)
             root2 = FakeRender(VW, VH)
@@ -406,11 +406,11 @@ def main():
             )
             _log(
                 lines,
-                "identity_reverse mid_w=%d coverage=%.3f max_ink_x=%d stretch_ok=%s"
+                "identity_reverse mid_w=%d coverage=%.3f max_ink_x=%d stretch_ok=%s"  # noqa: UP031
                 % (mid_w, m2["coverage"], m2["max_ink_x"], stretch_ok),
             )
-        except Exception as e:
-            _log(lines, "identity_reverse_err=%r" % (e,))
+        except Exception as e:  # noqa: BLE001
+            _log(lines, f"identity_reverse_err={e!r}")
             stretch_ok = False
 
         ok = bool(
@@ -427,10 +427,9 @@ def main():
         )
 
         reason = (
-            "empty0=%s mid_partial=%s full_ok=%s mono=%s not_always_full=%s "
-            "not_always_empty=%s ltr=%s width_track=%s is_ht=%s stretch_ok=%s "
-            "coverages=%s stretch_cov=%.3f"
-            % (
+            "empty0={} mid_partial={} full_ok={} mono={} not_always_full={} "
+            "not_always_empty={} ltr={} width_track={} is_ht={} stretch_ok={} "
+            "coverages={} stretch_cov={:.3f}".format(
                 empty_at_0,
                 mid_partial,
                 full_ok,
@@ -441,7 +440,7 @@ def main():
                 width_track,
                 is_ht,
                 stretch_ok,
-                ["%.3f" % c for c in coverages],
+                [f"{c:.3f}" for c in coverages],
                 stretch_cov,
             )
         )
@@ -454,9 +453,9 @@ def main():
             text_cps=TEXT_CPS,
             ac="AC-T4_typewriter_progressive",
             st_fracs=list(ST_FRACS),
-            coverages=["%.4f" % c for c in coverages],
+            coverages=[f"{c:.4f}" for c in coverages],
             ink_cols=ink_cols,
-            mid_coverage="%.4f" % st_mid["coverage"],
+            mid_coverage="{:.4f}".format(st_mid["coverage"]),
             mid_left_ink=st_mid["left_ink"],
             mid_right_ink=st_mid["right_ink"],
             mid_max_ink_x=st_mid["max_ink_x"],
@@ -468,21 +467,21 @@ def main():
             ltr=ltr,
             width_track=width_track,
             stretch_ok=stretch_ok,
-            stretch_coverage="%.4f" % stretch_cov,
+            stretch_coverage=f"{stretch_cov:.4f}",
             instant_ok=instant_ok,
             is_hosttexture=is_ht,
             TW=TW,
             TH=TH,
             reason=reason,
         )
-    except Exception as e:
-        _log(lines, "exception %s\n%s" % (e, traceback.format_exc()))
+    except Exception as e:  # noqa: BLE001
+        _log(lines, f"exception {e}\n{traceback.format_exc()}")
         _write(
             lines,
             False,
             path_kind=path_kind,
             text_cps=TEXT_CPS,
-            reason="exception:%s" % e,
+            reason=f"exception:{e}",
         )
     finally:
         _request_quit()

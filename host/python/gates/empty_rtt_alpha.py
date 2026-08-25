@@ -15,6 +15,7 @@ Also samples game RT after a present-side empty frame for contrast.
 
 import os
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -68,7 +69,7 @@ def _mean_rgba(rgba: bytes):
 
 
 def _unique_alphas(rgba: bytes):
-    alphas = set(rgba[i + 3] for i in range(0, len(rgba), 4))
+    alphas = {rgba[i + 3] for i in range(0, len(rgba), 4)}
     return sorted(alphas)
 
 
@@ -122,7 +123,7 @@ hypothesis_holds = all(s[6] == 255 for s in rtt_samples) and rtt_alphas == [255]
 
 lines = []
 lines.append("gate=empty_rtt_alpha")
-lines.append(f"ok={str(True)}")  # measurement always succeeds; value is the data
+lines.append(f"ok={True!s}")  # measurement always succeeds; value is the data
 lines.append(f"rtt_handle={rtt}")
 lines.append(f"rtt_size={w}x{h}")
 lines.append(f"rtt_mean_rgba={rtt_mean[0]:.2f},{rtt_mean[1]:.2f},{rtt_mean[2]:.2f},{rtt_mean[3]:.2f}")

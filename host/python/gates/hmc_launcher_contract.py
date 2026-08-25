@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Hermetic contract checks for the HuangmeiC launcher and wrapper."""
+"""Hermetic contract checks for the HuangmeiC launcher and wrapper."""  # noqa: EXE001
 
 from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
+from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -170,15 +171,7 @@ exec "$@"
     def environment(self, *, build_only_path: bool = False, **updates: str | None) -> dict[str, str]:
         env = os.environ.copy()
         for name in tuple(env):
-            if name.startswith("RENPY_HOST_") or name.startswith("HMC_") or name in {
-                "CARGO_TARGET_DIR",
-                "HUANGMEIC_GAME_SRC",
-                "PYTHONPATH",
-                "RENPY_PERFORMANCE_TEST",
-                "RENPY_SKIP_MAIN_MENU",
-                "RENPY_SKIP_SPLASHSCREEN",
-                "RUST_LOG",
-            }:
+            if name.startswith(("RENPY_HOST_", "HMC_")) or name in {"CARGO_TARGET_DIR", "HUANGMEIC_GAME_SRC", "PYTHONPATH", "RENPY_PERFORMANCE_TEST", "RENPY_SKIP_MAIN_MENU", "RENPY_SKIP_SPLASHSCREEN", "RUST_LOG"}:
                 env.pop(name, None)
         env.update(
             PATH=str(self.build_tools if build_only_path else self.tools),
@@ -216,8 +209,7 @@ exec "$@"
         return subprocess.run(
             [str(command), *args],
             env=self.environment(build_only_path=build_only_path, **updates),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=20,
             check=False,
         )
@@ -350,8 +342,7 @@ declare -F _parse_args _validate_launcher_env _build_host _ensure_default_game_o
                 "HMC_FAIL_PATH": str(fail_path),
                 "HMC_SOURCE_MARKER": str(marker),
             },
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=10,
             check=False,
         )
@@ -654,7 +645,7 @@ def main() -> int:
     for name, test in tests:
         try:
             test()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"FAIL {name}: {type(exc).__name__}: {exc}", file=sys.stderr)
             return 1
         print(f"PASS {name}")

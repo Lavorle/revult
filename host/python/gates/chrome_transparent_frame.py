@@ -26,6 +26,7 @@ from pathlib import Path
 
 import renpy_host  # type: ignore
 from renpy.pygame.surface import Surface
+
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -170,7 +171,7 @@ def main():
     draw.init((vw, vh))
     try:
         draw.physical_size = renpy_host.window_size()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     # --- A2: fully transparent Frame over green BG must leave BG unchanged ---
@@ -188,8 +189,8 @@ def main():
     draw.draw_screen(root, flip=True)
     try:
         rw, rh, rgba = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt err={e}"
         out.write_text(msg + "\n")
         print("[chrome_transparent_frame]", msg, flush=True)
         return
@@ -239,8 +240,8 @@ def main():
     draw.draw_screen(root2, flip=True)
     try:
         rw2, rh2, rgba2 = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt_orange err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt_orange err={e}"
         out.write_text(msg + "\n")
         print("[chrome_transparent_frame]", msg, flush=True)
         return
@@ -248,9 +249,9 @@ def main():
     sx2 = rw2 / float(vw)
     sy2 = rh2 / float(vh)
     # top border mid
-    tr, tg, tb, ta = _sample(rgba2, rw2, rh2, (OX + DST_W // 2) * sx2, (OY + 1) * sy2)
+    tr, tg, tb, _ta = _sample(rgba2, rw2, rh2, (OX + DST_W // 2) * sx2, (OY + 1) * sy2)
     # left border mid
-    lr, lg, lb, la = _sample(rgba2, rw2, rh2, (OX + 1) * sx2, (OY + DST_H // 2) * sy2)
+    lr, lg, lb, _la = _sample(rgba2, rw2, rh2, (OX + 1) * sx2, (OY + DST_H // 2) * sy2)
     orange_border_ok = (
         tr >= 150 and 40 <= tg <= 160 and tb <= 80 and (tr - tg) >= 30
     ) and (
@@ -268,19 +269,19 @@ def main():
     draw.draw_screen(root3, flip=True)
     try:
         rw3, rh3, rgba3 = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        msg = "ok=False reason=read_rt_reverse err=%s" % e
+    except Exception as e:  # noqa: BLE001
+        msg = f"ok=False reason=read_rt_reverse err={e}"
         out.write_text(msg + "\n")
         print("[chrome_transparent_frame]", msg, flush=True)
         return
     sx3 = rw3 / float(vw)
     sy3 = rh3 / float(vh)
-    cr, cg, cb, ca = _sample(rgba3, rw3, rh3, (OX + DST_W // 2) * sx3, (OY + DST_H // 2) * sy3)
+    cr, cg, cb, _ca = _sample(rgba3, rw3, rh3, (OX + DST_W // 2) * sx3, (OY + DST_H // 2) * sy3)
     reverse_clear_ok = _near((cr, cg, cb), BG) and not _is_blackish((cr, cg, cb))
 
     ok = bool(inside_ok and outside_ok and not black_slab and orange_border_ok and reverse_clear_ok)
     msg = (
-        "ok=%s inside_ok=%s outside_ok=%s black_slab=%s orange_border_ok=%s "
+        "ok=%s inside_ok=%s outside_ok=%s black_slab=%s orange_border_ok=%s "  # noqa: UP031
         "reverse_clear_ok=%s center=%s edge=%s outside=%s orange_top=(%d,%d,%d) "
         "reverse_center=(%d,%d,%d) dest=%dx%d src=%dx%d border=%d path=frame_multipiece+reverse"
         % (

@@ -1,5 +1,8 @@
 """Quick confirm present diagnostic (post-nav Step 2)."""
-import os, sys, threading, time, traceback
+import os
+import sys
+import threading
+import time
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
@@ -18,15 +21,15 @@ def _base():
 
 def _log(m):
     try:
-        sys.__stdout__.write("[hmc_confirm_diag] %s\n" % m); sys.__stdout__.flush()
-    except Exception:
+        sys.__stdout__.write(f"[hmc_confirm_diag] {m}\n"); sys.__stdout__.flush()
+    except Exception:  # noqa: BLE001, S110
         pass
-    open("/tmp/hmc_nav_confirm_diag.log","a").write(m+"\n")
+    open("/tmp/hmc_nav_confirm_diag.log","a").write(m+"\n")  # noqa: SIM115
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()
-    except Exception:
+        import renpy_host; renpy_host.request_quit()  # noqa: I001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 def _clear_falsey(n):
@@ -37,21 +40,24 @@ def _clear_falsey(n):
 def _pre():
     import types
     try:
-        import renpy.audio.renpysound_host as h, renpy.audio as a
+        import renpy.audio as a
+        import renpy.audio.renpysound_host as h
         sys.modules["renpy.audio.renpysound"]=h; a.renpysound=h
-    except Exception as e: _log("sound %s"%e)
+    except Exception as e: _log(f"sound {e}")  # noqa: BLE001
     try:
-        import host_pygame, host_pygame.locals as loc, host_pygame.scrap as scrap
+        import host_pygame
+        import host_pygame.locals as loc
+        from host_pygame import scrap
         if not hasattr(host_pygame,"constants"): host_pygame.constants=loc
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
         sys.modules["renpy.pygame.scrap"]=scrap; sys.modules["pygame.scrap"]=scrap
         import renpy.pygame as rpg
         if not hasattr(rpg,"constants"): rpg.constants=host_pygame.constants
         try: rpg.scrap=scrap
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
         try: rpg.import_as_pygame()
-        except Exception: pass
-    except Exception as e: _log("pygame %s"%e)
+        except Exception: pass  # noqa: BLE001, S110
+    except Exception as e: _log(f"pygame {e}")  # noqa: BLE001
     try:
         import renpy_uguu_host as u
         sys.modules["renpy.uguu.uguu"]=u; sys.modules["renpy.uguu.gl"]=u
@@ -60,13 +66,13 @@ def _pre():
         for n in dir(u):
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
-        import renpy; renpy.uguu=pkg
-    except Exception as e: _log("uguu %s"%e)
+        import renpy; renpy.uguu=pkg  # noqa: I001
+    except Exception as e: _log(f"uguu {e}")  # noqa: BLE001
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-        import renpy; renpy.ecsign=e
-    except Exception as e: _log("ecsign %s"%e)
+        import renpy; renpy.ecsign=e  # noqa: I001
+    except Exception as e: _log(f"ecsign {e}")  # noqa: BLE001
 
 def _sample():
     import renpy_host
@@ -89,16 +95,18 @@ def _frame_state():
     for name in ("in_frame","frame_depth"):
         try:
             d[name]=getattr(renpy_host,name)()
-        except Exception as e:
-            d[name]="err:%s"%e
+        except Exception as e:  # noqa: BLE001
+            d[name]=f"err:{e}"
     return d
 
 def _present():
-    import renpy, interact_helpers as ih
+    import interact_helpers as ih
+
+    import renpy
     ready,why,iface=ih.interface_ready()
     if not ready: return {"err":why}
     # prefer live surftree if rich
-    prev=getattr(iface,"surftree",None)
+    getattr(iface,"surftree",None)
     root=ih._rebuild_product_root(iface)
     w=int(getattr(renpy.config,"screen_width",1920) or 1920)
     h=int(getattr(renpy.config,"screen_height",1080) or 1080)
@@ -108,15 +116,15 @@ def _present():
     before=_frame_state()
     try:
         if hasattr(draw,"load_all_textures"): draw.load_all_textures(st)
-    except Exception as e:
-        _log("prepare_err %s"%e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"prepare_err {e}")
     mid=_frame_state()
     try:
         draw.draw_screen(st, flip=True)
         iface.surftree=st
         path="rebuild"
-    except Exception as e:
-        _log("draw_err %s"%e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"draw_err {e}")
         path="err"
     after=_frame_state()
     return {"path":path,"before":before,"mid":mid,"after":after,"st":type(st).__name__}
@@ -131,21 +139,21 @@ def _show_confirm():
         confirm_type="quit",
     )
     try: renpy.restart_interaction()
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
 
 def _show_flow():
     import renpy
     renpy.store.ShowMenu("flowchart")()
     try: renpy.restart_interaction()
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
 
 def _hide_all():
     import renpy
     for n in ("load","preferences","appreciation","flowchart","confirm","save"):
         try: renpy.display.screen.hide_screen(n)
-        except Exception: pass
+        except Exception: pass  # noqa: BLE001, S110
     try: renpy.restart_interaction()
-    except Exception: pass
+    except Exception: pass  # noqa: BLE001, S110
 
 def run():
     base=_base()
@@ -158,17 +166,17 @@ def run():
     _clear_falsey("RENPY_SKIP_MAIN_MENU"); _clear_falsey("RENPY_SKIP_SPLASHSCREEN")
     for p in (str(base/"host"/"python"/"gates"), str(base/"host"/"python")):
         if p not in sys.path: sys.path.insert(0,p)
-    import renpy_host, bootstrap as boot
+    import bootstrap as boot
     for name,call in (("import_renpy",boot.stage_import_renpy),("import_all",boot.stage_import_all),
                       ("set_game_dir",lambda: boot.stage_set_game_dir(base))):
-        good,miss,err,extra=call(); _log("stage %s good=%s err=%r"%(name,good,err))
+        good,_miss,err,_extra=call(); _log(f"stage {name} good={good} err={err!r}")
         if not good:
-            out.write_text("ok=False\nerror=%s\n"%err); _quit(); return
+            out.write_text(f"ok=False\nerror={err}\n"); _quit(); return
     import renpy
     renpy.host_build=True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)
-    except Exception as e: _log("main_host %s"%e)
+        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+    except Exception as e: _log(f"main_host {e}")  # noqa: BLE001
     try:
         import renpy.arguments
         basedir=getattr(renpy.config,"basedir",None) or game
@@ -178,17 +186,17 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception: pass
+            except Exception: pass  # noqa: BLE001, S110
         renpy.game.args=renpy.arguments.bootstrap()
-    except Exception as e: _log("args %s"%e)
+    except Exception as e: _log(f"args {e}")  # noqa: BLE001
     _pre()
     results=[]
     def injector():
         for i in range(400):
             try:
                 if bool(getattr(renpy.store,"main_menu",False)):
-                    _log("main_menu tick=%d"%i); break
-            except Exception: pass
+                    _log("main_menu tick=%d"%i); break  # noqa: UP031
+            except Exception: pass  # noqa: BLE001, S110
             time.sleep(0.05)
         time.sleep(2.0)
         # Case A: confirm alone
@@ -197,47 +205,47 @@ def run():
         for j in range(20):
             if renpy.display.screen.get_screen("confirm") is not None: break
             time.sleep(0.1)
-        pre=_sample(); _log("A pre_rt %s"%pre)
-        _log("A frame %s"%_frame_state())
+        pre=_sample(); _log(f"A pre_rt {pre}")
+        _log(f"A frame {_frame_state()}")
         p=_present(); _log("A present %s"%{k:v for k,v in p.items() if k!='st'})
-        post=_sample(); _log("A post_rt %s"%post)
+        post=_sample(); _log(f"A post_rt {post}")
         results.append(("confirm_alone", post))
         _hide_all(); time.sleep(0.5)
         # Case B: flowchart then confirm
         _log("=== B flowchart then confirm ===")
         _show_flow(); time.sleep(0.8)
         p=_present(); _log("B flow present %s"%{k:v for k,v in p.items() if k!='st'})
-        frt=_sample(); _log("B flow rt %s"%frt)
+        frt=_sample(); _log(f"B flow rt {frt}")
         _hide_all(); time.sleep(0.4)
         _show_confirm(); time.sleep(0.5)
-        pre=_sample(); _log("B conf pre_rt %s"%pre)
-        _log("B frame %s"%_frame_state())
+        pre=_sample(); _log(f"B conf pre_rt {pre}")
+        _log(f"B frame {_frame_state()}")
         p=_present(); _log("B conf present %s"%{k:v for k,v in p.items() if k!='st'})
-        post=_sample(); _log("B conf post_rt %s"%post)
+        post=_sample(); _log(f"B conf post_rt {post}")
         results.append(("confirm_after_flow", post))
         # Case C: confirm alone again
         _hide_all(); time.sleep(0.4)
         _log("=== C confirm alone again ===")
         _show_confirm(); time.sleep(0.5)
         p=_present(); _log("C present %s"%{k:v for k,v in p.items() if k!='st'})
-        post=_sample(); _log("C post_rt %s"%post)
+        post=_sample(); _log(f"C post_rt {post}")
         results.append(("confirm_alone_2", post))
         lines=["gate=hmc_nav_confirm_diag"]
         ok=all(r[1].get("ok") for r in results)
-        lines.append("ok=%s"%ok)
+        lines.append(f"ok={ok}")
         for name,rt in results:
-            lines.append("case.%s ok=%s mean=%s var=%s clear=%s"%(name,rt.get("ok"),rt.get("mean"),rt.get("var"),rt.get("clear")))
+            lines.append("case.{} ok={} mean={} var={} clear={}".format(name,rt.get("ok"),rt.get("mean"),rt.get("var"),rt.get("clear")))
         out.write_text("\n".join(lines)+"\n")
         art=os.environ.get("ARTIFACT_DIR")
         if art:
             Path(art).mkdir(parents=True,exist_ok=True)
             (Path(art)/"gate-hmc_nav_confirm_diag.txt").write_text(out.read_text())
-        _log("wrote %s ok=%s"%(out,ok))
+        _log(f"wrote {out} ok={ok}")
         _quit()
     threading.Thread(target=injector,daemon=True).start()
     import renpy.main as m
     try: m.main()
-    except BaseException as e: _log("main exit %s"%e)
+    except BaseException as e: _log(f"main exit {e}")  # noqa: BLE001
 
 run()
 

@@ -82,14 +82,14 @@ def _write_report(out, lines):
 def _log(message):
     message = str(message)
     try:
-        sys.__stdout__.write("[confirm_settings] %s\n" % message)
+        sys.__stdout__.write(f"[confirm_settings] {message}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         with _artifact().with_suffix(".log").open("a", encoding="utf-8") as stream:
             stream.write(message + "\n")
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -97,8 +97,8 @@ def _fail(out, classification, evidence):
     _write_report(
         out,
         (
-            "classification=%s" % classification,
-            "evidence=%s" % json.dumps(evidence, sort_keys=True, default=str),
+            f"classification={classification}",
+            f"evidence={json.dumps(evidence, sort_keys=True, default=str)}",
             "ok=False",
         ),
     )
@@ -109,7 +109,7 @@ def _quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -121,35 +121,35 @@ def _clear_falsey(name):
 
 def _pre():
     try:
-        import renpy.audio as audio
         import renpy.audio.renpysound_host as sound
+        from renpy import audio
 
         sys.modules["renpy.audio.renpysound"] = sound
         audio.renpysound = sound
-    except Exception as e:
-        _log("sound prelude: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"sound prelude: {e}")
 
     try:
         import host_pygame
         import host_pygame.locals as locals_mod
-        import host_pygame.scrap as scrap
+        from host_pygame import scrap
 
         if not hasattr(host_pygame, "constants"):
             host_pygame.constants = locals_mod
         sys.modules.setdefault("renpy.pygame.constants", host_pygame.constants)
         sys.modules["renpy.pygame.scrap"] = scrap
         sys.modules["pygame.scrap"] = scrap
-        import renpy.pygame as pygame
+        from renpy import pygame
 
         if not hasattr(pygame, "constants"):
             pygame.constants = host_pygame.constants
         pygame.scrap = scrap
         try:
             pygame.import_as_pygame()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
-    except Exception as e:
-        _log("pygame prelude: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame prelude: {e}")
 
     try:
         import renpy_uguu_host as uguu
@@ -167,8 +167,8 @@ def _pre():
         import renpy
 
         renpy.uguu = package
-    except Exception as e:
-        _log("uguu prelude: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu prelude: {e}")
 
     try:
         import renpy_ecsign_host as ecsign
@@ -177,8 +177,8 @@ def _pre():
         import renpy
 
         renpy.ecsign = ecsign
-    except Exception as e:
-        _log("ecsign prelude: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign prelude: {e}")
 
 
 def _mapping(name):
@@ -209,15 +209,16 @@ def _counter():
 
 def _hide_transients():
     import interact_helpers as ih
+
     import renpy
 
     for name in TRANSIENT_SCREENS:
         try:
             renpy.display.screen.hide_screen(name)
-        except Exception:
+        except Exception:  # noqa: BLE001
             try:
                 renpy.store.Hide(name)()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
     focus = renpy.display.focus
@@ -229,20 +230,20 @@ def _hide_transients():
         if call is not None:
             try:
                 call(*args)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
     for name in ("tooltip", "last_tooltip", "override"):
         try:
             setattr(focus, name, None)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     try:
         renpy.store.preferences_hint.hide_hint()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
         renpy.restart_interaction()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     ih.pump_ms(120)
     return {
@@ -259,20 +260,20 @@ def _show_prefs(kind):
         renpy.display.screen.show_screen("preferences", kind=kind)
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return True, "show_screen_preferences_kind"
-    except Exception as first:
+    except Exception as first:  # noqa: BLE001
         try:
             renpy.store.ShowMenu("preferences")()
             renpy.display.screen.show_screen("preferences", kind=kind)
             try:
                 renpy.restart_interaction()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
-            return True, "ShowMenu+kind:%s" % first
-        except Exception as second:
-            return False, "fail:%s/%s" % (first, second)
+            return True, f"ShowMenu+kind:{first}"
+        except Exception as second:  # noqa: BLE001
+            return False, f"fail:{first}/{second}"
 
 
 def _screen_kind():
@@ -337,12 +338,13 @@ def _panel_probe(width, height, rgba):
 
 def _present():
     import interact_helpers as ih
-    import renpy
     import renpy_host
+
+    import renpy
 
     ready, why, interface = ih.interface_ready()
     if not ready or interface is None:
-        return {"ok": False, "status": "interface:%s" % why}
+        return {"ok": False, "status": f"interface:{why}"}
     root = ih._rebuild_product_root(interface)
     if root is None:
         return {"ok": False, "status": "product_root_absent"}
@@ -380,10 +382,10 @@ def _present():
             "ownership_ok": ownership_ok,
             "panels": panels,
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {
             "ok": False,
-            "status": "%s:%s" % (type(e).__name__, e),
+            "status": f"{type(e).__name__}:{e}",
             "traceback": traceback.format_exc(),
         }
 
@@ -399,7 +401,7 @@ def _action_meta(action, mapping, allowed):
         return meta
     try:
         values = vars(action)
-    except Exception:
+    except Exception:  # noqa: BLE001
         values = {}
     meta["mapping_match"] = any(value is mapping for value in values.values())
     if not meta["mapping_match"]:
@@ -408,7 +410,7 @@ def _action_meta(action, mapping, allowed):
                 if getattr(action, name) is mapping:
                     meta["mapping_match"] = True
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
     for value in values.values():
         if value == "save":
@@ -472,8 +474,9 @@ def _wait(predicate, timeout=3.0):
 
 def _exercise(kind, mapping_name, allowed, originals):
     import interact_helpers as ih
-    import renpy
     import renpy_host
+
+    import renpy
 
     result = {"kind": kind, "mapping": mapping_name, "allowed": list(allowed)}
     trace_start = len(TRACE_EVENTS)
@@ -515,8 +518,8 @@ def _exercise(kind, mapping_name, allowed, originals):
             return result
         vx = desired["x"] + desired["w"] / 2.0
         vy = desired["y"] + desired["h"] / 2.0
-        px = min(rt_w - 1, max(0, int(round(vx * rt_w / virtual_w))))
-        py = min(rt_h - 1, max(0, int(round(vy * rt_h / virtual_h))))
+        px = min(rt_w - 1, max(0, round(vx * rt_w / virtual_w)))
+        py = min(rt_h - 1, max(0, round(vy * rt_h / virtual_h)))
         result["expected_save"] = expected
         result["focus_virtual"] = (vx, vy)
         result["focus_physical"] = (px, py)
@@ -524,7 +527,7 @@ def _exercise(kind, mapping_name, allowed, originals):
 
         try:
             renpy.pygame.mouse.set_pos((px, py))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         renpy_host.inject_mouse(px, py, 0, False)
         result["move_only_injected"] = True
@@ -612,7 +615,7 @@ def _worker():
         while time.time() < deadline and not bool(getattr(renpy.store, "main_menu", False)):
             time.sleep(0.2)
         main_menu = bool(getattr(renpy.store, "main_menu", False))
-        lines.append("main_menu=%s" % main_menu)
+        lines.append(f"main_menu={main_menu}")
         if not main_menu:
             lines.extend(("classification=other:main_menu_timeout", "ok=False"))
             _write_report(out, lines)
@@ -642,10 +645,10 @@ def _worker():
             if ok
             else "other:product_gate_failure"
         )
-        lines.extend(("classification=%s" % classification, "ok=%s" % ok))
+        lines.extend((f"classification={classification}", f"ok={ok}"))
         _write_report(out, lines)
-        _log("wrote %s ok=%s classification=%s" % (out, ok, classification))
-    except Exception:
+        _log(f"wrote {out} ok={ok} classification={classification}")
+    except Exception:  # noqa: BLE001
         lines.append("EXCEPTION " + json.dumps(traceback.format_exc()))
         lines.extend(("classification=other:gate_exception", "ok=False"))
         _write_report(out, lines)
@@ -655,7 +658,7 @@ def _worker():
             _restore(originals)
         try:
             _hide_transients()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         if trace_module is not None and trace_original is not None:
             trace_module._ui_trace_once = trace_original
@@ -669,8 +672,8 @@ def main():
         out = _artifact(base)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.with_suffix(".log").write_text("start\n", encoding="utf-8")
-    except Exception as e:
-        _log("artifact validation failed: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"artifact validation failed: {e}")
         _quit()
         return
 
@@ -689,7 +692,6 @@ def main():
 
     try:
         import bootstrap as boot
-        import renpy_host
 
         for name, call in (
             ("import_renpy", boot.stage_import_renpy),
@@ -697,9 +699,9 @@ def main():
             ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
         ):
             good, missing, error, extra = call()
-            _log("stage %s good=%s missing=%s error=%r" % (name, good, missing, error))
+            _log(f"stage {name} good={good} missing={missing} error={error!r}")
             if not good:
-                _fail(out, "other:bootstrap_%s" % name, {"missing": missing, "error": error, "extra": extra})
+                _fail(out, f"other:bootstrap_{name}", {"missing": missing, "error": error, "extra": extra})
                 _quit()
                 return
 
@@ -710,8 +712,8 @@ def main():
             import renpy_main_host
 
             renpy_main_host.install(renpy)
-        except Exception as e:
-            _log("main_host: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"main_host: {e}")
         try:
             import renpy.arguments
 
@@ -722,10 +724,10 @@ def main():
                 try:
                     renpy.arguments.register_command("run", renpy.arguments.run, True)
                     renpy.arguments.register_command("quit", renpy.arguments.quit)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             renpy.game.args = renpy.arguments.bootstrap()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _fail(out, "other:arguments_bootstrap", {"error": str(e)})
             _quit()
             return
@@ -736,9 +738,9 @@ def main():
 
         try:
             renpy_main.main()
-        except BaseException as e:
-            _log("main exit %s:%s" % (type(e).__name__, e))
-    except Exception:
+        except BaseException as e:  # noqa: BLE001
+            _log(f"main exit {type(e).__name__}:{e}")
+    except Exception:  # noqa: BLE001
         _fail(out, "other:main_exception", {"traceback": traceback.format_exc()})
         _log(traceback.format_exc())
         _quit()

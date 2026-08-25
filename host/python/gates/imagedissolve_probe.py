@@ -12,6 +12,7 @@ Writes host/target/gate-imagedissolve_probe.txt with ok=True/False.
 import os
 import sys
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -21,6 +22,7 @@ except ImportError:
         gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host
+
 from renpy.wgpu.draw import WgpuDraw
 
 
@@ -39,11 +41,11 @@ def _safe_write(msg: str) -> None:
     data = (msg if msg.endswith("\n") else msg + "\n").encode("utf-8", "replace")
     try:
         os.write(1, data)
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             sys.__stdout__.write(msg if msg.endswith("\n") else msg + "\n")
             sys.__stdout__.flush()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -138,7 +140,7 @@ try:
     draw._draw_node(n, 0.0, 0.0)
     renpy_host.end_frame_present()
     notes.append("draw_node_imagedissolve=ok")
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
     notes.append(f"FAIL: draw_node {type(e).__name__}: {e}")
 
@@ -151,7 +153,7 @@ if key != "imagedissolve_pipeline":
     ok = False
     notes.append("FAIL: shaders map not imagedissolve_pipeline")
 
-msg = "gate=imagedissolve_probe\nok=%s\n%s\n" % (
+msg = "gate=imagedissolve_probe\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

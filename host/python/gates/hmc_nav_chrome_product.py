@@ -43,13 +43,13 @@ def _base():
 
 def _log(msg):
     try:
-        sys.__stdout__.write("[hmc_nav_chrome] %s\n" % msg)
+        sys.__stdout__.write(f"[hmc_nav_chrome] {msg}\n")
         sys.__stdout__.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     try:
-        open("/tmp/hmc_nav_chrome_product.log", "a").write(msg + "\n")
-    except Exception:
+        open("/tmp/hmc_nav_chrome_product.log", "a").write(msg + "\n")  # noqa: SIM115
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -58,7 +58,7 @@ def _request_quit():
         import renpy_host
 
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -75,14 +75,14 @@ def _pre_main_host_stubs():
     import types
 
     try:
-        import renpy.audio.renpysound_host as _rs_host
         import renpy.audio as _ra
+        import renpy.audio.renpysound_host as _rs_host
 
         sys.modules["renpy.audio.renpysound"] = _rs_host
         _ra.renpysound = _rs_host
         _log("renpysound rebound")
-    except Exception as e:
-        _log("renpysound soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"renpysound soft-fail: {e}")
 
     try:
         import host_pygame
@@ -101,15 +101,15 @@ def _pre_main_host_stubs():
             rpg.constants = host_pygame.constants
         try:
             rpg.scrap = _host_scrap
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             rpg.import_as_pygame()
-        except Exception as e:
-            _log("import_as_pygame soft-fail: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(f"import_as_pygame soft-fail: {e}")
         _log("pygame host shim ok")
-    except Exception as e:
-        _log("pygame soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"pygame soft-fail: {e}")
 
     try:
         import renpy_uguu_host as _uguu
@@ -124,17 +124,17 @@ def _pre_main_host_stubs():
         for _name in dir(_uguu):
             if _name.startswith("GL_") or _name in ("clear_errors", "get_error"):
                 setattr(pkg, _name, getattr(_uguu, _name))
-        setattr(pkg, "uguu", _uguu)
-        setattr(pkg, "gl", _uguu)
+        pkg.uguu = _uguu
+        pkg.gl = _uguu
         try:
             import renpy
 
             renpy.uguu = pkg
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         _log("uguu host stub installed")
-    except Exception as e:
-        _log("uguu soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"uguu soft-fail: {e}")
 
     try:
         import renpy_ecsign_host as _ecsign
@@ -143,24 +143,25 @@ def _pre_main_host_stubs():
         try:
             import renpy as _renpy_pkg
 
-            setattr(_renpy_pkg, "ecsign", _ecsign)
-        except Exception:
+            _renpy_pkg.ecsign = _ecsign
+        except Exception:  # noqa: BLE001, S110
             pass
         _log("ecsign host stub installed")
-    except Exception as e:
-        _log("ecsign soft-fail: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(f"ecsign soft-fail: {e}")
 
 
 def _force_product_redraw():
     """Rebuild scene root after ShowMenu and draw it (stale surftree is wrong)."""
-    import renpy
     import interact_helpers as ih
+
+    import renpy
 
     info = {"path": None, "error": None}
     try:
         ready, why, iface = ih.interface_ready()
         if not ready or iface is None:
-            info["error"] = "iface:%s" % why
+            info["error"] = f"iface:{why}"
             return info
         root = ih._rebuild_product_root(iface)
         if root is None:
@@ -176,14 +177,14 @@ def _force_product_redraw():
         draw.draw_screen(surftree, flip=True)
         try:
             iface.surftree = surftree
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         info["path"] = "rebuild_render_screen"
         info["root"] = type(root).__name__
         info["surftree"] = type(surftree).__name__
         return info
-    except Exception as e:
-        info["error"] = "%s:%s" % (type(e).__name__, e)
+    except Exception as e:  # noqa: BLE001
+        info["error"] = f"{type(e).__name__}:{e}"
         return info
 
 
@@ -202,17 +203,17 @@ def _sample_rt():
 
             pres2 = ih.ensure_frame_present(force=True)
             pres = {
-                "path": "fallback:%s" % pres2.get("path"),
+                "path": "fallback:{}".format(pres2.get("path")),
                 "error": pres.get("error"),
                 "fallback_error": pres2.get("error"),
             }
-        except Exception as e:
-            pres = {"path": None, "error": "%s|fallback:%s" % (pres.get("error"), e)}
+        except Exception as e:  # noqa: BLE001
+            pres = {"path": None, "error": "{}|fallback:{}".format(pres.get("error"), e)}
 
     try:
         rw, rh, rt = renpy_host.read_game_rt_rgba()
-    except Exception as e:
-        return {"ok": False, "error": "read_rt:%s" % e, "present": pres}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"read_rt:{e}", "present": pres}
     if not rw or not rh or not rt:
         return {"ok": False, "error": "empty_rt", "present": pres}
     rs = gs = bs = n = pure = 0
@@ -270,7 +271,7 @@ def _get_screen(name):
         import renpy
 
         return renpy.display.screen.get_screen(name)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -283,18 +284,18 @@ def _force_show_menu(name):
         action()
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return True, "ShowMenu()"
-    except Exception as e1:
+    except Exception as e1:  # noqa: BLE001
         try:
             renpy.display.screen.show_screen(name)
             try:
                 renpy.restart_interaction()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
-            return True, "display.screen.show_screen:%s" % e1
-        except Exception as e2:
+            return True, f"display.screen.show_screen:{e1}"
+        except Exception as e2:  # noqa: BLE001
             try:
                 # Last resort: exports if bound
                 show = getattr(renpy, "show_screen", None) or getattr(
@@ -303,9 +304,9 @@ def _force_show_menu(name):
                 if show is None:
                     raise RuntimeError("no show_screen")
                 show(name)
-                return True, "exports.show_screen:%s|%s" % (e1, e2)
-            except Exception as e3:
-                return False, "fail:%s|%s|%s" % (e1, e2, e3)
+                return True, f"exports.show_screen:{e1}|{e2}"
+            except Exception as e3:  # noqa: BLE001
+                return False, f"fail:{e1}|{e2}|{e3}"
 
 
 def _force_return():
@@ -315,19 +316,19 @@ def _force_return():
         renpy.store.Return()()
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return "Return()"
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     for n in ("load", "preferences", "appreciation", "flowchart", "confirm", "save"):
         try:
             renpy.display.screen.hide_screen(n)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     try:
         renpy.restart_interaction()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return "hide_screens"
 
@@ -344,7 +345,7 @@ def _force_confirm_quit():
                 mapping = getattr(m, "preferences_confirm_requirement_mapping", None)
                 if isinstance(mapping, dict):
                     mapping["quit"] = True
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         renpy.display.screen.show_screen(
             "confirm",
@@ -355,19 +356,19 @@ def _force_confirm_quit():
         )
         try:
             renpy.restart_interaction()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         return True, "show_screen_confirm"
-    except Exception as e1:
+    except Exception as e1:  # noqa: BLE001
         try:
             renpy.store.ConfirmAction("quit")()
             try:
                 renpy.restart_interaction()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
-            return True, "ConfirmAction():%s" % e1
-        except Exception as e2:
-            return False, "fail:%s|%s" % (e1, e2)
+            return True, f"ConfirmAction():{e1}"
+        except Exception as e2:  # noqa: BLE001
+            return False, f"fail:{e1}|{e2}"
 
 
 def run():
@@ -402,7 +403,6 @@ def run():
     if host_py not in sys.path:
         sys.path.insert(0, host_py)
 
-    import renpy_host  # type: ignore
     import bootstrap as boot
 
     for name, call in (
@@ -410,10 +410,10 @@ def run():
         ("import_all", boot.stage_import_all),
         ("set_game_dir", lambda: boot.stage_set_game_dir(base)),
     ):
-        good, miss, err, extra = call()
-        rec("stage %s good=%s err=%r" % (name, good, err))
+        good, _miss, err, _extra = call()
+        rec(f"stage {name} good={good} err={err!r}")
         if not good:
-            out.write_text("gate=hmc_nav_chrome_product\nok=False\nerror=%s\n" % err)
+            out.write_text(f"gate=hmc_nav_chrome_product\nok=False\nerror={err}\n")
             _request_quit()
             return
 
@@ -422,7 +422,7 @@ def run():
     renpy.host_build = True
     try:
         renpy.config.performance_test = False
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     try:
@@ -430,8 +430,8 @@ def run():
 
         renpy_main_host.install(renpy)
         rec("main_host installed")
-    except Exception as e:
-        rec("main_host: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        rec(f"main_host: {e}")
 
     try:
         import renpy.arguments
@@ -443,13 +443,13 @@ def run():
             try:
                 renpy.arguments.register_command("run", renpy.arguments.run, True)
                 renpy.arguments.register_command("quit", renpy.arguments.quit)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         args = renpy.arguments.bootstrap()
         renpy.game.args = args
-        rec("args command=%s basedir=%s" % (getattr(args, "command", None), basedir))
-    except Exception as e:
-        rec("args fail: %s" % e)
+        rec("args command={} basedir={}".format(getattr(args, "command", None), basedir))
+    except Exception as e:  # noqa: BLE001
+        rec(f"args fail: {e}")
         rec(traceback.format_exc())
 
     _pre_main_host_stubs()
@@ -469,9 +469,9 @@ def run():
             try:
                 if bool(getattr(renpy.store, "main_menu", False)):
                     state["main_menu"] = True
-                    rec("main_menu at tick=%d" % i)
+                    rec("main_menu at tick=%d" % i)  # noqa: UP031
                     break
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             time.sleep(0.05)
         if not state["main_menu"]:
@@ -485,8 +485,7 @@ def run():
         try:
             base_rt = _sample_rt()
             rec(
-                "main_menu_rt ok=%s mean=(%.0f,%.0f,%.0f) var=%.1f pure=%.3f"
-                % (
+                "main_menu_rt ok={} mean=({:.0f},{:.0f},{:.0f}) var={:.1f} pure={:.3f}".format(
                     base_rt.get("ok"),
                     base_rt.get("mean", (0, 0, 0))[0],
                     base_rt.get("mean", (0, 0, 0))[1],
@@ -495,12 +494,12 @@ def run():
                     base_rt.get("pure_frac", 0),
                 )
             )
-        except Exception as e:
-            rec("main_menu_rt fail: %s" % e)
+        except Exception as e:  # noqa: BLE001
+            rec(f"main_menu_rt fail: {e}")
 
         for tname, screen_name, kind in targets:
-            state["phase"] = "nav_%s" % tname
-            rec("--- target %s ---" % tname)
+            state["phase"] = f"nav_{tname}"
+            rec(f"--- target {tname} ---")
             entry = {
                 "name": tname,
                 "screen": screen_name,
@@ -522,7 +521,7 @@ def run():
                 if not ok_open:
                     entry["error"] = via
                     state["results"].append(entry)
-                    rec("open FAIL %s" % via)
+                    rec(f"open FAIL {via}")
                     continue
 
                 # Wait for screen + frames
@@ -535,10 +534,10 @@ def run():
                     # confirm may be transient if preference disables
                     time.sleep(0.1)
                 entry["opened"] = opened
-                rec("opened=%s via=%s" % (opened, via))
+                rec(f"opened={opened} via={via}")
                 time.sleep(0.4)
                 pinfo = _force_product_redraw()
-                rec("present path=%s err=%s root=%s" % (
+                rec("present path={} err={} root={}".format(
                     pinfo.get("path"), pinfo.get("error"), pinfo.get("root")))
                 time.sleep(0.1)
                 rt = _sample_rt()
@@ -551,8 +550,7 @@ def run():
                 if rt.get("error"):
                     entry["error"] = rt["error"]
                 rec(
-                    "rt ok=%s mean=(%.0f,%.0f,%.0f) var=%.1f pure=%.3f fb=%s clear=%s present=%s err=%s"
-                    % (
+                    "rt ok={} mean=({:.0f},{:.0f},{:.0f}) var={:.1f} pure={:.3f} fb={} clear={} present={} err={}".format(
                         entry["rt_ok"],
                         entry["mean"][0],
                         entry["mean"][1],
@@ -565,9 +563,9 @@ def run():
                         entry.get("error"),
                     )
                 )
-            except Exception as e:
-                entry["error"] = "%s" % e
-                rec("exc %s: %s" % (tname, e))
+            except Exception as e:  # noqa: BLE001
+                entry["error"] = f"{e}"
+                rec(f"exc {tname}: {e}")
                 rec(traceback.format_exc())
             state["results"].append(entry)
 
@@ -575,8 +573,8 @@ def run():
             try:
                 _force_return()
                 time.sleep(0.4)
-            except Exception as e:
-                rec("return fail: %s" % e)
+            except Exception as e:  # noqa: BLE001
+                rec(f"return fail: {e}")
 
         state["phase"] = "done"
         rec("request_quit")
@@ -590,8 +588,8 @@ def run():
     try:
         renpy_main.main()
         rec("main returned")
-    except BaseException as e:
-        rec("main exit %s: %s" % (type(e).__name__, e))
+    except BaseException as e:  # noqa: BLE001
+        rec(f"main exit {type(e).__name__}: {e}")
 
     # Summarize
     results = state["results"]
@@ -619,21 +617,20 @@ def run():
 
     body = [
         "gate=hmc_nav_chrome_product",
-        "ok=%s" % ok,
+        f"ok={ok}",
         "ac=Nav_product_showmenu",
-        "main_menu=%s" % main_ok,
-        "primary_ok=%s" % primary_ok,
-        "confirm_ok=%s" % confirm_ok,
-        "panel_ok=%s" % panel_ok,
-        "phase=%s" % state["phase"],
+        f"main_menu={main_ok}",
+        f"primary_ok={primary_ok}",
+        f"confirm_ok={confirm_ok}",
+        f"panel_ok={panel_ok}",
+        "phase={}".format(state["phase"]),
         "errors=%s" % (";".join(state["errors"]) if state["errors"] else "none"),
         "notes=human_full_interact_still_authority_for_AC-Nav1-2;confirm_assets_in_hmc_chrome_residual",
     ]
     for r in results:
         body.append(
-            "screen.%s ok=%s opened=%s rt_ok=%s mean=(%.1f,%.1f,%.1f) var=%.1f "
-            "pure_frac=%.3f featureless_black=%s via=%s err=%s"
-            % (
+            "screen.{} ok={} opened={} rt_ok={} mean=({:.1f},{:.1f},{:.1f}) var={:.1f} "
+            "pure_frac={:.3f} featureless_black={} via={} err={}".format(
                 r["name"],
                 r.get("ok"),
                 r.get("opened"),
@@ -652,11 +649,11 @@ def run():
         "matrix AC-Nav1=engine_partial_see_panels AC-Nav2=human_only "
         "AC-Nav3=pass_process_stubs_excluded"
     )
-    body.extend(["log.%s" % ln for ln in lines[-40:]])
+    body.extend([f"log.{ln}" for ln in lines[-40:]])
     out.write_text("\n".join(body) + "\n")
-    rec("wrote %s ok=%s panel_ok=%s" % (out, ok, panel_ok))
+    rec(f"wrote {out} ok={ok} panel_ok={panel_ok}")
     _request_quit()
-    if not ok:
+    if not ok:  # noqa: SIM102
         # Soft: still write artifact; raise only if main_menu never reached
         if not main_ok:
             raise RuntimeError("hmc_nav_chrome_product: main_menu never reached")

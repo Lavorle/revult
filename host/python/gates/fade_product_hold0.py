@@ -30,6 +30,7 @@ import struct
 import traceback
 import zlib
 from pathlib import Path
+
 try:
     from _harness import gate_harness, parametrized_gate
 except ImportError:
@@ -62,7 +63,7 @@ STAGE_STS = {
 }
 
 # Dense samples for flicker metric (frame-to-frame mean-luma delta).
-DENSE_STS = [i * 0.05 for i in range(0, 21)]  # 0.00 .. 1.00 step 0.05
+DENSE_STS = [i * 0.05 for i in range(21)]  # 0.00 .. 1.00 step 0.05
 
 # Spike threshold: |Δluma| above this between adjacent dense samples is a "spike".
 # Product Fade should darken/brighten smoothly; dual-draw thrash can produce
@@ -82,17 +83,17 @@ def _log(lines, msg):
 def _write(lines, ok, **extra):
     body = list(lines)
     for k, v in extra.items():
-        body.append("%s=%s" % (k, v))
-    body.append("ok=%s" % ok)
+        body.append(f"{k}={v}")
+    body.append(f"ok={ok}")
     text = "\n".join(body) + "\n"
     out.write_text(text)
-    print("[fade_product_hold0] WROTE", out, "ok=%s" % ok, flush=True)
+    print("[fade_product_hold0] WROTE", out, f"ok={ok}", flush=True)
 
 
 def _request_quit():
     try:
         renpy_host.request_quit()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -111,7 +112,7 @@ class _Surf:
 def _png_rgba(path):
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise RuntimeError("not png: %s" % path)
+        raise RuntimeError(f"not png: {path}")
     pos = 8
     w = h = None
     raw = b""
@@ -131,7 +132,7 @@ def _png_rgba(path):
     if not w or not h:
         raise RuntimeError("bad png header")
     if bit_depth != 8 or color_type not in (2, 6):
-        raise RuntimeError("unsupported png ct=%s bd=%s" % (color_type, bit_depth))
+        raise RuntimeError(f"unsupported png ct={color_type} bd={bit_depth}")
     decomp = zlib.decompress(raw)
     bpp = 4 if color_type == 6 else 3
     stride = w * bpp + 1
@@ -162,7 +163,7 @@ def _png_rgba(path):
                 pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
                 scan[i] = (scan[i] + pr) & 0xFF
         elif filt != 0:
-            raise RuntimeError("bad filter %s" % filt)
+            raise RuntimeError(f"bad filter {filt}")
         prev = scan
         for x in range(w):
             si = x * bpp
@@ -228,19 +229,20 @@ def _luma(m):
 def _bootstrap(lines):
     import bootstrap as boot
 
-    good, miss, err, extra = boot.stage_import_renpy()
-    _log(lines, "import_renpy good=%s err=%s" % (good, err))
+    good, miss, err, extra = boot.stage_import_renpy()  # noqa: RUF059
+    _log(lines, f"import_renpy good={good} err={err}")
     if not good:
-        raise RuntimeError("import_renpy failed: %s" % err)
-    good, miss, err, extra = boot.stage_import_all()
-    _log(lines, "import_all good=%s err=%s" % (good, err))
+        raise RuntimeError(f"import_renpy failed: {err}")
+    good, _miss, err, _extra = boot.stage_import_all()
+    _log(lines, f"import_all good={good} err={err}")
     if not good:
-        raise RuntimeError("import_all failed: %s" % err)
+        raise RuntimeError(f"import_all failed: {err}")
 
-    import renpy.game as game
     import renpy.display.render as render_mod
     import renpy.style as style_mod
+
     import renpy.display.displayable as disp_mod
+    from renpy import game
 
     render_mod.models = True
     game.less_updates = False
@@ -274,15 +276,15 @@ def _bootstrap(lines):
 
     try:
         render_mod.render_ready()
-    except Exception as e:
-        _log(lines, "render_ready softfail %s" % e)
+    except Exception as e:  # noqa: BLE001
+        _log(lines, f"render_ready softfail {e}")
 
     less_updates = bool(game.less_updates)
     models = bool(render_mod.models)
     transitions_pref = int(getattr(game.preferences, "transitions", -1))
     _log(
         lines,
-        "less_updates=%s models=%s transitions_pref=%s" % (less_updates, models, transitions_pref),
+        f"less_updates={less_updates} models={models} transitions_pref={transitions_pref}",
     )
     return less_updates, models, transitions_pref
 
@@ -311,14 +313,15 @@ def main():
     try:
         less_updates, models, transitions_pref = _bootstrap(lines)
 
-        from renpy.display.displayable import Displayable
         from renpy.display.render import Render
+
+        from renpy.display.displayable import Displayable
         from renpy.display.transition import Fade, MultipleTransition
         from renpy.wgpu.draw import WgpuDraw
 
         class ProductImage(Displayable):
             def __init__(self, surf, tag="img"):
-                super(ProductImage, self).__init__()
+                super().__init__()
                 self.surf = surf
                 self.tag = tag
 
@@ -340,7 +343,7 @@ def main():
             """
 
             def __init__(self):
-                super(BlackFill, self).__init__()
+                super().__init__()
 
             def render(self, w, h, st, at):
                 rw = int(w) if w and w > 0 else VW
@@ -357,20 +360,20 @@ def main():
         try:
             ow, oh, orgba, old_tag = _load_image_rgba(game_dir / "gui" / "main_menu.png")
             old_surf = _fit(VW, VH, ow, oh, orgba)
-        except Exception as e:
-            old_tag = "solid_red_fallback(%s)" % e
+        except Exception as e:  # noqa: BLE001
+            old_tag = f"solid_red_fallback({e})"
             old_surf = _Surf(VW, VH, bytes([220, 40, 40, 255]) * (VW * VH))
         try:
             nw, nh, nrgba, new_tag = _load_image_rgba(
                 game_dir / "images" / "bg lecturehall.jpg"
             )
             new_surf = _fit(VW, VH, nw, nh, nrgba)
-        except Exception as e:
-            new_tag = "solid_blue_fallback(%s)" % e
+        except Exception as e:  # noqa: BLE001
+            new_tag = f"solid_blue_fallback({e})"
             new_surf = _Surf(VW, VH, bytes([40, 40, 220, 255]) * (VW * VH))
 
         used_product = ("fallback" not in old_tag) and ("fallback" not in new_tag)
-        _log(lines, "old=%s new=%s used_product=%s" % (old_tag, new_tag, used_product))
+        _log(lines, f"old={old_tag} new={new_tag} used_product={used_product}")
 
         old = ProductImage(old_surf, old_tag)
         new = ProductImage(new_surf, new_tag)
@@ -382,15 +385,15 @@ def main():
         draw.init((VW, VH))
         try:
             draw.physical_size = renpy_host.window_size()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             import renpy.display as renpy_display
 
             renpy_display.draw = draw
             _log(lines, "renpy.display.draw = WgpuDraw (product Solid path enabled)")
-        except Exception as e:
-            _log(lines, "renpy.display.draw install softfail %s" % e)
+        except Exception as e:  # noqa: BLE001
+            _log(lines, f"renpy.display.draw install softfail {e}")
 
         # Prefer product Solid black (00definitions.rpy Fade default widget).
         # BlackFill only if Solid still cannot render after draw install.
@@ -406,9 +409,9 @@ def main():
             has_reverse = bool(getattr(probe, "reverse", None))
             black_widget = solid
             widget_kind = "Solid_reverse" if has_reverse else "Solid"
-            _log(lines, "Solid probe ok reverse=%s size=%s" % (has_reverse, probe.get_size()))
-        except Exception as e:
-            _log(lines, "Solid widget softfail (%s); using BlackFill" % e)
+            _log(lines, f"Solid probe ok reverse={has_reverse} size={probe.get_size()}")
+        except Exception as e:  # noqa: BLE001
+            _log(lines, f"Solid widget softfail ({e}); using BlackFill")
             black_widget = BlackFill()
             widget_kind = "BlackFill"
 
@@ -425,14 +428,13 @@ def main():
         fade_delay = getattr(f, "delay", None)
         _log(
             lines,
-            "Fade type=%s delay=%s hold=%s widget=%s"
-            % (fade_type, fade_delay, HOLD_T, widget_kind),
+            f"Fade type={fade_type} delay={fade_delay} hold={HOLD_T} widget={widget_kind}",
         )
         if not isinstance(f, MultipleTransition):
-            raise RuntimeError("Fade did not return MultipleTransition: %s" % type(f))
+            raise RuntimeError(f"Fade did not return MultipleTransition: {type(f)}")  # noqa: TRY004
         # hold=0 → delay should be OUT+IN = 1.0
         if fade_delay is not None and abs(float(fade_delay) - (OUT_T + IN_T)) > 1e-6:
-            _log(lines, "WARN unexpected delay=%s expected=%s" % (fade_delay, OUT_T + IN_T))
+            _log(lines, f"WARN unexpected delay={fade_delay} expected={OUT_T + IN_T}")
 
         # --- Named stage samples (F1–F3) ---
         for name, st in STAGE_STS.items():
@@ -446,8 +448,7 @@ def main():
             stage_means[name] = m
             _log(
                 lines,
-                "stage=%s st=%.3f complete=%s shaders=%s uniforms=%s mean=(%.1f,%.1f,%.1f)"
-                % (name, st, oc, shaders, uniforms, m[0], m[1], m[2]),
+                f"stage={name} st={st:.3f} complete={oc} shaders={shaders} uniforms={uniforms} mean=({m[0]:.1f},{m[1]:.1f},{m[2]:.1f})",
             )
 
         # --- Dense samples for flicker metric ---
@@ -462,8 +463,7 @@ def main():
             dense_lumas.append((st, l, m))
             if prev_l is not None:
                 d = abs(l - prev_l)
-                if d > max_spike:
-                    max_spike = d
+                max_spike = max(max_spike, d)
                 if d >= SPIKE_LUMA:
                     spikes.append((st, d, prev_l, l))
             prev_l = l
@@ -478,14 +478,13 @@ def main():
         flicker_flag = thrash_count > MAX_EXTREME_SPIKES
         _log(
             lines,
-            "dense_spikes=%s thrash_spikes=%s max_spike=%.1f flicker_flag=%s spikes=%s"
-            % (
+            "dense_spikes={} thrash_spikes={} max_spike={:.1f} flicker_flag={} spikes={}".format(
                 spike_count,
                 thrash_count,
                 max_spike,
                 flicker_flag,
                 [
-                    "st=%.2f d=%.1f (%.1f→%.1f)" % (s[0], s[1], s[2], s[3])
+                    f"st={s[0]:.2f} d={s[1]:.1f} ({s[2]:.1f}→{s[3]:.1f})"
                     for s in spikes[:8]
                 ],
             ),
@@ -546,29 +545,10 @@ def main():
         )
         ok = bool(ac_l0 and ac_f)
         reason = (
-            "F1_out_darkens=%s F2_black_near_zero=%s F3_in_brightens=%s late_ok=%s "
-            "not_all_clear=%s st0_ok=%s product=%s hold0=%s solid_path=%s "
-            "widget=%s flicker_flag=%s thrash_spikes=%s "
-            "lums=(%.1f,%.1f,%.1f,%.1f,%.1f)"
-            % (
-                out_darkens,
-                black_near_zero,
-                in_brightens,
-                late_ok,
-                not_all_clear,
-                st0_ok,
-                used_product,
-                hold_is_zero,
-                solid_product_path,
-                widget_kind,
-                flicker_flag,
-                thrash_count,
-                l0,
-                l_out,
-                l_black,
-                l_in,
-                l_late,
-            )
+            f"F1_out_darkens={out_darkens} F2_black_near_zero={black_near_zero} F3_in_brightens={in_brightens} late_ok={late_ok} "
+            f"not_all_clear={not_all_clear} st0_ok={st0_ok} product={used_product} hold0={hold_is_zero} solid_path={solid_product_path} "
+            f"widget={widget_kind} flicker_flag={flicker_flag} thrash_spikes={thrash_count} "
+            f"lums=({l0:.1f},{l_out:.1f},{l_black:.1f},{l_in:.1f},{l_late:.1f})"
         )
         _log(lines, ("PASS " if ok else "FAIL ") + reason)
 
@@ -586,11 +566,11 @@ def main():
             out_time=OUT_T,
             in_time=IN_T,
             widget_kind=widget_kind,
-            stage_means={k: "(%.1f,%.1f,%.1f)" % v for k, v in stage_means.items()},
-            dense_lumas=["st=%.2f L=%.1f" % (s, l) for s, l, _m in dense_lumas],
+            stage_means={k: "({:.1f},{:.1f},{:.1f})".format(*v) for k, v in stage_means.items()},
+            dense_lumas=[f"st={s:.2f} L={l:.1f}" for s, l, _m in dense_lumas],
             spike_count=spike_count,
             thrash_spikes=thrash_count,
-            max_spike="%.1f" % max_spike,
+            max_spike=f"{max_spike:.1f}",
             flicker_flag=flicker_flag,
             used_product=used_product,
             old=old_tag,
@@ -602,8 +582,8 @@ def main():
             F3="in_brightens+no_thrash_flicker",
             F4="not_this_gate(see_dissolve/ac_live)",
         )
-    except Exception as e:
-        _log(lines, "exception %s\n%s" % (e, traceback.format_exc()))
+    except Exception as e:  # noqa: BLE001
+        _log(lines, f"exception {e}\n{traceback.format_exc()}")
         _write(
             lines,
             False,
@@ -615,8 +595,8 @@ def main():
             fade_type=fade_type,
             hold_time=HOLD_T,
             widget_kind=widget_kind,
-            stage_means={k: "(%.1f,%.1f,%.1f)" % v for k, v in stage_means.items()},
-            reason="exception:%s" % e,
+            stage_means={k: "({:.1f},{:.1f},{:.1f})".format(*v) for k, v in stage_means.items()},
+            reason=f"exception:{e}",
             old=old_tag,
             new=new_tag,
             flicker_flag=flicker_flag,

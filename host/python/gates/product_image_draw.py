@@ -15,7 +15,8 @@ import zlib
 from pathlib import Path
 
 import renpy_host  # type: ignore
-from renpy.wgpu.draw import WgpuDraw, HostTexture
+
+from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
 try:
@@ -32,7 +33,7 @@ except ImportError:
 def _png_rgba(path):
     """Minimal PNG decoder for 8-bit RGBA/RGB (no interlacing). Returns (w,h,rgba)."""
     data = path.read_bytes()
-    assert data[:8] == b"\x89PNG\r\n\x1a\n", "not png: %s" % path
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", f"not png: {path}"
     pos = 8
     w = h = None
     raw = b""
@@ -52,7 +53,7 @@ def _png_rgba(path):
     if not w or not h:
         raise RuntimeError("bad png header")
     if bit_depth != 8 or color_type not in (2, 6):
-        raise RuntimeError("unsupported png ct=%s bd=%s" % (color_type, bit_depth))
+        raise RuntimeError(f"unsupported png ct={color_type} bd={bit_depth}")
     decomp = zlib.decompress(raw)
     bpp = 4 if color_type == 6 else 3
     stride = w * bpp + 1
@@ -83,7 +84,7 @@ def _png_rgba(path):
                 pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
                 scan[i] = (scan[i] + pr) & 0xFF
         elif filt != 0:
-            raise RuntimeError("bad filter %s" % filt)
+            raise RuntimeError(f"bad filter {filt}")
         prev = scan
         for x in range(w):
             si = x * bpp
@@ -149,11 +150,11 @@ try:
         w, h, rgba = _png_rgba(png)
     else:
         raise FileNotFoundError(str(png))
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     # Fallback: solid non-clear magenta full window
     w, h = 1280, 720
     rgba = bytes([200, 40, 180, 255]) * (w * h)
-    src = "solid_fallback(%s)" % e
+    src = f"solid_fallback({e})"
 
 surf = _Surf(w, h, rgba)
 # Product-like: outer container + mesh=True node with surface child (Image leaf).
@@ -209,32 +210,16 @@ nonblank = (not clear_like) and (not center_clear) and (mean[0] + mean[1] + mean
 
 ok = nonblank and cached_ht
 msg = (
-    "src=%s size=%sx%s rt=%sx%s "
-    "mean=(%.1f,%.1f,%.1f) "
-    "center=%s clear_like=%s "
-    "cached_ht=%s handle=%s "
-    "nonblank=%s ok=%s"
-    % (
-        src,
-        w,
-        h,
-        rw,
-        rh,
-        mean[0],
-        mean[1],
-        mean[2],
-        center,
-        clear_like,
-        cached_ht,
-        cached_handle,
-        nonblank,
-        ok,
-    )
+    f"src={src} size={w}x{h} rt={rw}x{rh} "
+    f"mean=({mean[0]:.1f},{mean[1]:.1f},{mean[2]:.1f}) "
+    f"center={center} clear_like={clear_like} "
+    f"cached_ht={cached_ht} handle={cached_handle} "
+    f"nonblank={nonblank} ok={ok}"
 )
 out = Path("target/gate-product_image_draw.txt")
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(msg + "\n", encoding="utf-8")
-print("[product_image_draw] %s" % msg, flush=True)
+print(f"[product_image_draw] {msg}", flush=True)
 if not ok:
     raise RuntimeError(msg)
 renpy_host.request_quit()

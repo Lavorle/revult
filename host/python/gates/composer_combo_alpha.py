@@ -27,7 +27,7 @@ from golden_mae import compare_or_bootstrap, gate_result_path
 # sys.path when run via renpy_host). The try-wrapper also supports
 # `python -m host.python.gates.composer_combo_alpha` / namespace import.
 try:
-    from _harness import gate_harness  # noqa: F401 — sample import, see below
+    from _harness import gate_harness
 except ImportError:  # pragma: no cover — fallback for namespace import
     from host.python.gates._harness import gate_harness  # type: ignore[no-redef]  # noqa: F401
 
@@ -62,11 +62,11 @@ def _safe_write(msg):
     data = (msg if msg.endswith("\n") else msg + "\n").encode("utf-8", "replace")
     try:
         os.write(1, data)
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             sys.__stdout__.write(msg if msg.endswith("\n") else msg + "\n")
             sys.__stdout__.flush()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -90,8 +90,7 @@ if not sh.list_wgsl_parts():
 if sh.composition_mode("renpy.alpha") != "vertex_color_alpha":
     ok = False
     notes.append(
-        "FAIL: renpy.alpha composition_mode=%r expected vertex_color_alpha"
-        % (sh.composition_mode("renpy.alpha"),)
+        "FAIL: renpy.alpha composition_mode={!r} expected vertex_color_alpha".format(sh.composition_mode("renpy.alpha"))
     )
 else:
     notes.append("renpy.alpha composition_mode=vertex_color_alpha")
@@ -118,11 +117,11 @@ try:
     )
 except ComposerError as e:
     ok = False
-    notes.append("FAIL: compose raised: %s" % e)
+    notes.append(f"FAIL: compose raised: {e}")
     result = None
-except Exception as e:
+except Exception as e:  # noqa: BLE001
     ok = False
-    notes.append("FAIL: compose %s: %s" % (type(e).__name__, e))
+    notes.append(f"FAIL: compose {type(e).__name__}: {e}")
     result = None
 
 if result is None:
@@ -130,15 +129,7 @@ if result is None:
     notes.append("FAIL: no ComposerResult for texture+alpha")
 else:
     notes.append(
-        "key=%s pipeline=%s tex_count=%s layout=%s parts=%s has_uniforms=%s"
-        % (
-            result.key,
-            result.pipeline,
-            result.tex_count,
-            result.uniform_layout_id,
-            result.partnames,
-            result.has_uniforms,
-        )
+        f"key={result.key} pipeline={result.pipeline} tex_count={result.tex_count} layout={result.uniform_layout_id} parts={result.partnames} has_uniforms={result.has_uniforms}"
     )
     if int(result.pipeline) <= 0:
         ok = False
@@ -146,30 +137,27 @@ else:
     if result.partnames != ["renpy.texture"]:
         ok = False
         notes.append(
-            "FAIL: alpha must be stripped; effect parts=%s (expected ['renpy.texture'])"
-            % (result.partnames,)
+            f"FAIL: alpha must be stripped; effect parts={result.partnames} (expected ['renpy.texture'])"
         )
     if result.has_uniforms or result.uniform_layout_id != "none":
         ok = False
         notes.append(
-            "FAIL: texture+alpha fold must not introduce uniforms (layout=%s)"
-            % (result.uniform_layout_id,)
+            f"FAIL: texture+alpha fold must not introduce uniforms (layout={result.uniform_layout_id})"
         )
     # Same key as texture-only compose (order-insensitive, alpha stripped).
     try:
         tex_only = cache.get(["renpy.texture"], hard_fail=True)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         tex_only = None
         ok = False
-        notes.append("FAIL: texture-only re-get: %s" % e)
+        notes.append(f"FAIL: texture-only re-get: {e}")
     if tex_only is not None and tex_only.key != result.key:
         ok = False
         notes.append(
-            "FAIL: texture+alpha key %s != texture-only %s"
-            % (result.key, tex_only.key)
+            f"FAIL: texture+alpha key {result.key} != texture-only {tex_only.key}"
         )
     elif tex_only is not None:
-        notes.append("texture_only_key_match=%s" % result.key)
+        notes.append(f"texture_only_key_match={result.key}")
 
 # Manual vertex-color fold matching draw.py WgpuDraw:
 #   draw_color = (cr*a, cg*a, cb*a, ca*a*over) with a=0.5, over=1.0
@@ -180,7 +168,7 @@ vr = 1.0 * ALPHA
 vg = 1.0 * ALPHA
 vb = 1.0 * ALPHA
 va = 1.0 * ALPHA * OVER
-notes.append("vertex_fold rgba=(%s,%s,%s,%s)" % (vr, vg, vb, va))
+notes.append(f"vertex_fold rgba=({vr},{vg},{vb},{va})")
 notes.append("alpha_policy=vertex_color_fold (not fragment merge, not uniforms)")
 
 if result is not None and int(result.pipeline) > 0:
@@ -215,9 +203,9 @@ if result is not None and int(result.pipeline) > 0:
         w, h, rgba = renpy_host.read_game_rt_rgba()
         if not (w > 0 and h > 0 and len(rgba) == w * h * 4):
             ok = False
-            notes.append("FAIL: bad RT readback %sx%s bytes=%s" % (w, h, len(rgba)))
+            notes.append(f"FAIL: bad RT readback {w}x{h} bytes={len(rgba)}")
         else:
-            notes.append("rt=%sx%s" % (w, h))
+            notes.append(f"rt={w}x{h}")
 
             # Non-black check
             total = 0
@@ -226,7 +214,7 @@ if result is not None and int(result.pipeline) > 0:
                 total += rgba[i] + rgba[i + 1] + rgba[i + 2]
                 n += 3
             mean = total / max(n, 1)
-            notes.append("mean_rgb=%.2f" % mean)
+            notes.append(f"mean_rgb={mean:.2f}")
             if mean < 1.0:
                 ok = False
                 notes.append("FAIL: RT essentially black after alpha-fold draw")
@@ -239,14 +227,14 @@ if result is not None and int(result.pipeline) > 0:
                 if not mae_ok:
                     ok = False
                     notes.append("FAIL: MAE golden")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 ok = False
-                notes.append("FAIL: mae %s: %s" % (type(e).__name__, e))
-    except Exception as e:
+                notes.append(f"FAIL: mae {type(e).__name__}: {e}")
+    except Exception as e:  # noqa: BLE001
         ok = False
-        notes.append("FAIL: draw %s: %s" % (type(e).__name__, e))
+        notes.append(f"FAIL: draw {type(e).__name__}: {e}")
 
-msg = "gate=composer_combo_alpha\nok=%s\n%s\n" % (
+msg = "gate=composer_combo_alpha\nok={}\n{}\n".format(
     "True" if ok else "False",
     "\n".join(notes),
 )

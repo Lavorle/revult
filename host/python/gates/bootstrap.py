@@ -283,7 +283,7 @@ def progressive_import_all():
         try:
             __import__(mod)
             ok.append(mod)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             mname = _missing_name_from_exc(e) or mod
             if mname not in missing:
                 missing.append(mname)
@@ -300,8 +300,8 @@ def stage_import_renpy():
     """Stage a: import renpy + host_build True."""
     extra: dict = {}
     try:
-        import renpy  # noqa: F401
-    except Exception as e:
+        import renpy
+    except Exception as e:  # noqa: BLE001
         return False, [_missing_name_from_exc(e) or "renpy"], f"{type(e).__name__}: {e}", extra
 
     import renpy
@@ -333,7 +333,7 @@ def stage_import_renpy():
         import renpy_host  # noqa: F401
 
         extra["renpy_host"] = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, ["renpy_host"], f"renpy_host import failed: {e}", extra
 
     return True, [], "", extra
@@ -353,7 +353,7 @@ def _bind_host_display_accelerator(extra: dict | None = None) -> None:
 
     try:
         import renpy_display_accelerator_host as _acc  # type: ignore
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if extra is not None:
             extra["accelerator_bind"] = f"import_fail:{type(e).__name__}"
         return
@@ -366,7 +366,7 @@ def _bind_host_display_accelerator(extra: dict | None = None) -> None:
         if extra is not None:
             extra["accelerator_bind"] = "ok"
             extra["accelerator_has_nogil_copy"] = hasattr(_acc, "nogil_copy")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if extra is not None:
             extra["accelerator_bind"] = f"attr_fail:{type(e).__name__}:{e}"
 
@@ -389,13 +389,13 @@ def _bind_host_gl2_mesh_modules(extra: dict | None = None) -> None:
     failed = []
     try:
         import renpy.gl2 as _gl2  # type: ignore
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if extra is not None:
             extra["gl2_mesh_bind"] = f"gl2_import_fail:{type(e).__name__}:{e}"
         return
 
     for mod_name in ("gl2mesh2", "gl2mesh3", "gl2mesh", "gl2polygon"):
-        full = "renpy.gl2.%s" % mod_name
+        full = f"renpy.gl2.{mod_name}"
         try:
             if full in sys.modules:
                 mod = sys.modules[full]
@@ -403,15 +403,12 @@ def _bind_host_gl2_mesh_modules(extra: dict | None = None) -> None:
                 mod = __import__(full, fromlist=["*"])
             setattr(_gl2, mod_name, mod)
             bound.append(mod_name)
-        except Exception as e:
-            failed.append("%s:%s" % (mod_name, type(e).__name__))
+        except Exception as e:  # noqa: BLE001
+            failed.append(f"{mod_name}:{type(e).__name__}")
             if extra is not None:
-                extra["gl2_mesh_bind_%s" % mod_name] = "%s:%s" % (
-                    type(e).__name__,
-                    e,
-                )
+                extra[f"gl2_mesh_bind_{mod_name}"] = f"{type(e).__name__}:{e}"
     if extra is not None:
-        extra["gl2_mesh_bind"] = "ok:%s" % ",".join(bound) if bound else "none"
+        extra["gl2_mesh_bind"] = "ok:{}".format(",".join(bound)) if bound else "none"
         if failed:
             extra["gl2_mesh_bind_failed"] = failed
 
@@ -427,8 +424,9 @@ def _patch_render_screen_tree_lock(extra: dict | None = None) -> None:
     """
     try:
         import renpy.display.render as rr  # type: ignore
+
         import renpy.display.screen as rs  # type: ignore
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if extra is not None:
             extra["render_screen_lock"] = f"import_fail:{type(e).__name__}:{e}"
         return
@@ -449,7 +447,7 @@ def _patch_render_screen_tree_lock(extra: dict | None = None) -> None:
             # kill_cache + process_redraws cannot race a concurrent update.
             try:
                 rr.process_redraws()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             return _orig(root, width, height, *a, **k)
 
@@ -473,7 +471,7 @@ def stage_import_all():
         _bind_host_gl2_mesh_modules(extra)
         _patch_render_screen_tree_lock(extra)
         return True, [], "", extra
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         full_tb = traceback.format_exc()
         first_missing = _missing_name_from_exc(e)
         extra["import_all"] = "failed"
@@ -529,8 +527,8 @@ def stage_set_game_dir(base: Path):
 
     # Config may already exist even if import_all only partially ran.
     try:
-        import renpy.config  # noqa: F401
-    except Exception as e:
+        import renpy.config
+    except Exception as e:  # noqa: BLE001
         return False, ["renpy.config"], f"renpy.config unavailable: {e}", extra
 
     renpy.config.renpy_base = str(base)
@@ -580,7 +578,7 @@ def stage_bootstrap_main(base: Path):
 
         extra["renpy.pygame"] = getattr(rpg, "__name__", str(rpg))
         extra["renpy.pygame.file"] = getattr(rpg, "__file__", "?")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return False, ["renpy.pygame"], f"renpy.pygame import failed: {e}", extra
 
     # 2) Synthetic argv for renpy.arguments if basedir known.
@@ -606,7 +604,7 @@ def stage_bootstrap_main(base: Path):
     except SystemExit as e:
         # argparse --help etc.
         return False, ["arguments"], f"arguments SystemExit: {e}", extra
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         missing.append("renpy.arguments")
         extra["arguments_error"] = f"{type(e).__name__}: {e}"
 
@@ -620,7 +618,7 @@ def stage_bootstrap_main(base: Path):
         has_run = callable(getattr(renpy_main, "run", None))
         extra["renpy.main.main"] = has_main
         extra["renpy.main.run"] = has_run
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         m = _missing_name_from_exc(e) or "renpy.main"
         missing.append(m)
         return (
@@ -729,7 +727,7 @@ def run() -> None:
         )
         reached = "bootstrap_main"
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if not tb:
             tb = traceback.format_exc()
         if not missing:
@@ -753,7 +751,7 @@ def run() -> None:
             import renpy_host
 
             renpy_host.request_quit()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     # Gate script convention: raise on failure so Rust logs "Python gate failed"

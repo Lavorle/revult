@@ -36,9 +36,9 @@ from setuplib import windows, cython as _cython, find_unnecessary_gen, generate_
 
 import generate_styles
 
-# Dual-tree host build (RENPY_HOST_BUILD=1): only SDL-free Class A modules.
+# Host is default (Phase 9 strip): SDL-free Class A only. Set RENPY_HOST_BUILD=0 to force SDL reference (if sources still present).
 # See .omc/research/host-cython-inventory.md. Never packages=sdl* on this path.
-HOST_BUILD = os.environ.get("RENPY_HOST_BUILD", "") in ("1", "true", "yes")
+HOST_BUILD = os.environ.get("RENPY_HOST_BUILD", "1") in ("1", "true", "yes")
 
 # Exact allowlist for host (plus renpy.styledata.style_*functions via prefix match).
 HOST_ALLOW = {

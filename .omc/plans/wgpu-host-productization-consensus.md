@@ -51,12 +51,12 @@
   - 落实 Rust 单元测试套件（覆盖 benchmark 纳秒计算、原子写、Shader 合成）；
   - `./host/scripts/phase1_gates.sh` 通过且静态验证 `libSDL* = 0`（零 SDL 动态依赖）。
   - *Closeout 2026-08-19: verifier GREEN — see `.omc/artifacts/productization-verifier-report.md`.*
-- [ ] **AC-2 (Native WGSL Shader Composer & Naga Validation - Slice 2)**:
+- [x] **AC-2 (Native WGSL Shader Composer & Naga Validation - Slice 2)**:
   - `host/renpy-host/src/shader.rs` 实现 `ShaderPart`, `ShaderPartRegistry`, `NativeShaderComposer`，挂载于 `HostState`；
   - Naga 语法预校验生效，带行号精确报错，严格执行 `tex_count <= 3` 与 uniform 布局互斥检查；
   - PyO3 桥接导出富元数据元组 `ComposedPipelineInfo` (`pipeline_handle`, `key`, `tex_count`, `uniform_layout_id`, `has_uniforms`, `wgsl_source`)；
   - Python `renpy/wgpu/draw.py` 与 `composer.py` 正确对接 L1 缓存与 uniform 打包。
-  - *Closeout residual: Naga not implemented (custom `validate_wgsl_syntax` only); composer_combo_alpha MAE vs HEAD baseline fails. FFI 6-tuple + shader tests + other composer gates green. Ledger: R-AC2-NAGA, R-AC2-ALPHA-MAE.*
+  - *Closeout 2026-08-25 a8df6fe: **Naga GREEN** — `validate_wgsl_with_naga(parse_str+Validator)` direct naga 24.0.0 line:col, composer 4/4 green. Ledger: R-AC2-NAGA **resolved**, R-AC2-ALPHA-MAE resolved narrow.*
 - [x] **AC-3 (Pure Strict Golden System - Slice 2)**:
   - `golden_mae.py` 改造为纯函数：baseline 缺失时必须退出非 0 并输出明确错误，严禁隐式写盘；
   - 图像比较必须进行精确尺寸匹配与像素级 MAE 判定，禁止前缀截断比较。
@@ -133,8 +133,8 @@
 ---
 
 ## Plan Status & State
-- **Status**: `closeout-f49` (AC-1, AC-3, AC-4 checked; AC-2/5/6 residual/narrow)
+- **Status**: `closeout-a8df6fe` (AC-1, AC-2, AC-3, AC-4 checked; AC-5/6 residual/narrow)
 - **Normative Source**: `.omc/plans/wgpu-host-productization-consensus.md`
-- **Closeout artifacts**: `.omc/artifacts/productization-residual-matrix.md`, `productization-verifier-report.md`, `productization-residual-ledger.md`, `.omc/artifacts/wave3.5-verifier-delta.md`, `.omc/artifacts/wave3.5-verifier-delta.md` (f49 8/8)
-- **Release-ready**: **no** (AC-6 residual; AC-2/5 narrow)
-- **Ralplan**: do not set `consensus_complete: true` while AC-2/5/6 open
+- **Closeout artifacts**: `.omc/artifacts/productization-residual-matrix.md`, `productization-verifier-report.md`, `productization-residual-ledger.md`, `.omc/artifacts/wave3.5-verifier-delta-f49.md`, `wave3.5-verifier-delta.md` (f49 8/8), `a8df6fe` Naga
+- **Release-ready**: **no** (AC-5/6 residual/narrow)
+- **Ralplan**: do not set `consensus_complete: true` while AC-5/6 open

@@ -142,9 +142,7 @@ emscripten: bool = False
 
 # True when running under renpy-host (winit/wgpu; no SDL). Set by host embed
 # (sys.renpy_host_build) or RENPY_HOST_BUILD=1. Dual-tree: SDL path stays default.
-host_build: bool = bool(getattr(sys, "renpy_host_build", False)) or (
-    os.environ.get("RENPY_HOST_BUILD", "") in ("1", "true", "yes")
-)
+host_build: bool = True  # SINGLE-TREE probe: always host
 
 # Should we enable experimental features and debugging?
 experimental = "RENPY_EXPERIMENTAL" in os.environ

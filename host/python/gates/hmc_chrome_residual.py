@@ -295,7 +295,7 @@ def main():
         x1, y1 = 50 + size[0], 50 + size[1]
         for y in range(y0, y1, 3):
             for x in range(x0, x1, 3):
-                r, g, b, a = samp(rt, rw, rh, x, y)  # noqa: RUF059
+                r, g, b, a = samp(rt, rw, rh, x, y)
                 rs += r
                 gs += g
                 bs += b

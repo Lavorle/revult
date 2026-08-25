@@ -72,15 +72,15 @@ try:
             len(getattr(cm,"textures",None) or [])))
 
     kids=list(draw._iter_children(root))
-    rec("kids=%d" % len(kids))  # noqa: UP031
+    rec("kids=%d" % len(kids))
     textures=[]
     for i,(c,_,_) in enumerate(kids):
         tex=draw._child_to_texture(c)
-        rec(" child%d type=%s tex=%s handle=%s size=%s" % (  # noqa: UP031
+        rec(" child%d type=%s tex=%s handle=%s size=%s" % (
             i, type(c).__name__, type(tex).__name__ if tex else None,
             getattr(tex,"handle",None), (getattr(tex,"w",None), getattr(tex,"h",None))))
         if tex is not None: textures.append(tex)
-    rec("textures=%d" % len(textures))  # noqa: UP031
+    rec("textures=%d" % len(textures))
 
     def mean_rt():
         rw,rh,rgba=renpy_host.read_game_rt_rgba()

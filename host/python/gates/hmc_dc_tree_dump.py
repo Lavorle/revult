@@ -26,11 +26,11 @@ def _log(m):
         sys.__stdout__.write(f"[dc_tree] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_dc_tree_dump.log", "a").write(m + "\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_tree_dump.log", "a").write(m + "\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -74,13 +74,13 @@ def _pre():
             if n.startswith("GL_") or n in ("clear_errors", "get_error"):
                 setattr(pkg, n, getattr(u, n))
         pkg.uguu = u; pkg.gl = u
-        import renpy; renpy.uguu = pkg  # noqa: I001
+        import renpy; renpy.uguu = pkg
     except Exception as e:
         _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"] = e
-        import renpy; renpy.ecsign = e  # noqa: I001
+        import renpy; renpy.ecsign = e
     except Exception as e:
         _log(f"ecsign {e}")
 
@@ -150,9 +150,9 @@ def _walk_dump(node, acc, depth=0, path="", budget=None, max_depth=12, max_acc=2
                     child = c[0]
                     xo = c[1] if len(c) > 1 else 0
                     yo = c[2] if len(c) > 2 else 0
-                    kids.append((child, "%s/c%d@%s,%s" % (path, i, xo, yo)))  # noqa: UP031
+                    kids.append((child, "%s/c%d@%s,%s" % (path, i, xo, yo)))
                 else:
-                    kids.append((c, "%s/c%d" % (path, i)))  # noqa: UP031
+                    kids.append((c, "%s/c%d" % (path, i)))
     except Exception:
         pass
     for attr in ("cached_texture", "cached_model"):
@@ -191,9 +191,9 @@ def _find_sized(node, tw, th, acc=None, budget=None, depth=0, path=""):
         if ch:
             for i, c in enumerate(ch):
                 if isinstance(c, (list, tuple)) and c:
-                    kids.append((c[0], "%s/c%d" % (path, i)))  # noqa: UP031
+                    kids.append((c[0], "%s/c%d" % (path, i)))
                 else:
-                    kids.append((c, "%s/c%d" % (path, i)))  # noqa: UP031
+                    kids.append((c, "%s/c%d" % (path, i)))
     except Exception:
         pass
     for attr in ("cached_texture", "cached_model"):
@@ -355,14 +355,14 @@ def _dump_screen_widgets(kind):
             try:
                 if hasattr(d, "visit"):
                     for i, c in enumerate(d.visit() or []):
-                        walk_d(c, path + "/v%d" % i, depth + 1, budget)  # noqa: UP031
+                        walk_d(c, path + "/v%d" % i, depth + 1, budget)
             except Exception:
                 pass
             try:
                 ch = getattr(d, "children", None)
                 if ch:
                     for i, c in enumerate(list(ch)[:40]):
-                        walk_d(c, path + "/c%d" % i, depth + 1, budget)  # noqa: UP031
+                        walk_d(c, path + "/c%d" % i, depth + 1, budget)
             except Exception:
                 pass
             for attr in ("child", "displayable"):
@@ -409,7 +409,7 @@ def _worker():
             ))
             for i, c in enumerate(list(getattr(rbg, "children", []) or [])[:4]):
                 child = c[0] if isinstance(c, (list, tuple)) else c
-                lines.append("  solo_bg child%d %s" % (i, _node_brief(child)))  # noqa: UP031
+                lines.append("  solo_bg child%d %s" % (i, _node_brief(child)))
         except Exception:
             lines.append(f"solo_bg EXC {traceback.format_exc()}")
 
@@ -437,21 +437,21 @@ def _worker():
 
             # Find 1849x846 nodes
             found = _find_sized(st, 1849, 846)
-            lines.append("  nodes_1849x846=%d" % len(found))  # noqa: UP031
+            lines.append("  nodes_1849x846=%d" % len(found))
             for p, n in found[:6]:
                 lines.append(f"  N1849 path={p} brief={_node_brief(n)}")
                 # dump children of this node
                 ch = getattr(n, "children", None) or []
-                lines.append("    nchildren=%d" % len(ch))  # noqa: UP031
+                lines.append("    nchildren=%d" % len(ch))
                 for i, c in enumerate(list(ch)[:12]):
                     child = c[0] if isinstance(c, (list, tuple)) else c
                     off = (c[1], c[2]) if isinstance(c, (list, tuple)) and len(c) > 2 else None
-                    lines.append("    ch%d off=%s %s" % (i, off, _node_brief(child)))  # noqa: UP031
+                    lines.append("    ch%d off=%s %s" % (i, off, _node_brief(child)))
                     # one more level if HostTexture missing
                     sub = getattr(child, "children", None) or []
                     for j, s in enumerate(list(sub)[:6]):
                         sc = s[0] if isinstance(s, (list, tuple)) else s
-                        lines.append("      ch%d.%d %s" % (i, j, _node_brief(sc)))  # noqa: UP031
+                        lines.append("      ch%d.%d %s" % (i, j, _node_brief(sc)))
 
             # Also find any HT near 1849
             big = []
@@ -459,14 +459,14 @@ def _worker():
                 if isinstance(n, HostTexture):
                     ww, hh = int(n.w), int(n.h)
                     if ww >= 1000 or hh >= 700:
-                        big.append((ww, hh, int(n.handle)))  # noqa: B023
+                        big.append((ww, hh, int(n.handle)))
                 return False
             # reuse walk
             budget = [4000]
             def walk(n, depth=0):
-                if n is None or budget[0] <= 0 or depth > 40:  # noqa: B023
+                if n is None or budget[0] <= 0 or depth > 40:
                     return
-                budget[0] -= 1  # noqa: B023
+                budget[0] -= 1
                 pred_big(n)
                 try:
                     ch = getattr(n, "children", None)
@@ -489,21 +489,21 @@ def _worker():
             # Top-level children of root surftree
             lines.append(f"  root_brief={_node_brief(st)}")
             ch = getattr(st, "children", None) or []
-            lines.append("  root_nch=%d" % len(ch))  # noqa: UP031
+            lines.append("  root_nch=%d" % len(ch))
             for i, c in enumerate(list(ch)[:16]):
                 child = c[0] if isinstance(c, (list, tuple)) else c
                 off = (c[1], c[2]) if isinstance(c, (list, tuple)) and len(c) > 2 else None
-                lines.append("  root_ch%d off=%s %s" % (i, off, _node_brief(child)))  # noqa: UP031
+                lines.append("  root_ch%d off=%s %s" % (i, off, _node_brief(child)))
 
             # Shallow interesting dump
             acc = []
             _walk_dump(st, acc, max_depth=6, max_acc=80)
-            lines.append("  dump_n=%d" % len(acc))  # noqa: UP031
+            lines.append("  dump_n=%d" % len(acc))
             for p, b in acc[:50]:
                 if b.get("w") and b.get("h") and (b["w"] >= 500 or b["h"] >= 500 or b.get("ht") or b.get("rev")):
                     lines.append(f"  D {p} {b}")
 
-            _log("KIND %s nodes1849=%d big=%s rt=%s" % (kind, len(found), big[:5], lines[-10]))  # noqa: UP031
+            _log("KIND %s nodes1849=%d big=%s rt=%s" % (kind, len(found), big[:5], lines[-10]))
 
             # Also try rendering dialog_config_1 screen alone via use
             try:
@@ -518,14 +518,14 @@ def _worker():
                         renpy.display.screen.get_screen(kind), 1920, 1080, 0, 0
                     )
                     f2 = _find_sized(sk, 1849, 846)
-                    lines.append("  alone_kind_show nodes1849=%d size=%s nch=%s" % (  # noqa: UP031
+                    lines.append("  alone_kind_show nodes1849=%d size=%s nch=%s" % (
                         len(f2), sk.get_size() if hasattr(sk, "get_size") else None,
                         len(getattr(sk, "children", []) or [])))
                     for p, n in f2[:3]:
                         lines.append(f"    alone {p} {_node_brief(n)}")
                         for i, c in enumerate(list(getattr(n, "children", []) or [])[:6]):
                             child = c[0] if isinstance(c, (list, tuple)) else c
-                            lines.append("      ch%d %s" % (i, _node_brief(child)))  # noqa: UP031
+                            lines.append("      ch%d %s" % (i, _node_brief(child)))
                     renpy.hide_screen(kind)
                 except Exception as e:
                     lines.append(f"  alone_kind_show fail {e}")
@@ -556,7 +556,7 @@ def main():
     for p in (str(base / "host" / "python" / "gates"), str(base / "host" / "python")):
         if p not in sys.path:
             sys.path.insert(0, p)
-    open("/tmp/hmc_dc_tree_dump.log", "w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_tree_dump.log", "w").write("start\n")
     import bootstrap as boot
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),
@@ -570,7 +570,7 @@ def main():
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e:
         _log(f"main_host {e}")
     try:

@@ -238,7 +238,7 @@ def run() -> None:
         )
 
     try:
-        import renpy_host  # noqa: F401
+        pass
     except Exception as e:
         _log(f"FATAL no renpy_host: {e}")
         raise RuntimeError(

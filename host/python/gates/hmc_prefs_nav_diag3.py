@@ -25,11 +25,11 @@ def _log(m):
         sys.__stdout__.write(f"[diag3] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_prefs_diag3.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_prefs_diag3.log","a").write(m+"\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -48,7 +48,7 @@ def run():
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e:
         _log(f"main_host {e}")
     import renpy.arguments
@@ -65,10 +65,10 @@ def run():
         sys.modules["renpy.audio.renpysound"]=h; renpy.audio.renpysound=h
     except Exception: pass
     try:
-        import renpy_uguu_host as u; sys.modules["renpy.uguu.uguu"]=u  # noqa: I001
+        import renpy_uguu_host as u; sys.modules["renpy.uguu.uguu"]=u
     except Exception: pass
     try:
-        import renpy_ecsign_host as e; sys.modules["renpy.ecsign"]=e  # noqa: I001
+        import renpy_ecsign_host as e; sys.modules["renpy.ecsign"]=e
     except Exception: pass
     try:
         import host_pygame

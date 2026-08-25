@@ -102,5 +102,6 @@ extend-exclude = [
 # (generic Exception mirrors Ren'Py API, try-continue skips bad data, useless-if
 # guards keep GL2-compat, SRCALPHA probe via NameError, renpy global optional).
 "host/python/**/*.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102"]
+"host/python/gates/**/*.py" = ["UP031", "SIM115", "RUF059", "B023", "PERF402", "RUF012", "S102", "EXE001", "F823", "I001", "F401"]  # gates probes: printf-fmt, open-with, loop-var, exec, shebang, etc. (diagnostic harness — not product)
 
 [tool.ruff.format]

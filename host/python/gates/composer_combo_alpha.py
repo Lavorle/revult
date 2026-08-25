@@ -29,7 +29,7 @@ from golden_mae import compare_or_bootstrap, gate_result_path
 try:
     from _harness import gate_harness
 except ImportError:  # pragma: no cover — fallback for namespace import
-    from host.python.gates._harness import gate_harness  # type: ignore[no-redef]  # noqa: F401
+    pass  # type: ignore[no-redef]
 
 # How to rewrite with harness (not yet switched — example only):
 # ------------------------------------------------------------------

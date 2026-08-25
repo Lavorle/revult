@@ -47,7 +47,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_prefs_px_hop.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_prefs_px_hop.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -329,7 +329,7 @@ def _click_nav_tab(tab_index):
         renpy.restart_interaction()
     except Exception:
         pass
-    return "click_tab%d@%d,%d" % (tab_index, wx, wy)  # noqa: UP031
+    return "click_tab%d@%d,%d" % (tab_index, wx, wy)
 
 
 def _kind_tab(kind):
@@ -468,7 +468,7 @@ def run():
         time.sleep(0.4)
 
         for idx, kind in enumerate(PX_SEQUENCE):
-            rec("=== hop %d %s ===" % (idx, kind))  # noqa: UP031
+            rec("=== hop %d %s ===" % (idx, kind))
             if idx == 0:
                 ok, via = _force_show_prefs(kind)
             else:
@@ -527,7 +527,7 @@ def run():
                         page_broken += 1
                         state["broken"] += 1
                         rec(
-                            "BROKEN hop=%d cycle=%d pt=%d (%d,%d) how=%s info=%s panel=%s"  # noqa: UP031
+                            "BROKEN hop=%d cycle=%d pt=%d (%d,%d) how=%s info=%s panel=%s"
                             % (
                                 idx,
                                 cycle,
@@ -550,7 +550,7 @@ def run():
                             page_broken += 1
                             state["broken"] += 1
                             rec(
-                                "BROKEN unhover hop=%d cycle=%d pt=%d info=%s"  # noqa: UP031
+                                "BROKEN unhover hop=%d cycle=%d pt=%d info=%s"
                                 % (idx, cycle, i, info2)
                             )
 
@@ -559,7 +559,7 @@ def run():
                 rec(f"PASS hop {kind}")
             else:
                 state["pages_fail"].append(kind)
-                rec("FAIL hop %s broken_frames=%d" % (kind, page_broken))  # noqa: UP031
+                rec("FAIL hop %s broken_frames=%d" % (kind, page_broken))
 
             # PX-2: selected tab must show navigation_selected yellow on text_config.
             # Log on every text_config hop; only the final return gates ok.
@@ -585,7 +585,7 @@ def run():
                             tab = _nav._sample_band(rt, rw, rh, x0, y0, x1, y1, step=1)
                             yf = tab.get("yellow_frac", 0) if tab.get("ok") else 0
                             rec(
-                                "PX-2 tab%d yellow_frac=%.4f n=%s"  # noqa: UP031
+                                "PX-2 tab%d yellow_frac=%.4f n=%s"
                                 % (tab_index, yf, tab.get("n", 0) if tab.get("ok") else 0)
                             )
                             if tab_index == 2:
@@ -603,7 +603,7 @@ def run():
                                 )
                         else:
                             rec(
-                                "PX-2 text_config hop=%d yellow_frac=%.4f"  # noqa: UP031
+                                "PX-2 text_config hop=%d yellow_frac=%.4f"
                                 % (idx, tab2_yf)
                             )
                     else:
@@ -619,7 +619,7 @@ def run():
             and state["px2_ok"]
         )
         rec(
-            "summary pages_ok=%s pages_fail=%s broken=%d samples=%d px2=%.4f ok=%s"  # noqa: UP031
+            "summary pages_ok=%s pages_fail=%s broken=%d samples=%d px2=%.4f ok=%s"
             % (
                 state["pages_ok"],
                 state["pages_fail"],
@@ -632,8 +632,8 @@ def run():
         report = [
             "gate=hmc_prefs_px_hop",
             f"ok={ok}",
-            "broken=%d" % state["broken"],  # noqa: UP031
-            "samples=%d" % state["samples"],  # noqa: UP031
+            "broken=%d" % state["broken"],
+            "samples=%d" % state["samples"],
             "pages_ok={}".format(",".join(state["pages_ok"])),
             "pages_fail={}".format(",".join(state["pages_fail"])),
             "px1_ok=%s" % (state["broken"] == 0 and len(state["pages_fail"]) == 0),
@@ -657,7 +657,7 @@ def run():
                 # probe may not have finished
                 try:
                     out.write_text(
-                        "ok=False\nphase=%s\nbroken=%d\n"  # noqa: UP031
+                        "ok=False\nphase=%s\nbroken=%d\n"
                         % (state["phase"], state["broken"])
                     )
                 except Exception:

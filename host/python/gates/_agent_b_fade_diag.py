@@ -206,7 +206,7 @@ log("Solid rv size={} reverse={} children={}".format(
 # inspect children more carefully
 for i, entry in enumerate(list(getattr(srv, 'children', []) or [])):
     ch = entry[0]
-    log("  solid_child[%d] type=%s size=%s ht=%s reverse=%s mesh=%s" % (  # noqa: UP031
+    log("  solid_child[%d] type=%s size=%s ht=%s reverse=%s mesh=%s" % (
         i, type(ch).__name__,
         getattr(ch, 'get_size', lambda: None)() if hasattr(ch,'get_size') else (getattr(ch,'width',None), getattr(ch,'height',None)),
         isinstance(ch, HostTexture),
@@ -233,7 +233,7 @@ for hold in (0.0, 0.1):
     f = Fade(0.5, hold, 0.5, old_widget=old, new_widget=new)  # uses default Solid black
     log(f"Fade type={type(f).__name__} delay={f.delay} n_trans={len(f.transitions)}")
     for i, t in enumerate(f.transitions):
-        log("  trans[%d]=%s delay=%s old=%s new=%s" % (  # noqa: UP031
+        log("  trans[%d]=%s delay=%s old=%s new=%s" % (
             i, type(t).__name__, t.delay,
             type(getattr(t,'old_widget',None)).__name__,
             type(getattr(t,'new_widget',None)).__name__,
@@ -254,7 +254,7 @@ for hold in (0.0, 0.1):
         mesh = getattr(dissolve_node, 'mesh', None)
         op_c = getattr(dissolve_node, 'operation_complete', None)
         d_kids = list(getattr(dissolve_node, 'children', []) or [])
-        log("stage=%s st=%.3f dissolve_shaders=%s uniforms=%s mesh=%s op_c=%s n_children=%d" % (  # noqa: UP031
+        log("stage=%s st=%.3f dissolve_shaders=%s uniforms=%s mesh=%s op_c=%s n_children=%d" % (
             name, st, shaders, uniforms, mesh, op_c, len(d_kids)))
         # prepare and inspect slots
         try:
@@ -269,10 +269,10 @@ for hold in (0.0, 0.1):
             cm = getattr(dissolve_node, 'cached_model', None)
         slots = getattr(cm, 'textures', None) if cm else None
         nslots = len(slots) if slots else 0
-        log("  cached_model=%s nslots=%d" % (cm is not None, nslots))  # noqa: UP031
+        log("  cached_model=%s nslots=%d" % (cm is not None, nslots))
         if slots:
             for si, s in enumerate(slots):
-                log("  slot[%d] type=%s handle=%s %sx%s" % (  # noqa: UP031
+                log("  slot[%d] type=%s handle=%s %sx%s" % (
                     si, type(s).__name__,
                     getattr(s,'handle',s),
                     getattr(s,'width',None), getattr(s,'height',None),
@@ -307,7 +307,7 @@ for st in (0.0, 0.125, 0.25, 0.375, 0.5):
     if slots:
         for s in slots:
             sizes.append("{}x{}".format(getattr(s,'width',None), getattr(s,'height',None)))
-    log("st=%.3f u=%s nslots=%d sizes=%s mean=(%.1f,%.1f,%.1f,%.1f) luma=%.1f" % (  # noqa: UP031
+    log("st=%.3f u=%s nslots=%d sizes=%s mean=(%.1f,%.1f,%.1f,%.1f) luma=%.1f" % (
         st, u, nslots, sizes, m[0],m[1],m[2],m[3], luma(m)))
 
 # Dissolve Solid black → new
@@ -327,7 +327,7 @@ for st in (0.0, 0.125, 0.25, 0.375, 0.5):
     if slots:
         for s in slots:
             sizes.append("{}x{}".format(getattr(s,'width',None), getattr(s,'height',None)))
-    log("st=%.3f u=%s nslots=%d sizes=%s mean=(%.1f,%.1f,%.1f,%.1f) luma=%.1f" % (  # noqa: UP031
+    log("st=%.3f u=%s nslots=%d sizes=%s mean=(%.1f,%.1f,%.1f,%.1f) luma=%.1f" % (
         st, u, nslots, sizes, m[0],m[1],m[2],m[3], luma(m)))
 
 out.write_text("\n".join(lines)+"\n")

@@ -25,11 +25,11 @@ def _log(m):
         sys.__stdout__.write(f"[diag] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_prefs_diag.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_prefs_diag.log","a").write(m+"\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -56,7 +56,7 @@ def run():
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e:
         _log(f"main_host {e}")
     import renpy.arguments
@@ -139,7 +139,7 @@ def run():
             kids.append(d.child)
         for i,k in enumerate(kids):
             if k is not None and k is not d:
-                dump_disp(k, depth+1, path+"/%d"%i, acc, budget)  # noqa: UP031
+                dump_disp(k, depth+1, path+"/%d"%i, acc, budget)
         return acc
 
     def probe():
@@ -213,7 +213,7 @@ def run():
             lines = dump_disp(raw)
             for ln in lines[:120]:
                 _log("D "+ln)
-            _log("displayable dump n=%d" % len(lines))  # noqa: UP031
+            _log("displayable dump n=%d" % len(lines))
         except Exception as e:
             _log(f"dump err {e}")
             _log(traceback.format_exc())
@@ -246,7 +246,7 @@ def run():
                 ))
                 # walk children
                 for i,(ch,x,y) in enumerate(getattr(rv,"children",None) or ()):
-                    _log("  child%d type=%s mesh=%s shaders=%s nch=%s at=%s,%s" % (  # noqa: UP031
+                    _log("  child%d type=%s mesh=%s shaders=%s nch=%s at=%s,%s" % (
                         i, type(ch).__name__,
                         type(getattr(ch,"mesh",None)).__name__ if getattr(ch,"mesh",None) is not None else getattr(ch,"mesh",None),
                         getattr(ch,"shaders",None),
@@ -271,7 +271,7 @@ def run():
                     n+=1
                     if r>180 and g>140 and b<90:
                         yellow+=1
-            _log("full_rt %dx%d yellow_frac=%.5f yellow=%d n=%d" % (rw,rh, yellow/float(n) if n else -1, yellow, n))  # noqa: UP031
+            _log("full_rt %dx%d yellow_frac=%.5f yellow=%d n=%d" % (rw,rh, yellow/float(n) if n else -1, yellow, n))
             # sample scaled tab0 (image_config is default selected if kind failed)
             sx,sy = rw/1920.0, rh/1080.0
             for ti, name in enumerate(["image_config","game_config_1","text_config","sound_config"]):
@@ -285,7 +285,7 @@ def run():
                         if a<40: continue
                         ns+=1; rs+=r; gs+=g; bs+=b
                         if r>180 and g>140 and b<90: ys+=1
-                _log("tab[%s] mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d rect=%s" % (  # noqa: UP031
+                _log("tab[%s] mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d rect=%s" % (
                     name,
                     rs/ns if ns else 0, gs/ns if ns else 0, bs/ns if ns else 0,
                     ys/float(ns) if ns else -1, ns, (x0,y0,x1,y1)))

@@ -51,7 +51,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_transition_product_reconfirm.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_transition_product_reconfirm.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -478,7 +478,7 @@ def run():
                 try:
                     if bool(getattr(renpy.store, "main_menu", False)):
                         state["main_menu"] = True
-                        rec("main_menu at tick=%d" % i)  # noqa: UP031
+                        rec("main_menu at tick=%d" % i)
                         break
                 except Exception:
                     pass
@@ -523,7 +523,7 @@ def run():
                     mm = getattr(renpy.store, "main_menu", None)
                     if i % 5 == 0:
                         rec(
-                            "pulse#%d main_menu=%r d_mid=%s f_mid=%s i_mid=%s"  # noqa: UP031
+                            "pulse#%d main_menu=%r d_mid=%s f_mid=%s i_mid=%s"
                             % (
                                 i,
                                 mm,
@@ -535,7 +535,7 @@ def run():
                     if mm is False:
                         state["left_main_menu"] = True
                         state["started"] = True
-                        rec("left main_menu at pulse#%d" % i)  # noqa: UP031
+                        rec("left main_menu at pulse#%d" % i)
                         break
                 except Exception as e:
                     rec(f"status: {e}")

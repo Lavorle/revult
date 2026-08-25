@@ -281,7 +281,7 @@ def main():
 
     ok = bool(inside_ok and outside_ok and not black_slab and orange_border_ok and reverse_clear_ok)
     msg = (
-        "ok=%s inside_ok=%s outside_ok=%s black_slab=%s orange_border_ok=%s "  # noqa: UP031
+        "ok=%s inside_ok=%s outside_ok=%s black_slab=%s orange_border_ok=%s "
         "reverse_clear_ok=%s center=%s edge=%s outside=%s orange_top=(%d,%d,%d) "
         "reverse_center=(%d,%d,%d) dest=%dx%d src=%dx%d border=%d path=frame_multipiece+reverse"
         % (

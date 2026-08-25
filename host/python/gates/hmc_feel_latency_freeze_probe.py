@@ -30,7 +30,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_feel_latency_freeze_probe.log", "a").write(str(msg) + chr(10))  # noqa: SIM115
+        open("/tmp/hmc_feel_latency_freeze_probe.log", "a").write(str(msg) + chr(10))
     except Exception:
         pass
 
@@ -354,11 +354,11 @@ def _attempt_take_focuses_repro():
             time.sleep(0.15)
             try:
                 renpy.display.focus.take_focuses()
-                result["steps"].append("cycle%d_take_focuses:ok" % i)  # noqa: UP031
+                result["steps"].append("cycle%d_take_focuses:ok" % i)
             except Exception as e:
                 result["crash"] = True
                 result["error"] = f"{type(e).__name__}: {e}"
-                result["steps"].append("cycle%d_take_focuses:CRASH" % i)  # noqa: UP031
+                result["steps"].append("cycle%d_take_focuses:CRASH" % i)
                 result["traceback"] = traceback.format_exc()
                 return result
     except Exception as e:
@@ -512,7 +512,7 @@ def probe():
     h_hints.sort(key=lambda h: order.get(h["id"], 9))
     report["h_rank_hints"] = h_hints
     for i, h in enumerate(h_hints, 1):
-        lines.append("H%d_rank=%s severity=%s evidence=%s" % (i, h["id"], h["severity_hint"], h["evidence"]))  # noqa: UP031
+        lines.append("H%d_rank=%s severity=%s evidence=%s" % (i, h["id"], h["severity_hint"], h["evidence"]))
     report["ok"] = True
     report["measured"] = True
     lines.append("ok=True")
@@ -525,7 +525,7 @@ def probe():
     _quit()
 
 def main():
-    open("/tmp/hmc_feel_latency_freeze_probe.log", "w").write("start" + chr(10))  # noqa: SIM115
+    open("/tmp/hmc_feel_latency_freeze_probe.log", "w").write("start" + chr(10))
     base = _base()
     game = os.environ.get("RENPY_HOST_GAME") or str(base / "host" / "playtests" / "HuangmeiC")
     os.environ["RENPY_HOST_BASE"] = str(base)

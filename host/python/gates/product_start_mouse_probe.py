@@ -49,7 +49,7 @@ def run():
     import bootstrap as boot
     import renpy_host
     for name, call in (("import_renpy", boot.stage_import_renpy), ("import_all", boot.stage_import_all)):
-        good, miss, err, extra = call() if name != "import_all" else call()  # noqa: RUF059
+        good, miss, err, extra = call() if name != "import_all" else call()
         rec(f"{name} good={good} err={err!r}")
         if not good:
             raise RuntimeError(err)

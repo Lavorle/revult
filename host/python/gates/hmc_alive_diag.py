@@ -18,10 +18,10 @@ except ImportError:
 
 def _log(m):
     print("[alive_diag] "+m, flush=True)
-    open("/tmp/hmc_alive_diag.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_alive_diag.log","a").write(m+"\n")
 
 def main():
-    open("/tmp/hmc_alive_diag.log","w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_alive_diag.log","w").write("start\n")
     base = Path("/mnt/nvme1n1p2/revult")
     game = base/"host/playtests/HuangmeiC"
     os.environ["RENPY_HOST_BASE"]=str(base)
@@ -50,7 +50,7 @@ def main():
     import renpy
     renpy.host_build=True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e:
         _log(f"main_host {e}")
     try:

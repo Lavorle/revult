@@ -24,11 +24,11 @@ def _log(m):
         sys.__stdout__.write(f"[hmc_confirm_diag] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_nav_confirm_diag.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_nav_confirm_diag.log","a").write(m+"\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -66,12 +66,12 @@ def _pre():
         for n in dir(u):
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
-        import renpy; renpy.uguu=pkg  # noqa: I001
+        import renpy; renpy.uguu=pkg
     except Exception as e: _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-        import renpy; renpy.ecsign=e  # noqa: I001
+        import renpy; renpy.ecsign=e
     except Exception as e: _log(f"ecsign {e}")
 
 def _sample():
@@ -175,7 +175,7 @@ def run():
     import renpy
     renpy.host_build=True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e: _log(f"main_host {e}")
     try:
         import renpy.arguments
@@ -195,7 +195,7 @@ def run():
         for i in range(400):
             try:
                 if bool(getattr(renpy.store,"main_menu",False)):
-                    _log("main_menu tick=%d"%i); break  # noqa: UP031
+                    _log("main_menu tick=%d"%i); break
             except Exception: pass
             time.sleep(0.05)
         time.sleep(2.0)

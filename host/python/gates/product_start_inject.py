@@ -36,7 +36,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/product-start-inject.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/product-start-inject.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -181,11 +181,11 @@ def run():
                         pass
                     if i % 5 == 0:
                         rec(
-                            "pulse#%d main_menu=%r focused=%r"  # noqa: UP031
+                            "pulse#%d main_menu=%r focused=%r"
                             % (i, mm, type(focused).__name__ if focused is not None else None)
                         )
                     if mm is False:
-                        rec("left main_menu at pulse#%d (Start activated)" % i)  # noqa: UP031
+                        rec("left main_menu at pulse#%d (Start activated)" % i)
                         break
                 except Exception as e:
                     rec(f"status: {e}")

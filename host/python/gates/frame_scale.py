@@ -147,7 +147,7 @@ def main():
     outside_ok = _near((r_o, g_o, b_o), BG)
     ok = center_ok and edge_ok and outside_ok
     msg = (
-        "ok=%s center_rgb=(%d,%d,%d) edge_rgb=(%d,%d,%d) outside_rgb=(%d,%d,%d) "  # noqa: UP031
+        "ok=%s center_rgb=(%d,%d,%d) edge_rgb=(%d,%d,%d) outside_rgb=(%d,%d,%d) "
         "center_ok=%s edge_ok=%s outside_ok=%s dest=%dx%d src=%dx%d"
         % (
             ok,

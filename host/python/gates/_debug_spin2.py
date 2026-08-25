@@ -11,7 +11,7 @@ except ImportError:
         from host.python.gates._harness import gate_harness, parametrized_gate
     except ImportError:
         gate_harness=parametrized_gate=None  # fallback
-f=open("/tmp/fault2.log","w")  # noqa: SIM115
+f=open("/tmp/fault2.log","w")
 faulthandler.enable(file=f, all_threads=False)
 def dump_loop():
     while True:

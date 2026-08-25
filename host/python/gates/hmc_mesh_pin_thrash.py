@@ -36,7 +36,7 @@ def _log(m):
         sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_mesh_pin_thrash.log", "a").write(m + "\n")  # noqa: SIM115
+    open("/tmp/hmc_mesh_pin_thrash.log", "a").write(m + "\n")
 
 
 def _quit():
@@ -49,7 +49,7 @@ def _quit():
 
 
 def main():
-    open("/tmp/hmc_mesh_pin_thrash.log", "w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_mesh_pin_thrash.log", "w").write("start\n")
     base = _base()
     out = base / "host" / "target" / "gate-hmc_mesh_pin_thrash.txt"
     lines = []
@@ -108,7 +108,7 @@ def main():
         root = R(1920, 1080, kids)
 
         pre_map = int(renpy_host.mesh_map_len()) if has_map else -1
-        lines.append("pre_draw mesh_map_len=%d" % pre_map)  # noqa: UP031
+        lines.append("pre_draw mesh_map_len=%d" % pre_map)
         _log(lines[-1])
 
         orig_end = renpy_host.end_frame_present
@@ -118,7 +118,7 @@ def main():
             n_cache = len(draw._mesh_cache)
             n_map = int(renpy_host.mesh_map_len()) if has_map else -1
             lines.append(
-                "pre_present deferred=%d mesh_cache=%d mesh_map=%d"  # noqa: UP031
+                "pre_present deferred=%d mesh_cache=%d mesh_map=%d"
                 % (n_def, n_cache, n_map)
             )
             _log(lines[-1])
@@ -142,7 +142,7 @@ def main():
         arenaish = r < 30 and g < 30 and b < 40
         panel_ok = r > 200 and g > 200 and b > 200 and not arenaish
         lines.append(
-            "panel_px=(%d,%d,%d) mesh_cache=%d deferred_after=%d cap=%d"  # noqa: UP031
+            "panel_px=(%d,%d,%d) mesh_cache=%d deferred_after=%d cap=%d"
             % (
                 r,
                 g,
@@ -165,7 +165,7 @@ def main():
                 alive_hits += 1
             else:
                 dead_hits += 1
-        lines.append("cache_probe alive=%d dead=%d" % (alive_hits, dead_hits))  # noqa: UP031
+        lines.append("cache_probe alive=%d dead=%d" % (alive_hits, dead_hits))
         _log(lines[-1])
 
         ok = panel_ok and dead_hits == 0 and has_alive and has_touch

@@ -25,11 +25,11 @@ def _log(m):
         sys.__stdout__.write(f"[dc_fix] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_dc_fix_redraw.log", "a").write(m + "\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_fix_redraw.log", "a").write(m + "\n")
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -73,13 +73,13 @@ def _pre():
             if n.startswith("GL_") or n in ("clear_errors", "get_error"):
                 setattr(pkg, n, getattr(u, n))
         pkg.uguu = u; pkg.gl = u
-        import renpy; renpy.uguu = pkg  # noqa: I001
+        import renpy; renpy.uguu = pkg
     except Exception as e:
         _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"] = e
-        import renpy; renpy.ecsign = e  # noqa: I001
+        import renpy; renpy.ecsign = e
     except Exception as e:
         _log(f"ecsign {e}")
 
@@ -137,12 +137,12 @@ def _find_fixed_1849(d, acc=None, budget=None, depth=0, path=""):
     try:
         if hasattr(d, "visit"):
             for i, c in enumerate(d.visit() or []):
-                _find_fixed_1849(c, acc, budget, depth + 1, path + "/v%d" % i)  # noqa: UP031
+                _find_fixed_1849(c, acc, budget, depth + 1, path + "/v%d" % i)
     except Exception:
         pass
     try:
         for i, c in enumerate(list(getattr(d, "children", None) or [])[:40]):
-            _find_fixed_1849(c, acc, budget, depth + 1, path + "/c%d" % i)  # noqa: UP031
+            _find_fixed_1849(c, acc, budget, depth + 1, path + "/c%d" % i)
     except Exception:
         pass
     for attr in ("child",):
@@ -401,7 +401,7 @@ def _worker():
                 kind, proc, upd, rd, pmean, pdark, meta.get("n_1849_renders"), meta.get("r1849_nch")))
             lines.append("  updated={} process_redraws={}".format(meta.get("updated"), meta.get("process_redraws", meta.get("process_redraws_err"))))
             for f in (meta.get("fixed_disp") or [])[:3]:
-                lines.append("  fixed_disp path=%s nch=%d kids=%s" % (f.get("path"), f.get("nch"), f.get("kids")))  # noqa: UP031
+                lines.append("  fixed_disp path=%s nch=%d kids=%s" % (f.get("path"), f.get("nch"), f.get("kids")))
             lines.append("  r1849_children={}".format(meta.get("r1849_children")))
             lines.append("  sample={} in_frame={}/{}".format(meta.get("sample"), meta.get("in_frame_before"), meta.get("in_frame_after")))
             _log(lines[-4])
@@ -430,7 +430,7 @@ def main():
     for p in (str(base / "host" / "python" / "gates"), str(base / "host" / "python")):
         if p not in sys.path:
             sys.path.insert(0, p)
-    open("/tmp/hmc_dc_fix_redraw.log", "w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_fix_redraw.log", "w").write("start\n")
     import bootstrap as boot
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),
@@ -444,7 +444,7 @@ def main():
     import renpy
     renpy.host_build = True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e:
         _log(f"main_host {e}")
     try:

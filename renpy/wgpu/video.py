@@ -21,6 +21,12 @@ Chunked decode (product 360@30):
   can arm as soon as MIN_PLAYABLE is reached. After kickstart, publish every
   CHUNK frames.
 """
+# Shim: host A/V clocks/decode live in renpy_host (state.rs VideoClock +
+# python.rs video_clock_*); this Python module is a compat shim — thin
+# ffmpeg-CLI progressive decode + VideoTexture smoke. Dual-tree safe (SDL
+# never imports renpy_host here). Keep lean — helpers are gate/smoke shims,
+# not draw.py deps. Host product drives clocks via renpy_host.video_clock_*.
+# Helpers retained intentionally for gate/smoke compat (Phase 6) - not draw deps.
 
 from __future__ import annotations
 
@@ -102,12 +108,12 @@ _CHUNK_TIMEOUT_FLOOR_S = 30.0
 _CHUNK_TIMEOUT_PER_FRAME_S = 0.15
 
 
-def _solid_frame(width: int, height: int, rgba: Tuple[int, int, int, int]) -> bytes:
+def _solid_frame(width: int, height: int, rgba: Tuple[int, int, int, int]) -> bytes:  # type: ignore - shim retained (smoke init)
     r, g, b, a = rgba
     return bytes([r, g, b, a]) * (width * height)
 
 
-def _gradient_frame(width: int, height: int, t: float) -> bytes:
+def _gradient_frame(width: int, height: int, t: float) -> bytes:  # type: ignore - shim retained (golden bars)
     """Moving color bars keyed by t in [0,1] — deterministic for goldens later."""
     out = bytearray(width * height * 4)
     phase = int(t * 255) & 0xFF
@@ -122,7 +128,7 @@ def _gradient_frame(width: int, height: int, t: float) -> bytes:
     return bytes(out)
 
 
-def synthetic_frames(width: int, height: int, count: int) -> List[bytes]:
+def synthetic_frames(width: int, height: int, count: int) -> List[bytes]:  # type: ignore - shim retained (ffmpeg fallback)
     """Generate `count` RGBA frames of size width×height."""
     if count <= 0:
         return []
@@ -133,7 +139,7 @@ def synthetic_frames(width: int, height: int, count: int) -> List[bytes]:
     return frames
 
 
-def ffmpeg_available() -> bool:
+def ffmpeg_available() -> bool:  # type: ignore - shim retained (feature probe)
     return shutil.which("ffmpeg") is not None
 
 
@@ -839,7 +845,7 @@ class VideoTexture:
         return drawn
 
 
-def play_movie_smoke(
+def play_movie_smoke(  # type: ignore - shim retained (gate smoke)
     width: int = 64,
     height: int = 64,
     frame_count: int = 8,

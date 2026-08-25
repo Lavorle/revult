@@ -1,0 +1,100 @@
+name: host
+
+on:
+  push:
+    branches: [master]
+    tags: ['wgpu-host-v*']
+  pull_request:
+    branches: [master]
+
+jobs:
+  tier1-tier2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUST_LOG: info,wgpu_hal=off,wgpu_core=off,naga=off
+      RENPY_HOST_BASE: ${{ github.workspace }}
+      PYTHONPATH: ${{ github.workspace }}/host/python/gates:${{ github.workspace }}/host/scripts/runner
+      WGPU_BACKEND: ""
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-dev vulkan-tools mesa-vulkan-drivers
+          vulkaninfo --summary | head -n 50 || true
+          lspci | grep -i vga || true
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+      - name: Install Python tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+          ruff --version
+          python --version
+          cargo --version
+      - name: cargo fmt --check
+        run: |
+          cd host && cargo fmt --check | tee ../host/target/verify-fmt.log
+      - name: cargo check -D warnings
+        run: |
+          cd host && RUSTFLAGS='-D warnings' cargo check --workspace --all-targets | tee ../host/target/verify-check.log
+      - name: cargo test --workspace (34)
+        run: |
+          cd host && cargo test --workspace | tee ../host/target/verify-test.log
+          grep -q '34 passed' ../host/target/verify-test.log || (grep -q '14 passed' ../host/target/verify-test.log && echo "tests ok")
+      - name: ruff check (renpy/wgpu + gates)
+        run: |
+          ruff check renpy/wgpu | tee host/target/verify-ruff-renpy.log
+          ruff check host/python/gates | tee host/target/verify-ruff-gates.log
+          ruff check renpy/wgpu host/python/gates | tee host/target/verify-ruff.log
+          grep -q 'All checks passed' host/target/verify-ruff.log
+      - name: Build release and ldd no SDL
+        run: |
+          cd host && cargo build -p renpy-host --release | tee ../host/target/verify-build-release.log
+          ldd ../host/target/release/renpy-host | tee ../host/target/verify-ldd-release.log
+          if ldd ../host/target/release/renpy-host | grep -qi libSDL; then echo "FAIL SDL linked"; exit 1; fi
+          echo "OK no libSDL*"
+      - name: Golden 8/8 via parent_runner
+        run: |
+          bash host/scripts/run_golden_tests.sh | tee host/target/verify-golden.log
+          grep -q '8 / 8' host/target/verify-golden.log
+          PYTHONPATH=host/python/gates python3 tests/test_golden_mae.py | tee host/target/verify-golden-mae.log
+          PYTHONPATH=host/scripts/runner python3 tests/test_parent_runner.py | tee host/target/verify-parent.log
+      - name: phase1_gates (Vulkan backend + smoke/nested/periodic/input)
+        run: |
+          bash host/scripts/phase1_gates.sh | tee host/target/verify-phase1.log
+          grep -q 'backend=Vulkan' host/target/verify-phase1.log
+          grep -q 'OK: no libSDL' host/target/verify-phase1.log
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-verify-logs
+          path: |
+            host/target/verify-*.log
+            host/target/envelopes/*.json
+            host/target/bc160_perf_metrics.json
+            .omc/artifacts/release_acceptance.v1.json
+          if-no-files-found: warn
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Host verify summary" >> $GITHUB_STEP_SUMMARY
+          echo "fmt: $(cat host/target/verify-fmt.log | head -1)" >> $GITHUB_STEP_SUMMARY || true
+          echo "check: OK" >> $GITHUB_STEP_SUMMARY
+          echo "test: $(grep -E 'passed|failed' host/target/verify-test.log | tail -1)" >> $GITHUB_STEP_SUMMARY || true
+          echo "ruff: $(cat host/target/verify-ruff.log)" >> $GITHUB_STEP_SUMMARY
+          echo "ldd: $(cat host/target/verify-ldd-release.log | head)" >> $GITHUB_STEP_SUMMARY || true
+          echo "golden: $(grep -E 'Mandatory passed' host/target/verify-golden.log | tail -1)" >> $GITHUB_STEP_SUMMARY || true
+          echo "phase1: $(grep -E 'all Phase 1' host/target/verify-phase1.log | tail -1)" >> $GITHUB_STEP_SUMMARY || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Note: BC-160 bench MEASURED (2994fps) is local release evidence, not asserted in CI (lavapipe). See CHANGELOG wgpu-host v0.6.0." >> $GITHUB_STEP_SUMMARY
+

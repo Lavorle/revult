@@ -185,6 +185,7 @@ pub struct GpuArena {
     pub pipelines: HashMap<u64, PipelineSlot>,
     pub pipeline_by_key: HashMap<String, u64>,
     pub sampler: Option<wgpu::Sampler>,
+    pub nearest_sampler: Option<wgpu::Sampler>,
     pub game_rt: Option<wgpu::Texture>,
     pub game_rt_view: Option<wgpu::TextureView>,
     pub game_rt_size: (u32, u32),
@@ -273,6 +274,7 @@ impl GpuArena {
             pipelines: HashMap::new(),
             pipeline_by_key: HashMap::new(),
             sampler: None,
+            nearest_sampler: None,
             game_rt: None,
             game_rt_view: None,
             game_rt_size: (0, 0),
@@ -567,6 +569,18 @@ impl GpuArena {
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
                 mipmap_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            }));
+        }
+        if self.nearest_sampler.is_none() {
+            self.nearest_sampler = Some(device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("renpy-nearest"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
                 ..Default::default()
             }));
         }
@@ -1936,7 +1950,15 @@ impl GpuArena {
                     let mut entries: Vec<wgpu::BindGroupEntry<'_>> = Vec::new();
                     if pipe.tex_count >= 1 {
                         let t0 = &self.textures.get(&tex0_id.unwrap()).unwrap().view;
-                        let samp = self.sampler.as_ref().unwrap();
+                        let use_nearest = pipe.parts_key.contains("live2d_mask")
+                            || pipe.parts_key.contains("live2d_inverted");
+                        let samp = if use_nearest {
+                            self.nearest_sampler
+                                .as_ref()
+                                .unwrap_or(self.sampler.as_ref().unwrap())
+                        } else {
+                            self.sampler.as_ref().unwrap()
+                        };
                         entries.push(wgpu::BindGroupEntry {
                             binding: 0,
                             resource: wgpu::BindingResource::TextureView(t0),

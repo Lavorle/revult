@@ -21,7 +21,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-dev vulkan-tools mesa-vulkan-drivers
+          sudo apt-get install -y python3-dev vulkan-tools mesa-vulkan-drivers libasound2-dev
           vulkaninfo --summary | head -n 50 || true
           lspci | grep -i vga || true
       - name: Setup Rust

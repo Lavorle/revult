@@ -49,5 +49,4 @@ mod tests {
         let avg_odd = calculate_avg_duration(total_odd, count_odd);
         assert_eq!(avg_odd, Duration::from_nanos(3));
     }
-
 }

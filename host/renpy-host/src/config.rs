@@ -68,12 +68,18 @@ mod tests {
         let _g = ENV_LOCK.lock().unwrap();
         for truthy in ["1", "true", "TRUE", "True", "yes", "YES", "Yes"] {
             with_env("RENPY_HOST_UI_TRACE", Some(truthy), || {
-                assert!(env_bool("RENPY_HOST_UI_TRACE"), "should be true for {truthy}")
+                assert!(
+                    env_bool("RENPY_HOST_UI_TRACE"),
+                    "should be true for {truthy}"
+                )
             });
         }
         for falsy in ["0", "false", "", "no", "2", "1 "] {
             with_env("RENPY_HOST_UI_TRACE", Some(falsy), || {
-                assert!(!env_bool("RENPY_HOST_UI_TRACE"), "should be false for {falsy:?}")
+                assert!(
+                    !env_bool("RENPY_HOST_UI_TRACE"),
+                    "should be false for {falsy:?}"
+                )
             });
         }
         with_env("RENPY_HOST_UI_TRACE", None, || {

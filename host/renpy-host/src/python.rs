@@ -201,12 +201,8 @@ except Exception:
 # before import_all makes backup.backup() try to pickle it and can break
 # import_all=full. Do not install renpy_uguu_host here.
 "#;
-            py.run(
-                &std::ffi::CString::new(code).unwrap(),
-                None,
-                None,
-            )
-            .map_err(|e| format!("install host_pygame: {e}"))?;
+            py.run(&std::ffi::CString::new(code).unwrap(), None, None)
+                .map_err(|e| format!("install host_pygame: {e}"))?;
 
             info!(
                 "CPython {} embedded; renpy_host + host_pygame registered",
@@ -289,7 +285,9 @@ except Exception:
         let base_str = self.base_dir.to_string_lossy().into_owned();
         // Optional product game dir (AC5 bootstrap / the_question). Do not override
         // if the user already set RENPY_HOST_GAME; discovery falls back in gate code.
-        let game_env = std::env::var("RENPY_HOST_GAME").ok().filter(|s| !s.is_empty());
+        let game_env = std::env::var("RENPY_HOST_GAME")
+            .ok()
+            .filter(|s| !s.is_empty());
         let mut wrapped = String::new();
         wrapped.push_str("import os, sys\n");
         wrapped.push_str(&format!(
@@ -322,11 +320,10 @@ except Exception:
                 }
                 // Also format via traceback module when possible.
                 if let Ok(traceback) = py.import("traceback") {
-                    if let Ok(lines) = traceback.call_method1("format_exception", (
-                        e.get_type(py),
-                        &e.value(py),
-                        e.traceback(py),
-                    )) {
+                    if let Ok(lines) = traceback.call_method1(
+                        "format_exception",
+                        (e.get_type(py), &e.value(py), e.traceback(py)),
+                    ) {
                         if let Ok(joined) = lines.call_method0("__iter__") {
                             let _ = joined;
                         }
@@ -351,7 +348,11 @@ except Exception:
 
     /// 1000 nested wait cycles; stack depth reported via sys._getframe.
     fn run_nested_gate(&self) -> Result<(), String> {
-        let result_path = self.base_dir.join("host").join("target").join("gate-nested.txt");
+        let result_path = self
+            .base_dir
+            .join("host")
+            .join("target")
+            .join("gate-nested.txt");
         let result_path_str = result_path.to_string_lossy().into_owned();
         Python::attach(|py| -> Result<(), String> {
             let code = format!(
@@ -382,12 +383,8 @@ if max(depths) - min(depths) > 2:
 renpy_host.request_quit()
 "#
             );
-            py.run(
-                &std::ffi::CString::new(code).unwrap(),
-                None,
-                None,
-            )
-            .map_err(|e| format!("nested gate: {e}"))?;
+            py.run(&std::ffi::CString::new(code).unwrap(), None, None)
+                .map_err(|e| format!("nested gate: {e}"))?;
             Ok(())
         })?;
         let msg = std::fs::read_to_string(&result_path).unwrap_or_default();
@@ -401,7 +398,11 @@ renpy_host.request_quit()
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(60);
-        let result_path = self.base_dir.join("host").join("target").join("gate-periodic.txt");
+        let result_path = self
+            .base_dir
+            .join("host")
+            .join("target")
+            .join("gate-periodic.txt");
         let result_path_str = result_path.to_string_lossy().into_owned();
         Python::attach(|py| -> Result<(), String> {
             let code = format!(
@@ -431,12 +432,8 @@ if not (lo <= count <= hi):
 renpy_host.request_quit()
 "#
             );
-            py.run(
-                &std::ffi::CString::new(code).unwrap(),
-                None,
-                None,
-            )
-            .map_err(|e| format!("periodic gate: {e}"))?;
+            py.run(&std::ffi::CString::new(code).unwrap(), None, None)
+                .map_err(|e| format!("periodic gate: {e}"))?;
             Ok(())
         })?;
         let msg = std::fs::read_to_string(&result_path).unwrap_or_default();
@@ -445,7 +442,11 @@ renpy_host.request_quit()
     }
 
     fn run_input_gate(&self) -> Result<(), String> {
-        let result_path = self.base_dir.join("host").join("target").join("gate-input.txt");
+        let result_path = self
+            .base_dir
+            .join("host")
+            .join("target")
+            .join("gate-input.txt");
         let result_path_str = result_path.to_string_lossy().into_owned();
         Python::attach(|py| -> Result<(), String> {
             let code = format!(
@@ -478,12 +479,8 @@ if not all(seen.values()):
 renpy_host.request_quit()
 "#
             );
-            py.run(
-                &std::ffi::CString::new(code).unwrap(),
-                None,
-                None,
-            )
-            .map_err(|e| format!("input gate: {e}"))?;
+            py.run(&std::ffi::CString::new(code).unwrap(), None, None)
+                .map_err(|e| format!("input gate: {e}"))?;
             Ok(())
         })?;
         let msg = std::fs::read_to_string(&result_path).unwrap_or_default();
@@ -1085,7 +1082,6 @@ renpy_host.request_quit()
         info!("{msg}");
         Ok(())
     }
-
 }
 
 // Centralized env: `crate::config::HostConfig::from_env()` is the single
@@ -1611,7 +1607,10 @@ fn inject_mouse(x: i64, y: i64, button: i64, pressed: bool) {
             ("x".into(), EventValue::Int(x)),
             ("y".into(), EventValue::Int(y)),
             ("rel".into(), EventValue::Str("0,0".into())),
-            ("buttons".into(), EventValue::Int(if pressed { 1 } else { 0 })),
+            (
+                "buttons".into(),
+                EventValue::Int(if pressed { 1 } else { 0 }),
+            ),
             ("mod".into(), EventValue::Int(0)),
         ],
     ));
@@ -1707,7 +1706,6 @@ delegate_host! {
     mesh_order_len: mesh_order_len: u32,
 }
 
-
 #[pyfunction]
 fn solid_pipeline() -> PyResult<u64> {
     let mut st = host_state().lock().unwrap();
@@ -1737,7 +1735,6 @@ fn textured_pipeline() -> PyResult<u64> {
         .textured_pipeline
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("textured pipeline missing"))
 }
-
 
 #[pyfunction]
 fn dissolve_pipeline() -> PyResult<u64> {
@@ -1998,7 +1995,6 @@ fn draw_models(
     Ok(())
 }
 
-
 #[pyfunction]
 fn end_frame_present() -> PyResult<()> {
     let mut st = host_state().lock().unwrap();
@@ -2098,10 +2094,7 @@ fn last_product_present() -> bool {
 /// Count of successful swapchain product presents (not RTT-only).
 #[pyfunction]
 fn product_presents() -> u64 {
-    host_state()
-        .lock()
-        .map(|s| s.product_presents)
-        .unwrap_or(0)
+    host_state().lock().map(|s| s.product_presents).unwrap_or(0)
 }
 
 /// Idle clears that ran while last_product_present was true (should be 0 in a
@@ -2226,11 +2219,7 @@ fn audio_set_volume(v: f32) {
 
 #[pyfunction]
 fn audio_queue_pcm_f32(samples: Vec<f32>) {
-    host_state()
-        .lock()
-        .unwrap()
-        .audio
-        .queue_pcm_f32(&samples);
+    host_state().lock().unwrap().audio.queue_pcm_f32(&samples);
 }
 
 #[pyfunction]

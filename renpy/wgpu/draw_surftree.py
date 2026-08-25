@@ -14,6 +14,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import os  # noqa: F401
+from typing import Any, Optional, Sequence  # noqa: F401
+from .draw_debug import (  # noqa: F401
+    _UI_TRACE_LOGGED,
+    _phase0_due_dissolve,
+    _phase0_log,
+    _ui_trace_once,
+    _host_draw_fail,
+)
+from .host_texture import HostTexture  # noqa: F401
+
 if TYPE_CHECKING:
     from .host_texture import HostTexture
 
@@ -459,6 +470,261 @@ class SurftreeMixin:
 
         return None
 
+
+
+
+    # --- GL2-parity load_all_textures prepass ---------------------------------
+
+    def _is_render_like(self, n):
+        """True for Render-like nodes (have both children and mesh attrs)."""
+        return hasattr(n, "children") and hasattr(n, "mesh")
+
+    def _is_surface_like(self, n):
+        """True for Surface-like pixel sources.
+
+        Render also has get_size — callers must check ``_is_render_like`` first.
+        """
+        return hasattr(n, "get_size") and (
+            hasattr(n, "_pixels")
+            or hasattr(n, "get_buffer")
+            or hasattr(n, "get_at")
+        )
+
+    def _is_imagedissolve_node(self, node):
+        """True when a node is renpy.imagedissolve (3-tex control/bottom/top).
+
+        Also matches product alias ``image_dissolve`` (HuangmeiC dissolve_transform).
+        """
+        if node is None:
+            return False
+        shaders = getattr(node, "shaders", None) or ()
+        if any(
+            s in ("renpy.imagedissolve", "imagedissolve", "image_dissolve")
+            for s in shaders
+        ):
+            return True
+        uniforms = getattr(node, "uniforms", None)
+        if isinstance(uniforms, dict) and (
+            "u_renpy_dissolve_offset" in uniforms
+            or "u_renpy_dissolve_multiplier" in uniforms
+            # Product alias uniforms (HuangmeiC image_dissolve).
+            or ("u_transition" in uniforms and "u_animation" in uniforms)
+        ):
+            # ImageDissolve stamps offset/multiplier; plain Dissolve uses u_renpy_dissolve.
+            if "u_renpy_dissolve" not in uniforms:
+                return True
+        op = getattr(node, "operation", None)
+        if op in ("IMAGEDISSOLVE", "imagedissolve"):
+            return True
+        try:
+            # renpy.display.render.IMAGEDISSOLVE == 2
+            return int(op) == 2
+        except (TypeError, ValueError):
+            return False
+
+    def _is_dissolve_node(self, node):
+        """True when a Render/model should dual-draw as renpy.dissolve.
+
+        Detects product Dissolve/Fade stamps: shader name, u_renpy_dissolve
+        uniform, or operation_complete with DISSOLVE-like operation.
+        ImageDissolve (3-tex) is excluded — handled by imagedissolve pipeline.
+        """
+        if node is None:
+            return False
+        if self._is_imagedissolve_node(node):
+            return False
+        shaders = getattr(node, "shaders", None) or ()
+        if any(s in ("renpy.dissolve", "dissolve") for s in shaders):
+            return True
+        uniforms = getattr(node, "uniforms", None)
+        if isinstance(uniforms, dict) and "u_renpy_dissolve" in uniforms:
+            return True
+        op_complete = getattr(node, "operation_complete", None)
+        if op_complete is None:
+            return False
+        # operation may be an int enum (DISSOLVE=1 in render.pyx historically).
+        op = getattr(node, "operation", None)
+        if op is None:
+            return False
+        if op in ("DISSOLVE", "dissolve"):
+            return True
+        try:
+            # renpy.display.render.DISSOLVE=1 (IMAGEDISSOLVE=2 handled above).
+            return int(op) == 1
+        except (TypeError, ValueError):
+            return False
+
+    def _dissolve_complete(self, node):
+        """Return dissolve amount in [0,1], or None if not a dissolve amount.
+
+        Priority:
+          1. explicit ``u_renpy_dissolve`` uniform (authoritative mid-fade)
+          2. ``operation_complete`` only when operation is DISSOLVE **and** the
+             amount is clearly mid-range (0,1) — Render defaults complete=0.0
+             on every node, so 0.0 alone is NOT "start of dissolve"
+          3. shader-only ``renpy.dissolve`` shell (no uniform) → 1.0 (finished
+             sticky shell; walk NEW/main_menu)
+
+        AC-Idle: sticky renpy.dissolve with default complete=0 used to walk the
+        empty OLD child → permanent arena clear while dock HostTextures lived
+        under NEW.
+        """
+        if node is None:
+            return None
+        uniforms = getattr(node, "uniforms", None)
+        if isinstance(uniforms, dict) and "u_renpy_dissolve" in uniforms:
+            try:
+                return max(0.0, min(1.0, float(uniforms["u_renpy_dissolve"])))
+            except (TypeError, ValueError):
+                return 1.0
+        shaders = getattr(node, "shaders", None) or ()
+        has_shader = any(s in ("renpy.dissolve", "dissolve") for s in shaders)
+        op = getattr(node, "operation", None)
+        op_c = getattr(node, "operation_complete", None)
+        is_diss_op = False
+        if op is not None:
+            try:
+                is_diss_op = op in ("DISSOLVE", "dissolve") or int(op) == 1
+            except (TypeError, ValueError):
+                is_diss_op = op in ("DISSOLVE", "dissolve")
+        if is_diss_op and op_c is not None:
+            try:
+                c = float(op_c)
+            except (TypeError, ValueError):
+                c = None
+            if c is not None:
+                # Only trust mid-range amounts. Exact 0.0 is the Render default
+                # and also "transition not started" — with a renpy.dissolve
+                # shader still on the tree that almost always means a finished
+                # sticky shell, not a real t=0 frame.
+                if 0.001 < c < 0.999:
+                    return max(0.0, min(1.0, c))
+                if c >= 0.999:
+                    return 1.0
+                # c <= 0.001: fall through
+        if has_shader:
+            return 1.0
+        return None
+
+    def _reverse_axis_scale(self, node):
+        """Return (xdx, ydy) for axis-aligned reverse, or None if not applicable.
+
+        Used by Frame/Solid stretch and Text drawable oversample (``draw_to_virt``).
+        """
+        rev = getattr(node, "reverse", None)
+        if rev is None:
+            return None
+        xdx = float(getattr(rev, "xdx", 1.0) or 1.0)
+        ydy = float(getattr(rev, "ydy", 1.0) or 1.0)
+        xdy = float(getattr(rev, "xdy", 0.0) or 0.0)
+        ydx = float(getattr(rev, "ydx", 0.0) or 0.0)
+        # Only axis-aligned scale; skip rotation/shear.
+        if abs(xdy) > 1e-6 or abs(ydx) > 1e-6:
+            return None
+        return xdx, ydy
+
+    def _node_needs_axis_scale(self, node, children):
+        """True when node should apply reverse axis scale to children.
+
+        Frame (imagelike) stamps ``reverse`` Matrix2D with non-identity xdx/ydy
+        so source tiles fill dest border pieces. Solid uses the same path:
+        ``solid_texture(10,10)`` + ``reverse = Matrix2D(W/10, 0, 0, H/10)``.
+
+        Product Text stamps ``reverse = layout.reverse``:
+        - ``draw_per_virt=1`` → IDENTITY (must never stretch typewriter mid-st)
+        - ``draw_per_virt>1`` (maximize) → uniform ``1/oversample`` (drawable res)
+
+        Both Frame/Solid and oversampled Text return True for non-identity reverse.
+        Dest size must be ``child_size * |scale|`` (see draw path) — **not** always
+        the full parent box. Stretching typewriter partials into the full text box
+        after maximize reintroduced AC-T1 balloon glyphs.
+        """
+        sc = self._reverse_axis_scale(node)
+        if sc is None:
+            return False
+        xdx, ydy = sc
+        # Non-identity axis scale → apply reverse mapping.
+        if abs(xdx - 1.0) > 1e-6 or abs(ydy - 1.0) > 1e-6:
+            return True
+        # Identity reverse: never stretch on size mismatch (typewriter mid-st).
+        return False
+
+    def _reverse_dest_size(self, node, child, parent_size):
+        """Dest size for a reverse-scaled child.
+
+        Product reverse contracts:
+
+        1. **Uniform scale-down** (``|xdx|<1`` and ``|ydy|<1``) — Text / image
+           drawable oversample (``reverse = 1/os``), and Transform fit cover
+           when the child is larger than the dest box (e.g. HuangmeiC splash
+           3840×2160 under ``full_fill`` → reverse 0.5 into 1920×1080):
+
+           - **Full** HostTexture (entire atlas UV): dest = reverse node layout
+             box (``parent_size``). Main-menu overlay is a 1280×720 PNG with only
+             the left 280px opaque; it must still cover the full virtual canvas
+             so the strip reaches the bottom. Mapping ``child*inv_os`` when the
+             texture was not re-uploaded at physical res shrank it (~853×480)
+             and left a hole — user "overlay incomplete after maximize".
+             Same rule covers true 2× full images under cover/oversample: a
+             full 3840×2160 HostTexture under reverse 0.5 fills parent 1920×1080
+             (not child*scale→1920 if parent wrong, not 3840 double-draw).
+
+           - **Subsurface** HostTexture (typewriter mid-st): dest =
+             ``child_size * |scale|`` so partial glyphs stay partial.
+             **Do not** collapse this branch into parent_size — that reintroduces
+             AC-T balloon after maximize (worker-3 typewriter path depends on it).
+
+        2. **Scale-up / layout fill** (Solid 10×10→dest, Frame pieces):
+           dest = reverse node layout box (``parent_size``).
+        """
+        sc = self._reverse_axis_scale(node)
+        if sc is None:
+            return parent_size
+        xdx, ydy = sc
+        pw, ph = int(parent_size[0]), int(parent_size[1])
+        # Prefer parent layout box for scale-up / unknown.
+        if not (abs(xdx) < 1.0 - 1e-6 and abs(ydy) < 1.0 - 1e-6):
+            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
+                _ui_trace_once(
+                    "reverse_branch",
+                    f"branch=scale_up_or_fill pw={pw} ph={ph} xdx={xdx} ydy={ydy} dw={max(1, pw)} dh={max(1, ph)}",
+                )
+            return max(1, pw), max(1, ph)
+
+        # Uniform scale-down (oversample).
+        ht = None
+        try:
+            ht = self._resolve_texture_full(child)
+        except Exception:
+            ht = None
+        if ht is not None and self._host_tex_is_full(ht):
+            # Full image/text line texture → fill reverse node's virtual box.
+            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
+                _ui_trace_once(
+                    "reverse_branch",
+                    f"branch=full_oversample pw={pw} ph={ph} xdx={xdx} ydy={ydy} "
+                    f"ht=({getattr(ht, 'w', '?')},{getattr(ht, 'h', '?')}) dw={max(1, pw)} dh={max(1, ph)}",
+                )
+            return max(1, pw), max(1, ph)
+
+        cw, ch = self._node_size(child, default=(0, 0))
+        if cw <= 0 or ch <= 0:
+            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
+                _ui_trace_once(
+                    "reverse_branch",
+                    f"branch=unknown_child_fallback pw={pw} ph={ph} xdx={xdx} ydy={ydy} cw={cw} ch={ch}",
+                )
+            return max(1, pw), max(1, ph)
+        # Partial UV (typewriter): map drawable partial → virtual partial.
+        dw = max(1, int(round(abs(float(cw) * float(xdx)))))
+        dh = max(1, int(round(abs(float(ch) * float(ydy)))))
+        if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
+            _ui_trace_once(
+                "reverse_branch",
+                f"branch=subsurface_partial pw={pw} ph={ph} xdx={xdx} ydy={ydy} "
+                f"cw={cw} ch={ch} dw={dw} dh={dh}",
+            )
+        return dw, dh
 
 
 # TODO(P0-next): move remaining surftree traversal helpers:

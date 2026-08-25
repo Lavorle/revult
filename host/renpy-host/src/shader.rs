@@ -3,6 +3,13 @@
 //! Provides `ShaderPart`, `ShaderPartRegistry`, and `NativeShaderComposer` for
 //! merging modular shader hooks, resolving uniform struct layouts, and generating
 //! complete WGSL source text with single source-of-truth validation and caching.
+//!
+//! This module is the single source of truth for shader-part composition and WGSL
+//! emission. Its public API (`NativeShaderComposer`, `emit_wgsl`, `ComposedShader`,
+//! the `ShaderError` variants, and the `DEFAULT_*` constants) is the contract surface
+//! for future PyO3 bindings and external callers. The bin crate compiles this module
+//! privately, so the unused-in-binary items are intentionally retained for API stability.
+#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;

@@ -21,6 +21,17 @@ import renpy_host  # type: ignore
 from renpy.pygame.surface import Surface
 from renpy.wgpu.draw import WgpuDraw
 
+# --- harness (thin wrapper, original logic preserved) ---
+try:
+    from _harness import gate_harness, parametrized_gate  # type: ignore
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
+    except ImportError:
+        gate_harness = None  # type: ignore
+        parametrized_gate = None  # type: ignore
+
+
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
 out = Path(_base) / "host" / "target" / "gate-dissolve_product_rtt.txt"
 out.parent.mkdir(parents=True, exist_ok=True)
@@ -140,3 +151,61 @@ def main():
 
 
 main()
+
+# ----------------------------------------------------------------------
+# HARNESS MIGRATION (thin wrapper, original logic preserved above)
+# ----------------------------------------------------------------------
+# Full harness rewrite example for dissolve_product_rtt.
+# Extracts nested-Render RTT dissolve at param amount.
+
+def _harness_run_one(case):
+    amount = float(case.get("amount", 0.5)) if isinstance(case, dict) else 0.5
+    w, h = 1280, 720
+    draw = WgpuDraw()
+    draw.init((w, h))
+    try:
+        draw.physical_size = renpy_host.window_size()
+    except Exception:
+        pass
+    old = _scene_render(w, h, (255, 0, 0, 255))
+    new = _scene_render(w, h, (0, 0, 255, 255))
+    root = FakeRender(w, h, mesh=True)
+    root.shaders = ("renpy.dissolve",)
+    root.uniforms = {"u_renpy_dissolve": amount}
+    root.blit(old, 0, 0)
+    root.blit(new, 0, 0)
+    draw.draw_screen(root, flip=True)
+    rw, rh, rgba = renpy_host.read_game_rt_rgba()
+    return rw, rh, rgba
+
+
+def _harness_golden_compare(w, h, rgba):
+    mr, mg, mb = _mean_rgb(rgba, w, h)
+    clear_like = mr < 40 and mg < 40 and mb < 40
+    hard_red = mr > 200 and mb < 40
+    hard_blue = mb > 200 and mr < 40
+    blended = (mr > 40 and mb > 40) and not clear_like
+    ok = blended and not hard_red and not hard_blue
+    msg = f"ok={ok} mean=({mr:.1f},{mg:.1f},{mb:.1f}) blended={blended} hard_red={hard_red} hard_blue={hard_blue} clear_like={clear_like} nested_renders=True amount=0.5"
+    return ok, msg
+
+
+if parametrized_gate is not None:
+    @parametrized_gate("dissolve_product_rtt", [{"amount": 0.0}, {"amount": 0.5}, {"amount": 1.0}])
+    def _parametrized_case(case):
+        w, h, rgba = _harness_run_one(case)
+        return _harness_golden_compare(w, h, rgba)
+
+
+def _harness_main():
+    import os as _os
+    if gate_harness is not None and _os.environ.get("RENPY_HOST_HARNESS") == "1":
+        cases = [{"amount": 0.0}, {"amount": 0.5}, {"amount": 1.0}]
+        ok = gate_harness("dissolve_product_rtt", cases, _harness_run_one, _harness_golden_compare)
+        raise SystemExit(0 if ok else 1)
+    else:
+        pass
+
+# Migration: replace `main()` bottom call with `if __name__ == "__main__": _harness_main()`
+# to make harness the default while keeping original main() available.
+

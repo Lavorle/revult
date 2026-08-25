@@ -35,6 +35,17 @@ import traceback
 import types
 from pathlib import Path
 
+# --- harness (thin wrapper, original logic preserved) ---
+try:
+    from _harness import gate_harness, parametrized_gate  # type: ignore
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
+    except ImportError:
+        gate_harness = None  # type: ignore
+        parametrized_gate = None  # type: ignore
+
+
 
 REQUIRED_HELPERS = (
     "path_to_common",
@@ -1273,3 +1284,43 @@ def run() -> None:
 
 
 run()
+
+# ----------------------------------------------------------------------
+# HARNESS MIGRATION (thin wrapper, original logic preserved above)
+# ----------------------------------------------------------------------
+# Migration path for tq_chrome_live:
+#   1. Keep all helpers/classes above untouched (header license preserved).
+#   2. Extract the body of main()/run()/probe into _harness_run_one(case):
+#        def _harness_run_one(case):
+#            # case: dict with {"frame": "gui/frame.png", "borders": 40}
+#            # ... reuse helpers above (WgpuDraw / FakeRender / _mean_rgb ...)
+#            # w, h, rgba = renpy_host.read_game_rt_rgba()
+#            # return w, h, rgba   # or (ok, msg)
+#   3. Define golden_compare delegating to golden_mae or custom mean check:
+#        def _harness_golden_compare(w, h, rgba):
+#            from golden_mae import compare_or_bootstrap
+#            return compare_or_bootstrap("tq_chrome_live", w, h, rgba)
+#            # or custom: mr/mg/mb = _mean_rgb(rgba,w,h); return (ok,msg)
+#   4. Wire via harness (opt-in via RENPY_HOST_HARNESS=1 to keep default run unchanged):
+#        if parametrized_gate is not None:
+#            @parametrized_gate("tq_chrome_live", [{"frame": "gui/frame.png", "borders": 40}])
+#            def _parametrized_case(case):
+#                w, h, rgba = _harness_run_one(case)
+#                return _harness_golden_compare(w, h, rgba)
+#        def _harness_main():
+#            import os as _os
+#            if gate_harness is not None and _os.environ.get("RENPY_HOST_HARNESS") == "1":
+#                cases = [{"frame": "gui/frame.png", "borders": 40}]
+#                ok = gate_harness("tq_chrome_live", cases, _harness_run_one, _harness_golden_compare)
+#                raise SystemExit(0 if ok else 1)
+#            else:
+#                main()  # or run() — original path
+#        if __name__ == "__main__":
+#            _harness_main()
+#
+# Notes: AC-C1 product chrome stack; wraps _draw_product_frame_chrome + _probe0_main_menu; orange border ~(204,102,0) on real Frame via HostInterface.
+# Original code above is untouched; this block is documentation + ready-to-enable
+# wrapper ensuring `python -m py_compile` stays green.
+# To fully migrate, move the `main()`/`run()` call into `_harness_main` and
+# gate on RENPY_HOST_HARNESS as shown.
+

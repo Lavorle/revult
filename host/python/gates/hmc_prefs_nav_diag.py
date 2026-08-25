@@ -2,6 +2,17 @@
 import os, sys, time, threading, traceback
 from pathlib import Path
 
+# --- harness (thin wrapper, original logic preserved) ---
+try:
+    from _harness import gate_harness, parametrized_gate  # type: ignore
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
+    except ImportError:
+        gate_harness = None  # type: ignore
+        parametrized_gate = None  # type: ignore
+
+
 def _base():
     return Path(os.environ.get("RENPY_HOST_BASE") or "/mnt/nvme1n1p2/revult")
 
@@ -289,3 +300,43 @@ if __name__=="__main__":
     run()
 
 run()
+
+# ----------------------------------------------------------------------
+# HARNESS MIGRATION (thin wrapper, original logic preserved above)
+# ----------------------------------------------------------------------
+# Migration path for hmc_prefs_nav_diag:
+#   1. Keep all helpers/classes above untouched (header license preserved).
+#   2. Extract the body of main()/run()/probe into _harness_run_one(case):
+#        def _harness_run_one(case):
+#            # case: dict with {"tab": "text_config"}
+#            # ... reuse helpers above (WgpuDraw / FakeRender / _mean_rgb ...)
+#            # w, h, rgba = renpy_host.read_game_rt_rgba()
+#            # return w, h, rgba   # or (ok, msg)
+#   3. Define golden_compare delegating to golden_mae or custom mean check:
+#        def _harness_golden_compare(w, h, rgba):
+#            from golden_mae import compare_or_bootstrap
+#            return compare_or_bootstrap("hmc_prefs_nav_diag", w, h, rgba)
+#            # or custom: mr/mg/mb = _mean_rgb(rgba,w,h); return (ok,msg)
+#   4. Wire via harness (opt-in via RENPY_HOST_HARNESS=1 to keep default run unchanged):
+#        if parametrized_gate is not None:
+#            @parametrized_gate("hmc_prefs_nav_diag", [{"tab": "text_config"}])
+#            def _parametrized_case(case):
+#                w, h, rgba = _harness_run_one(case)
+#                return _harness_golden_compare(w, h, rgba)
+#        def _harness_main():
+#            import os as _os
+#            if gate_harness is not None and _os.environ.get("RENPY_HOST_HARNESS") == "1":
+#                cases = [{"tab": "text_config"}]
+#                ok = gate_harness("hmc_prefs_nav_diag", cases, _harness_run_one, _harness_golden_compare)
+#                raise SystemExit(0 if ok else 1)
+#            else:
+#                main()  # or run() — original path
+#        if __name__ == "__main__":
+#            _harness_main()
+#
+# Notes: product prefs nav diag uses bootstrap stages + probe thread sampling RT regions; _harness_run_one would wrap _base() + bootstrap + main_thread/probe split.
+# Original code above is untouched; this block is documentation + ready-to-enable
+# wrapper ensuring `python -m py_compile` stays green.
+# To fully migrate, move the `main()`/`run()` call into `_harness_main` and
+# gate on RENPY_HOST_HARNESS as shown.
+

@@ -17,6 +17,17 @@ import renpy_host  # type: ignore
 from renpy.pygame.surface import Surface
 from renpy.wgpu.draw import WgpuDraw
 
+# --- harness (thin wrapper, original logic preserved) ---
+try:
+    from _harness import gate_harness, parametrized_gate  # type: ignore
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
+    except ImportError:
+        gate_harness = None  # type: ignore
+        parametrized_gate = None  # type: ignore
+
+
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
 out = Path(_base) / "host" / "target" / "gate-dissolve_blend.txt"
 out.parent.mkdir(parents=True, exist_ok=True)
@@ -113,3 +124,71 @@ def main():
 
 
 main()
+
+# ----------------------------------------------------------------------
+# HARNESS MIGRATION (thin wrapper, original logic preserved above)
+# ----------------------------------------------------------------------
+# Full harness rewrite example: original body of main() extracted as
+# _harness_run_one(case).  Parametrized via gate_harness / parametrized_gate.
+# Original main() above is kept runnable; this wrapper is additive.
+
+def _harness_run_one(case):
+    """Harness entry: case -> (w,h,rgba) or (ok,msg). Parameterized dissolve."""
+    amount = float(case.get("amount", 0.5)) if isinstance(case, dict) else 0.5
+    old_rgba = case.get("old_rgba", (255, 0, 0, 255)) if isinstance(case, dict) else (255, 0, 0, 255)
+    new_rgba = case.get("new_rgba", (0, 0, 255, 255)) if isinstance(case, dict) else (0, 0, 255, 255)
+    w, h = 1280, 720
+    draw = WgpuDraw()
+    draw.init((w, h))
+    try:
+        draw.physical_size = renpy_host.window_size()
+    except Exception:
+        pass
+    old = _solid_surface(w, h, old_rgba)
+    new = _solid_surface(w, h, new_rgba)
+    root = FakeRender(w, h)
+    root.uniforms = {"u_renpy_dissolve": amount}
+    root.blit(old, 0, 0)
+    root.blit(new, 0, 0)
+    draw.draw_screen(root, flip=True)
+    rw, rh, rgba = renpy_host.read_game_rt_rgba()
+    return rw, rh, rgba
+
+
+def _harness_golden_compare(w, h, rgba):
+    """Custom MAE-style compare mirroring main()'s mean logic."""
+    mr, mg, mb = _mean_rgb(rgba, w, h)
+    clear_like = mr < 40 and mg < 40 and mb < 40
+    hard_red = mr > 200 and mb < 40
+    hard_blue = mb > 200 and mr < 40
+    blended = (mr > 40 and mb > 40) and not clear_like
+    ok = blended and not hard_red and not hard_blue
+    msg = f"ok={ok} mean=({mr:.1f},{mg:.1f},{mb:.1f}) blended={blended} hard_red={hard_red} hard_blue={hard_blue} clear_like={clear_like} amount=param"
+    return ok, msg
+
+
+# Optional parametrized entry for pytest / harness runner.
+# Enabled only when RENPY_HOST_HARNESS=1 to keep original `main()` path default.
+if parametrized_gate is not None:
+    @parametrized_gate("dissolve_blend", [{"amount": 0.0}, {"amount": 0.5}, {"amount": 1.0}])
+    def _parametrized_case(case):
+        w, h, rgba = _harness_run_one(case)
+        return _harness_golden_compare(w, h, rgba)
+
+
+def _harness_main():
+    """Thin harness dispatch preserving original main() for default runs."""
+    import os as _os
+    if gate_harness is not None and _os.environ.get("RENPY_HOST_HARNESS") == "1":
+        cases = [{"amount": 0.0}, {"amount": 0.5}, {"amount": 1.0}]
+        ok = gate_harness("dissolve_blend", cases, _harness_run_one, _harness_golden_compare)
+        raise SystemExit(0 if ok else 1)
+    else:
+        pass
+
+
+# To fully migrate, replace the bottom `main()` call with:
+#   if __name__ == "__main__":
+#       _harness_main()
+# Original `main()` remains above for backward compat.
+

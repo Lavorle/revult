@@ -45,7 +45,11 @@ pub struct HostState {
     pub height: u32,
     pub title: String,
     pub arena: GpuArena,
-    pub composer: NativeShaderComposer,
+    #[allow(dead_code)]
+    /// Native WGSL shader composer (single source of truth for shader-part
+    /// composition). Held on `HostState` for future real compose paths; the
+    /// bin crate does not read it yet, so it is retained for API stability.
+     pub composer: NativeShaderComposer,
     pub audio: AudioEngine,
     /// Channel number → A/V clock (movie / video channels).
     pub video_clocks: HashMap<i32, VideoClock>,

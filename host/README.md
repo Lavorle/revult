@@ -375,15 +375,27 @@ ldd target/debug/renpy-host | grep -iE 'libSDL' || echo ldd-clean
 Gate sources: `host/python/gates/g0N.py` + shared `golden_mae.py`.
 Artifacts: `host/target/gate-g0N.txt`, baselines under `testcases/wgpu_golden/G0N_*/`.
 
-### Release checklist (host artifact)
+### Release checklist (host artifact) — v0.6.0 9f62ab39c (06ce113b rebased)
 
-- [ ] `cargo build -p renpy-host --release`
-- [ ] `ldd target/release/renpy-host | grep -iE 'libSDL'` is **empty** (AC2)
-- [ ] Startup log: `wgpu adapter backend=Vulkan`
-- [ ] `bash scripts/phase9_gates.sh` green (or CI equivalent)
-- [ ] Dual-tree: **do not delete** SDL/GL source tree — strip is host-artifact only
-- [ ] Shader migration docs current: `doc/wgsl_shader_migration.md`
+- [x] `cargo build -p renpy-host --release` — 13MB, `RUSTFLAGS='-D warnings' cargo check --workspace --all-targets` 0
+- [x] `ldd target/release/renpy-host | grep -iE 'libSDL'` is **empty** (AC2) — `host/target/verify-ldd-release.log`
+- [x] Startup log: `wgpu adapter backend=Vulkan` — RADV NAVI12, `host/target/verify-phase1.log` / `verify-bench.log`
+- [x] `bash scripts/phase9_gates.sh` green (or CI equivalent) — **replaced by `bash host/scripts/run_golden_tests.sh` via `parent_runner` 8/8 + 2 composer combos**, `host/target/envelopes/*.json` (10) + `host/target/verify-golden.log`; also `bash host/scripts/phase1_gates.sh` green
+- [x] Dual-tree: **do not delete** SDL/GL source tree — strip is host-artifact only
+- [x] Shader migration docs current: `doc/wgsl_shader_migration.md`
 
+**Release evidence (rebound to HEAD 9f62ab39c, 2026-08-25):** `release_acceptance.v1.json PASS` + `product_acceptance.v1.json PASS` (evidence_revision 9f62ab39c), `bc160_perf_metrics.v1.json MEASURED 2994.77fps 1800 frames eligible true` (host/target/), `cargo test 34`, `ruff renpy/wgpu 0 + host/python/gates 0 bulk narrow`, `phase1_gates 0`. Full digest: `.omc/artifacts/release_artifacts.sha256`. See `CHANGELOG.md` wgpu-host v0.6.0 and `.omc/artifacts/release_acceptance.v1.json`.
+
+```bash
+# Fresh verify at any HEAD (Phase 1 replica):
+cd host && cargo fmt --check && RUSTFLAGS='-D warnings' cargo check --workspace --all-targets && cargo test --workspace
+cargo build -p renpy-host --release && ldd ../host/target/release/renpy-host | grep -qi libSDL && echo FAIL || echo OK
+bash host/scripts/benchmark_bc160.sh --measured --measured-frames 1800 --out host/target/bc160_perf_metrics.json
+bash host/scripts/run_golden_tests.sh   # 8/8 via parent_runner
+ruff check ../renpy/wgpu ../host/python/gates
+bash host/scripts/phase1_gates.sh
+python3 host/scripts/build_release_acceptance.py --out ../.omc/artifacts/release_acceptance.v1.json
+```
 ### Migration / AC8
 
 GLSL `register_shader` / `register_textshader` hard-error on host (`renpy.host_build`).

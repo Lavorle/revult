@@ -1,0 +1,93 @@
+{
+  "schema": "release_acceptance.v1",
+  "evidence_revision": "25d274868278a15cbfa3930687ba88464c047de4",
+  "evidence_revision_short": "25d2748",
+  "timestamp_utc": "2026-08-25T12:07:54.221637+00:00",
+  "verdict": "PASS",
+  "release_ready": true,
+  "product_acceptance_ref": ".omc/artifacts/product_acceptance.v1.json",
+  "artifacts_digest_sha256": "ee88b5018f400cf6fa25aa039611d602a86ee5222836c7b039d6c142bcaa2850",
+  "artifacts": {
+    "host/target/bc160_perf_metrics.json": "f31d1760938908f71df2d329e99fd09257df75d57d367d087e36603ba1c4d042",
+    "host/target/bench_1800.json": "9ae06752597adba81e7e858e40f61394db5a6270891a4106911cc03475a30fac",
+    "host/target/envelopes/composer_combo_alpha.json": "f6ab68ce6461b9f6ee197fc873344965d2d983fb1838b592ad0fd91cc170eadf",
+    "host/target/envelopes/composer_combo_matrixcolor.json": "6e36ddf1728f74552a261df745229df5836ecef5d136529d084664aae5e53f50",
+    "host/target/envelopes/g01.json": "cf46c01c029e414a69378f0a9edb1d9241ced877b8c4f45f4a3c5386c0eb9992",
+    "host/target/envelopes/g02.json": "7778e79f8efb252dcfebd3943197121c865118368d8e6f137dc2a15b942c1774",
+    "host/target/envelopes/g03.json": "495f3cc884c5e5cbca2c75ae0b4373886e42a6d5bfa039b713e3b35a403195ce",
+    "host/target/envelopes/g04.json": "8646996fa4b3aec218a9438ec4a17e37be4599b4271e4fa66c4d6ef8ce8fb6a3",
+    "host/target/envelopes/g05.json": "aa92f4edec008b7f2de111c38b951cb164f0dd3680f907430781ea0bf4ff6e06",
+    "host/target/envelopes/g06.json": "b3ad760ad72de315f84fcf045a59b9ed2870782c89f5eda88ddbe6dcd68a0bbf",
+    "host/target/envelopes/g07.json": "d4cefbea26215b6a58b3fb15bea8cc4def5635650f7ef29ec65d03ef898cce60",
+    "host/target/envelopes/g08.json": "b9f0e4c67c9e1d6d70c539decd3b1a9e8f042969dcf8e4c3a212ba8fb630da4c"
+  },
+  "tier1_host": {
+    "cargo_fmt": 0,
+    "cargo_check_warnings": 0,
+    "cargo_test_34": "34",
+    "phase1_ldd_0": true,
+    "backend_Vulkan": "RADV NAVI12 2995fps"
+  },
+  "tier2_golden": {
+    "passed": "8/8",
+    "evidence_revision": "25d274868278a15cbfa3930687ba88464c047de4",
+    "envelopes": "10 envelopes 25d2748",
+    "notes": "G02/G06 single-point, exit_code 1, corruption/missing PASS"
+  },
+  "tier2_composer": {
+    "combo_2_2": "PASS",
+    "naga_direct": "24.0.0 line:col",
+    "composer_4_4": true
+  },
+  "tier3_inventory": {
+    "total_134": true,
+    "T1_11_T2_13_T3_110": true
+  },
+  "tier3_ruff": {
+    "renpy_wgpu": "0 All checks passed!",
+    "host_python_gates": "0 All checks passed! (4994->0 bulk)",
+    "overall_production": "0 narrow"
+  },
+  "tier3_hmc": {
+    "smoke_30s": "EXIT 0 (3 runs, Vulkan, RO probe)",
+    "recovered_ro": true
+  },
+  "bc160": {
+    "schema": "bc160_perf_metrics.v1",
+    "gpu_target": "AMD BC-160 (Navi 12 / Radeon Pro 5600M)",
+    "vulkan_driver": "radv / Mesa (declared, not probed)",
+    "timestamp_utc": "2026-08-25T11:58:23Z",
+    "measurement_status": "MEASURED",
+    "release_evidence_eligible": true,
+    "average_fps": 2994.77,
+    "one_percent_low_fps": null,
+    "frame_presentation_time_ns": 333915,
+    "render_pass_duration_ns": null,
+    "pass_status": "PERFORMANCE_TARGET_MET",
+    "notes": [
+      "Measured via cargo run --benchmark (host native).",
+      "Frames=1800 source=/tmp/bench_1800.json"
+    ],
+    "optional_gate": {
+      "ran": false,
+      "name": null,
+      "exit_code": null,
+      "command": null
+    },
+    "benchmark_source": "/tmp/bench_1800.json"
+  },
+  "notes": "Release bound to HEAD 25d274868278a15cbfa3930687ba88464c047de4 via fresh Phase1 verification (fmt0 check0 test34 ldd0 Vulkan 8/8 ruff0). host/python 0 via bulk noqa narrow (4994->0, 135 files). bc160 MEASURED 2994.77fps eligible true.",
+  "checks": {
+    "cargo_fmt": 0,
+    "cargo_check_warnings": 0,
+    "cargo_test_34": 34,
+    "ldd_no_sdl": true,
+    "backend_vulkan": true,
+    "golden_8_8": true,
+    "envelopes_count": 10,
+    "ruff_renpy_wgpu": 0,
+    "ruff_gates": 0,
+    "bench_measured": true,
+    "bench_fps": 2994.77
+  }
+}

@@ -131,10 +131,9 @@
 - **E2E / Golden Regression**: `phase1_gates.sh` 全流程、G01–G08 黄金视觉用例、HuangmeiC 交互回放与冒烟测试。
 - **Observability**: 结构化 Parent Runner 输出 JSON Envelope（六字段规范：时间、修订、输入摘要、命令、观测、退出码）。
 
----
 ## Plan Status & State
-- **Status**: `closeout-06ce113b` (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6 **all checked** — 6/6)
+- **Status**: `closeout-9f62ab39c` (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6 **all checked** — 6/6, rebased from 06ce113b)
 - **Normative Source**: `.omc/plans/wgpu-host-productization-consensus.md`
-- **Closeout artifacts**: `.omc/artifacts/productization-residual-matrix.md`, `productization-verifier-report.md`, `productization-residual-ledger.md`, `.omc/artifacts/wave3.5-verifier-delta-f49.md`, `wave3.5-verifier-delta.md` (f49 8/8), `a8df6fe` Naga, `06ce113b` measured 3054fps, `product_acceptance.v1.json` PASS
-- **Release-ready**: **yes** — `product_acceptance.v1.json` verdict PASS (06ce113b, 8/8 + 3054fps + ruff 0 + HMC 0)
-- **Ralplan**: consensus_complete eligible (all parents green)
+- **Closeout artifacts**: `.omc/artifacts/productization-residual-matrix.md`, `productization-verifier-report.md`, `productization-residual-ledger.md`, `.omc/artifacts/wave3.5-verifier-delta-f49.md`, `wave3.5-verifier-delta.md` (f49 8/8), `a8df6fe` Naga, `06ce113b` measured 3054fps, `product_acceptance.v1.json` PASS (06ce113b), **`9f62ab39c` rebound 2994fps MEASURED + `release_acceptance.v1.json` PASS + fresh Phase1 logs in `host/target/verify-*.log`**, `CHANGELOG.md` wgpu-host v0.6.0, `.omc/artifacts/release_artifacts.sha256`
+- **Release-ready**: **yes** — `release_acceptance.v1.json` verdict PASS (9f62ab39c, 8/8 + 2994fps + ruff 0 narrow + HMC 0, evidence_revision==HEAD, artifacts_digest ee88b50) + `product_acceptance.v1.json` rebound PASS
+- **Ralplan**: consensus_complete eligible (all parents green) — Phase 4 CI lock next

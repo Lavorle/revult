@@ -1,19 +1,19 @@
 {
   "schema": "product_acceptance.v1",
-  "evidence_revision": "06ce113b89916b9972a7f901ac4d70317cd71f9f",
-  "timestamp_utc": "2026-08-25T11:32:28.286812+00:00",
+  "evidence_revision": "25d274868278a15cbfa3930687ba88464c047de4",
+  "timestamp_utc": "2026-08-25T12:07:54.221637+00:00",
   "verdict": "PASS",
   "tier1_host": {
     "cargo_fmt": 0,
     "cargo_check_warnings": 0,
     "cargo_test_34": "34",
     "phase1_ldd_0": true,
-    "backend_Vulkan": "RADV NAVI12 3054fps"
+    "backend_Vulkan": "RADV NAVI12 2995fps"
   },
   "tier2_golden": {
     "passed": "8/8",
-    "evidence_revision": "06ce113b89916b9972a7f901ac4d70317cd71f9f",
-    "envelopes": "10 envelopes f49->06ce 8/8",
+    "evidence_revision": "25d274868278a15cbfa3930687ba88464c047de4",
+    "envelopes": "10 envelopes 25d2748",
     "notes": "G02/G06 single-point, exit_code 1, corruption/missing PASS"
   },
   "tier2_composer": {
@@ -38,12 +38,12 @@
     "schema": "bc160_perf_metrics.v1",
     "gpu_target": "AMD BC-160 (Navi 12 / Radeon Pro 5600M)",
     "vulkan_driver": "radv / Mesa (declared, not probed)",
-    "timestamp_utc": "2026-08-25T11:31:45Z",
+    "timestamp_utc": "2026-08-25T11:58:23Z",
     "measurement_status": "MEASURED",
     "release_evidence_eligible": true,
-    "average_fps": 3054.97,
+    "average_fps": 2994.77,
     "one_percent_low_fps": null,
-    "frame_presentation_time_ns": 327335,
+    "frame_presentation_time_ns": 333915,
     "render_pass_duration_ns": null,
     "pass_status": "PERFORMANCE_TARGET_MET",
     "notes": [

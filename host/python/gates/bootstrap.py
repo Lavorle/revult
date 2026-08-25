@@ -25,6 +25,17 @@ import sys
 import traceback
 from pathlib import Path
 
+# --- harness (thin wrapper, original logic preserved) ---
+try:
+    from _harness import gate_harness, parametrized_gate  # type: ignore
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
+    except ImportError:
+        gate_harness = None  # type: ignore
+        parametrized_gate = None  # type: ignore
+# fallback
+
 
 # ---------------------------------------------------------------------------
 # Report helpers
@@ -758,3 +769,8 @@ def run() -> None:
 # not double-call renpy.import_all() / request_quit().
 if globals().get("__name__", "__main__") != "bootstrap":
     run()
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

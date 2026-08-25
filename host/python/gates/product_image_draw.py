@@ -17,6 +17,17 @@ from pathlib import Path
 import renpy_host  # type: ignore
 from renpy.wgpu.draw import WgpuDraw, HostTexture
 
+# --- harness (thin wrapper, original logic preserved) ---
+try:
+    from _harness import gate_harness, parametrized_gate  # type: ignore
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
+    except ImportError:
+        gate_harness = None  # type: ignore
+        parametrized_gate = None  # type: ignore
+# fallback
+
 
 def _png_rgba(path):
     """Minimal PNG decoder for 8-bit RGBA/RGB (no interlacing). Returns (w,h,rgba)."""
@@ -227,3 +238,8 @@ print("[product_image_draw] %s" % msg, flush=True)
 if not ok:
     raise RuntimeError(msg)
 renpy_host.request_quit()
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

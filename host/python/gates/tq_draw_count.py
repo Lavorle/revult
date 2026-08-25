@@ -10,6 +10,17 @@ if str(gates) not in sys.path:
 import renpy_host
 import renpy.wgpu.draw as wdraw
 
+# --- harness (thin wrapper, original logic preserved) ---
+try:
+    from _harness import gate_harness, parametrized_gate  # type: ignore
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
+    except ImportError:
+        gate_harness = None  # type: ignore
+        parametrized_gate = None  # type: ignore
+# fallback
+
 counts = {"draw_model": 0, "begin": 0, "end": 0, "ht": 0, "create_mesh": 0, "ds": 0}
 samples = []
 out = base / "host" / "target" / "gate-tq-draw-count.txt"
@@ -114,3 +125,8 @@ try:
     renpy_host.request_quit()
 except Exception:
     pass
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

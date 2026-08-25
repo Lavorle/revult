@@ -24,6 +24,17 @@ from pathlib import Path
 import renpy_host  # type: ignore
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
+# --- harness (thin wrapper, original logic preserved) ---
+try:
+    from _harness import gate_harness, parametrized_gate  # type: ignore
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
+    except ImportError:
+        gate_harness = None  # type: ignore
+        parametrized_gate = None  # type: ignore
+# fallback
+
 _base = Path(os.environ.get("RENPY_HOST_BASE") or str(Path.cwd()))
 _candidates = [
     Path(os.environ["RENPY_HOST_GAME"]) / "game" / "gui" if os.environ.get("RENPY_HOST_GAME") else None,
@@ -428,3 +439,8 @@ def main():
 
 
 main()
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

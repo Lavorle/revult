@@ -1,6 +1,13 @@
 """Assert main menu is entered even when SKIP_MAIN_MENU was '0' before product gate."""
 import os, sys, time, threading
 from pathlib import Path
+try:
+    from _harness import gate_harness, parametrized_gate
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate
+    except ImportError:
+        gate_harness=parametrized_gate=None  # fallback
 
 # Poison like the old run_the_question.sh
 os.environ["RENPY_SKIP_MAIN_MENU"] = "0"
@@ -85,3 +92,8 @@ out.write_text(body)
 print(body)
 if not ok:
     raise SystemExit(1)
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

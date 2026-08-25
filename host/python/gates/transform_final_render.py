@@ -16,6 +16,13 @@ Note: no from __future__; host run_file prepends imports.
 import os
 import sys
 from pathlib import Path
+try:
+    from _harness import gate_harness, parametrized_gate
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate
+    except ImportError:
+        gate_harness=parametrized_gate=None  # fallback
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
 out = Path(_base) / "host" / "target" / "gate-transform_final_render.txt"
@@ -252,3 +259,8 @@ lines = [
 out.write_text("\n".join(lines) + "\n")
 print("\n".join(lines))
 sys.exit(0 if ok else 1)
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

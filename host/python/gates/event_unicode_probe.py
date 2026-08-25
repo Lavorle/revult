@@ -9,6 +9,13 @@ Note: run_file prepends imports before this source — no __future__ here.
 import os
 import sys
 import traceback
+try:
+    from _harness import gate_harness, parametrized_gate
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate
+    except ImportError:
+        gate_harness=parametrized_gate=None  # fallback
 
 import renpy_host  # type: ignore
 
@@ -164,3 +171,8 @@ def main():
 # Gate runner execs this file via py.run (often as __main__); never sys.exit
 # so the host does not treat a clean probe as gate failure.
 main()
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

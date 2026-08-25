@@ -10,6 +10,13 @@ Procedural MVP (no system assimp). Real assimp.pyx remains on SDL tree.
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
 from renpy.wgpu import model as model_mod
+try:
+    from _harness import gate_harness, parametrized_gate
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate
+    except ImportError:
+        gate_harness=parametrized_gate=None  # fallback
 
 cube = model_mod.procedural_cube_isometric(cx=-0.25, cy=0.05, size=0.32)
 quad = model_mod.procedural_quad(x0=0.15, y0=0.25, x1=0.75, y1=0.75)
@@ -36,3 +43,8 @@ out.write_text(msg + "\n", encoding="utf-8")
 if not ok:
     raise RuntimeError(msg)
 renpy_host.request_quit()
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

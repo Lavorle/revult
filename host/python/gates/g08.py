@@ -7,6 +7,13 @@ Baseline: testcases/wgpu_golden/G08_mask/baseline.rgba
 
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
+try:
+    from _harness import gate_harness, parametrized_gate
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate
+    except ImportError:
+        gate_harness=parametrized_gate=None  # fallback
 
 # Green source + left-opaque / right-transparent mask.
 src = renpy_host.create_texture_rgba(2, 2, bytes([0, 255, 0, 255] * 4))
@@ -41,3 +48,8 @@ out.write_text(msg + "\n", encoding="utf-8")
 if not ok:
     raise RuntimeError(msg)
 renpy_host.request_quit()
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

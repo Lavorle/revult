@@ -1,5 +1,12 @@
 import os, sys, types
 from pathlib import Path
+try:
+    from _harness import gate_harness, parametrized_gate
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate
+    except ImportError:
+        gate_harness=parametrized_gate=None  # fallback
 
 # Full renpy.config stub BEFORE any draw that might log
 import renpy
@@ -80,3 +87,8 @@ print("surface_child", mean(), flush=True)
 
 print("ok=True", flush=True)
 (base/"host"/"target"/"gate-probe-host-tex.txt").write_text("ok=True\n")
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

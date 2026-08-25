@@ -11,6 +11,13 @@ FFmpeg path is covered by the non-golden `video` regression gate.
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
 from renpy.wgpu.video import _gradient_frame
+try:
+    from _harness import gate_harness, parametrized_gate
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate
+    except ImportError:
+        gate_harness=parametrized_gate=None  # fallback
 
 # Fixed t=0.5 gradient frame → textured full-window-ish quad.
 W, H = 64, 64
@@ -50,3 +57,8 @@ out.write_text(msg + "\n", encoding="utf-8")
 if not ok:
     raise RuntimeError(msg)
 renpy_host.request_quit()
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

@@ -1,4 +1,11 @@
 import sys, traceback, os
+try:
+    from _harness import gate_harness, parametrized_gate
+except ImportError:
+    try:
+        from host.python.gates._harness import gate_harness, parametrized_gate
+    except ImportError:
+        gate_harness=parametrized_gate=None  # fallback
 out = open("/tmp/diag_renpy.txt", "w")
 try:
     out.write(f"path0={sys.path[:6]!r}\n")
@@ -30,3 +37,8 @@ try:
     renpy_host.request_quit()
 except Exception:
     pass
+
+# HARNESS MIGRATION (thin wrapper, original logic preserved)
+# 1. extract run_one(case) -> original main logic
+# 2. extract golden_compare via golden_mae.compare_or_bootstrap
+# 3. @parametrized_gate(name, cases) + gate_harness(name, cases, run_one, golden_compare)

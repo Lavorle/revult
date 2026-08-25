@@ -14,6 +14,34 @@ use crate::pump::{get_ticks_ms, log_wait};
 use crate::state::host_state;
 use crate::timer::TimerKind;
 
+/// Unify repeated host_state lock + arena delegation boilerplate.
+macro_rules! register_host_fns {
+    ($module:ident, $($func:ident),* $(,)?) => {
+        $( $module.add_function(wrap_pyfunction!($func, &$module)?)?; )*
+    };
+}
+macro_rules! delegate_host {
+    ( $( $name:ident : $method:ident : $kind:tt ),* $(,)? ) => {
+        $( delegate_host!(@one $name : $method : $kind); )*
+    };
+    (@one $name:ident : $method:ident : void) => {
+        #[pyfunction]
+        fn $name(id: u64) { host_state().lock().unwrap().arena.$method(id); }
+    };
+    (@one $name:ident : $method:ident : bool) => {
+        #[pyfunction]
+        fn $name(id: u64) -> bool { host_state().lock().map(|s| s.arena.$method(id)).unwrap_or(false) }
+    };
+    (@one $name:ident : $method:ident : u32) => {
+        #[pyfunction]
+        fn $name() -> u32 { host_state().lock().map(|s| s.arena.$method()).unwrap_or(0) }
+    };
+    (@one $name:ident : $method:ident : touch) => {
+        #[pyfunction]
+        fn $name(id: u64) { if let Ok(mut st) = host_state().lock() { st.arena.$method(id); } }
+    };
+}
+
 /// Embedded interpreter handle.
 pub struct PythonRuntime {
     pub base_dir: PathBuf,
@@ -21,6 +49,9 @@ pub struct PythonRuntime {
 
 impl PythonRuntime {
     pub fn bootstrap() -> Result<Self, String> {
+        // Centralized env host lives in `crate::config::HostConfig::from_env()` (config.rs).
+        // This pass keeps `discover_base_dir()` as-is to avoid wide refactoring;
+        // future pass can replace this call with `HostConfig::from_env().base`.
         let base_dir = discover_base_dir();
         info!("host base dir: {}", base_dir.display());
         let base_str = base_dir
@@ -1057,6 +1088,9 @@ renpy_host.request_quit()
 
 }
 
+// Centralized env: `crate::config::HostConfig::from_env()` is the single
+// `RENPY_HOST_*` read site. `discover_base_dir()` stays for compatibility
+// this pass; future refactor can delegate base/game resolution to HostConfig.
 fn discover_base_dir() -> PathBuf {
     if let Ok(v) = std::env::var("RENPY_HOST_BASE") {
         return PathBuf::from(v);
@@ -1103,18 +1137,21 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     // Phase 2 GPU FFI (draw_model primary path)
     module.add_function(wrap_pyfunction!(create_texture_rgba, &module)?)?;
     module.add_function(wrap_pyfunction!(write_texture_rgba, &module)?)?;
-    module.add_function(wrap_pyfunction!(destroy_texture, &module)?)?;
-    module.add_function(wrap_pyfunction!(texture_alive, &module)?)?;
-    module.add_function(wrap_pyfunction!(touch_texture, &module)?)?;
-    module.add_function(wrap_pyfunction!(sample_texture_count, &module)?)?;
-    module.add_function(wrap_pyfunction!(texture_map_len, &module)?)?;
-    module.add_function(wrap_pyfunction!(texture_order_len, &module)?)?;
     module.add_function(wrap_pyfunction!(create_mesh, &module)?)?;
-    module.add_function(wrap_pyfunction!(destroy_mesh, &module)?)?;
-    module.add_function(wrap_pyfunction!(mesh_alive, &module)?)?;
-    module.add_function(wrap_pyfunction!(touch_mesh, &module)?)?;
-    module.add_function(wrap_pyfunction!(mesh_map_len, &module)?)?;
-    module.add_function(wrap_pyfunction!(mesh_order_len, &module)?)?;
+    register_host_fns!(
+        module,
+        destroy_texture,
+        texture_alive,
+        touch_texture,
+        sample_texture_count,
+        texture_map_len,
+        texture_order_len,
+        destroy_mesh,
+        mesh_alive,
+        touch_mesh,
+        mesh_map_len,
+        mesh_order_len
+    );
     module.add_function(wrap_pyfunction!(solid_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(textured_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(dissolve_pipeline, &module)?)?;
@@ -1639,54 +1676,13 @@ fn write_texture_rgba(id: u64, rgba: Vec<u8>) -> PyResult<()> {
     result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
 }
 
-#[pyfunction]
-fn destroy_texture(id: u64) {
-    host_state().lock().unwrap().arena.destroy_texture(id);
-}
-
-/// True if `id` is still present in the GpuArena texture map.
-/// Used by WgpuDraw to detect FIFO-evicted HostTexture handles still held on
-/// the product surftree (dead handles → encode_pass skip → arena_rt_clear).
-#[pyfunction]
-fn texture_alive(id: u64) -> bool {
-    host_state()
-        .lock()
-        .map(|s| s.arena.texture_alive(id))
-        .unwrap_or(false)
-}
-
-/// Mark a sample texture as most-recently-used (LRU thrash guard).
-/// Call when a HostTexture is drawn / revalidated so dock chrome is not
-/// treated as oldest while still live on the surftree.
-#[pyfunction]
-fn touch_texture(id: u64) {
-    if let Ok(mut st) = host_state().lock() {
-        st.arena.touch_texture(id);
-    }
-}
-
-#[pyfunction]
-fn sample_texture_count() -> u32 {
-    host_state()
-        .lock()
-        .map(|s| s.arena.sample_texture_count())
-        .unwrap_or(0)
-}
-
-#[pyfunction]
-fn texture_map_len() -> u32 {
-    host_state()
-        .lock()
-        .map(|s| s.arena.texture_map_len())
-        .unwrap_or(0)
-}
-
-#[pyfunction]
-fn texture_order_len() -> u32 {
-    host_state()
-        .lock()
-        .map(|s| s.arena.texture_order_len())
-        .unwrap_or(0)
+delegate_host! {
+    destroy_texture: destroy_texture: void,
+    texture_alive: texture_alive: bool,
+    touch_texture: touch_texture: touch,
+    sample_texture_count: sample_texture_count: u32,
+    texture_map_len: texture_map_len: u32,
+    texture_order_len: texture_order_len: u32,
 }
 
 #[pyfunction]
@@ -1703,47 +1699,14 @@ fn create_mesh(vertices: Vec<f32>, indices: Option<Vec<u32>>) -> PyResult<u64> {
     result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
 }
 
-#[pyfunction]
-fn destroy_mesh(id: u64) {
-    host_state().lock().unwrap().arena.destroy_mesh(id);
+delegate_host! {
+    destroy_mesh: destroy_mesh: void,
+    mesh_alive: mesh_alive: bool,
+    touch_mesh: touch_mesh: touch,
+    mesh_map_len: mesh_map_len: u32,
+    mesh_order_len: mesh_order_len: u32,
 }
 
-/// True if `id` is still present in the GpuArena mesh map.
-/// Used by WgpuDraw mesh-cache to detect FIFO-evicted handles still held in
-/// `_mesh_cache` (dead mesh → encode_pass skip → prefs chrome holes).
-#[pyfunction]
-fn mesh_alive(id: u64) -> bool {
-    host_state()
-        .lock()
-        .map(|s| s.arena.mesh_alive(id))
-        .unwrap_or(false)
-}
-
-/// Mark a mesh as most-recently-used (LRU thrash guard).
-/// Call when a mesh is drawn / revalidated so prefs chrome quads are not
-/// treated as oldest while still live in the open product frame.
-#[pyfunction]
-fn touch_mesh(id: u64) {
-    if let Ok(mut st) = host_state().lock() {
-        st.arena.touch_mesh(id);
-    }
-}
-
-#[pyfunction]
-fn mesh_map_len() -> u32 {
-    host_state()
-        .lock()
-        .map(|s| s.arena.mesh_map_len())
-        .unwrap_or(0)
-}
-
-#[pyfunction]
-fn mesh_order_len() -> u32 {
-    host_state()
-        .lock()
-        .map(|s| s.arena.mesh_order_len())
-        .unwrap_or(0)
-}
 
 #[pyfunction]
 fn solid_pipeline() -> PyResult<u64> {

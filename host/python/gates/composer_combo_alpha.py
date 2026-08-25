@@ -20,6 +20,36 @@ from pathlib import Path
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
 
+# --- Harness sample migration -----------------------------------------------
+# This gate keeps its explicit flow as the reference template, but proves
+# the new parametrized harness is importable without migrating all 134 files.
+# Required import per spec: `from _harness import gate_harness` (gates/ on
+# sys.path when run via renpy_host). The try-wrapper also supports
+# `python -m host.python.gates.composer_combo_alpha` / namespace import.
+try:
+    from _harness import gate_harness  # noqa: F401 — sample import, see below
+except ImportError:  # pragma: no cover — fallback for namespace import
+    from host.python.gates._harness import gate_harness  # type: ignore[no-redef]  # noqa: F401
+
+# How to rewrite with harness (not yet switched — example only):
+# ------------------------------------------------------------------
+# from _harness import gate_harness
+# from golden_mae import compare_or_bootstrap
+#
+# def run_one(case: dict):
+#     # ... setup Composer, create tex/mesh, single draw call ...
+#     # w, h, rgba = renpy_host.read_game_rt_rgba()
+#     # return w, h, rgba
+#     return w, h, rgba
+#
+# def golden_compare(w, h, rgba):
+#     return compare_or_bootstrap("composer_texture_alpha", w, h, rgba)
+#
+# # single-case gate (params=[{}]); parametrized example:
+# # @parametrized_gate("dissolve", [{"amount": 0.0}, {"amount": 0.5}, {"amount": 1.0}])
+# # def run_case(case): ...
+# gate_harness("composer_combo_alpha", [{}], run_one, golden_compare)
+# ------------------------------------------------------------------
 
 def _repo_root():
     env = os.environ.get("RENPY_HOST_BASE")
@@ -173,12 +203,14 @@ if result is not None and int(result.pipeline) > 0:
     pipe = int(result.pipeline)
 
     try:
-        for _ in range(8):
-            renpy_host.begin_frame()
-            # No uniforms — alpha is already folded into vertex color.
-            renpy_host.draw_model(pipe, mesh, tex)
-            renpy_host.end_frame_present()
-            renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
+        # Single present: product RT uses LoadOp::Load after first frame, so
+        # multi-frame translucent redraws accumulate premul alpha toward opaque.
+        # Baseline encodes the single-composite appearance.
+        renpy_host.begin_frame()
+        # No uniforms — alpha is already folded into vertex color.
+        renpy_host.draw_model(pipe, mesh, tex)
+        renpy_host.end_frame_present()
+
 
         w, h, rgba = renpy_host.read_game_rt_rgba()
         if not (w > 0 and h > 0 and len(rgba) == w * h * 4):

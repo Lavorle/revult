@@ -7,6 +7,7 @@ use std::time::Instant;
 use crate::arena::GpuArena;
 use crate::audio::AudioEngine;
 use crate::gpu::GpuState;
+use crate::shader::NativeShaderComposer;
 use crate::timer::TimerWheel;
 use winit::window::Window;
 
@@ -44,6 +45,7 @@ pub struct HostState {
     pub height: u32,
     pub title: String,
     pub arena: GpuArena,
+    pub composer: NativeShaderComposer,
     pub audio: AudioEngine,
     /// Channel number → A/V clock (movie / video channels).
     pub video_clocks: HashMap<i32, VideoClock>,
@@ -72,6 +74,10 @@ pub struct HostState {
     pub forced_from_chrome: Option<(u32, u32)>,
 }
 
+// Future wiring: `crate::config::HostConfig::from_env()` is the single
+// `RENPY_HOST_*` read site. `HostState` stays env-free this pass to avoid
+// wide init churn; later `host_state()` / `PythonRuntime::bootstrap()` can
+// be seeded from `HostConfig` instead of ad-hoc `std::env::var` calls.
 impl HostState {
     pub fn new() -> Self {
         Self {
@@ -87,6 +93,7 @@ impl HostState {
             height: 720,
             title: "renpy-host".into(),
             arena: GpuArena::new(),
+            composer: NativeShaderComposer::new(),
             audio: AudioEngine::new(),
             video_clocks: HashMap::new(),
             last_product_present: false,

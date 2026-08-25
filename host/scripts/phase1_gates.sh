@@ -7,6 +7,12 @@ BIN=target/debug/renpy-host
 export RUST_LOG="${RUST_LOG:-info,wgpu_hal=off,wgpu_core=off,naga=off}"
 export RENPY_HOST_BASE="$ROOT"
 
+echo "== cargo check (zero warnings/errors) =="
+RUSTFLAGS="-D warnings" cargo check --workspace --all-targets
+
+echo "== cargo test =="
+cargo test --workspace
+
 echo "== build =="
 cargo build -p renpy-host
 
@@ -17,6 +23,13 @@ if ldd "$BIN" | grep -iE 'libSDL'; then
   exit 1
 fi
 echo "OK: no libSDL*"
+
+echo "== symbol table no SDL symbols =="
+if nm "$BIN" 2>/dev/null | grep -iE 'sdl_' | grep -vE 'renpy_host'; then
+  echo "FAIL: SDL symbols detected in binary"
+  exit 1
+fi
+echo "OK: no SDL symbols"
 
 run_gate() {
   local name="$1"

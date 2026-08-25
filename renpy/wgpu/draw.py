@@ -9,210 +9,49 @@ Phase 8: create_mesh upload + draw_model_mesh for assimp/procedural models.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import sys
 import threading
 import time as _time
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Optional, Sequence
 
-# Product present lock — created lazily so renpy.import_all module backup
-# (pickle of module attrs) does not see a non-picklable RLock at import time.
-# Host FFI locks per-call only; without process-side serialization a
-# force-redraw thread and the interact loop can interleave end_frame_present
-# and wipe a good game RT to arena clear (confirm_alone_2 residual).
-_DRAW_SCREEN_LOCK = None  # type: Optional[threading.RLock]
+# --- P0 decomposition: re-exports keep pickle/import compat ---
+# HostTexture + fingerprint moved to host_texture.py; debug helpers to
+# draw_debug.py (with generic _phase0_due); RTT pool to rtt_pool.py.
+from .draw_debug import (  # noqa: F401
+    _DRAW_SCREEN_LOCK,
+    _draw_screen_lock,
+    _HOST_DRAW_FAIL_LOGGED,
+    _UI_TRACE_LOGGED,
+    _PHASE0_LAST_DISSOLVE_T,
+    _PHASE0_LAST_WRITE_T,
+    _PHASE0_LAST_FRAME_T,
+    _PHASE0_DISSOLVE_INTERVAL,
+    _PHASE0_WRITE_INTERVAL,
+    _PHASE0_FRAME_INTERVAL,
+    _PHASE0_LAST_GENERIC,
+    _phase0_signals_enabled,
+    _phase0_log,
+    _phase0_due,
+    _phase0_due_dissolve,
+    _phase0_due_write,
+    _phase0_due_frame,
+    _safe_print,
+    _ui_trace_once,
+    _host_draw_fail,
+)
+from .host_texture import HostTexture, _surf_fingerprint  # noqa: F401
+from .rtt_pool import RttPoolMixin
+from .draw_surftree import SurftreeMixin  # noqa: F401
 
-
-def _draw_screen_lock() -> "threading.RLock":
-    global _DRAW_SCREEN_LOCK
-    lock = _DRAW_SCREEN_LOCK
-    if lock is None:
-        lock = threading.RLock()
-        _DRAW_SCREEN_LOCK = lock
-    return lock
-
-# Log-once keys: (where, exception_type_name)
-_HOST_DRAW_FAIL_LOGGED: set[tuple[str, str]] = set()
-
-# Env-gated once-log keys for RENPY_HOST_UI_TRACE=1 (Phase 1 evidence matrix).
-# Fixed keys only: alpha_zero, draw_text_exc, empty_upload, dead_present,
-# reverse_branch, drop_bake_residual, arena_count, face_fallback.
-_UI_TRACE_LOGGED: set[str] = set()
-
-# Phase 0 dissolve / write_texture sample throttle (RENPY_HOST_PHASE0_SIGNALS).
-_PHASE0_LAST_DISSOLVE_T: float = 0.0
-_PHASE0_LAST_WRITE_T: float = 0.0
-_PHASE0_LAST_FRAME_T: float = 0.0
-_PHASE0_DISSOLVE_INTERVAL = 0.25  # seconds during mid-dissolve window
-_PHASE0_WRITE_INTERVAL = 1.0  # seconds for write_texture_ms
-_PHASE0_FRAME_INTERVAL = 0.5  # seconds for prepare/draw/present samples
-
-
-def _phase0_signals_enabled() -> bool:
-    return os.environ.get("RENPY_HOST_PHASE0_SIGNALS", "").strip() in ("1", "true", "yes")
-
-
-def _phase0_log(msg: str) -> None:
-    """stderr PHASE0_SIGNAL line; same format as renpysound_host._phase0_log."""
-    if not _phase0_signals_enabled():
-        return
-    try:
-        import sys
-
-        print(
-            f"PHASE0_SIGNAL t={_time.monotonic():.3f} {msg}",
-            file=sys.stderr,
-            flush=True,
-        )
-    except Exception:
-        pass
+# host_bridge single-point import (optional; fallback to direct import)
+try:
+    from .host_bridge import renpy_host as _host_bridge  # noqa: F401
+except Exception:  # pragma: no cover
+    _host_bridge = None  # type: ignore
 
 
-def _phase0_due_dissolve() -> bool:
-    """True once per _PHASE0_DISSOLVE_INTERVAL while mid-dissolve samples."""
-    global _PHASE0_LAST_DISSOLVE_T
-    if not _phase0_signals_enabled():
-        return False
-    now = _time.monotonic()
-    if (now - _PHASE0_LAST_DISSOLVE_T) < _PHASE0_DISSOLVE_INTERVAL:
-        return False
-    _PHASE0_LAST_DISSOLVE_T = now
-    return True
-
-
-def _phase0_due_write() -> bool:
-    """True once per _PHASE0_WRITE_INTERVAL for write_texture_ms samples."""
-    global _PHASE0_LAST_WRITE_T
-    if not _phase0_signals_enabled():
-        return False
-    now = _time.monotonic()
-    if (now - _PHASE0_LAST_WRITE_T) < _PHASE0_WRITE_INTERVAL:
-        return False
-    _PHASE0_LAST_WRITE_T = now
-    return True
-
-
-def _phase0_due_frame() -> bool:
-    """True once per _PHASE0_FRAME_INTERVAL for prepare/draw frame samples."""
-    global _PHASE0_LAST_FRAME_T
-    if not _phase0_signals_enabled():
-        return False
-    now = _time.monotonic()
-    if (now - _PHASE0_LAST_FRAME_T) < _PHASE0_FRAME_INTERVAL:
-        return False
-    _PHASE0_LAST_FRAME_T = now
-    return True
-
-
-def _safe_print(msg: str) -> None:
-    """Write to real stdout — never ``sys.stdout`` after ``renpy.log`` redirect.
-
-    Bare hermetic gates import ``WgpuDraw`` before ``renpy.config`` exists.
-    Redirected ``print`` → ``renpy.log`` then raises ``AttributeError`` and
-    aborts the frame (solid/frame gates read pure arena clear).
-    """
-    try:
-        import renpy.log as _rlog  # type: ignore
-
-        out = getattr(_rlog, "real_stdout", None) or sys.__stdout__
-    except Exception:
-        out = sys.__stdout__
-    try:
-        out.write(msg + "\n")
-        out.flush()
-    except Exception:
-        try:
-            sys.__stdout__.write(msg + "\n")
-            sys.__stdout__.flush()
-        except Exception:
-            pass
-
-
-def _ui_trace_once(key: str, msg: str) -> None:
-    """Once-log under RENPY_HOST_UI_TRACE=1; keys fixed by plan (no spam)."""
-    if os.environ.get("RENPY_HOST_UI_TRACE") != "1":
-        return
-    if key in _UI_TRACE_LOGGED:
-        return
-    _UI_TRACE_LOGGED.add(key)
-    _safe_print(f"[UI_TRACE {key}] {msg}")
-
-
-def _host_draw_fail(where: str, exc: BaseException) -> None:
-    """Log a host-draw failure once per (where, type); optionally re-raise.
-
-    When ``RENPY_HOST_DRAW_RAISE=1``, re-raises so CI / debug sessions surface
-    the original traceback. Otherwise prints once and returns so the frame can
-    continue with a typed placeholder.
-
-    Always uses :func:`_safe_print` — never routes through ``renpy.log`` (needs
-    full ``renpy.config`` and blows up bare host gates / early init).
-    """
-    key = (where, type(exc).__name__)
-    if key not in _HOST_DRAW_FAIL_LOGGED:
-        _HOST_DRAW_FAIL_LOGGED.add(key)
-        msg = f"WgpuDraw.{where}: {type(exc).__name__}: {exc}"
-        _safe_print(msg)
-    if os.environ.get("RENPY_HOST_DRAW_RAISE") == "1":
-        raise exc
-
-
-def _surf_fingerprint(pixels: bytes, w: int, h: int) -> bytes:
-    """Cheap content fingerprint: size + first/mid/last 64 RGBA bytes."""
-    hsh = hashlib.blake2b(digest_size=8)
-    hsh.update(w.to_bytes(4, "little"))
-    hsh.update(h.to_bytes(4, "little"))
-    hsh.update(pixels[:64])
-    if pixels:
-        mid = max(0, (len(pixels) // 2) - 32)
-        hsh.update(pixels[mid : mid + 64])
-        hsh.update(pixels[-64:])
-    return hsh.digest()
-
-
-class HostTexture:
-    """
-    Lightweight texture handle wrapper for product call sites that expect
-    GLTexture-like objects (``.subsurface``, ``.get_size``, dimensions).
-
-    `handle` is the GpuArena texture id returned by renpy_host.create_texture_rgba.
-    """
-
-    def __init__(self, handle: int, width: int, height: int, x: int = 0, y: int = 0, w: int | None = None, h: int | None = None):
-        self.handle = int(handle)
-        self.width = int(width)
-        self.height = int(height)
-        self.x = int(x)
-        self.y = int(y)
-        self.w = int(width if w is None else w)
-        self.h = int(height if h is None else h)
-        # Aliases used by various product paths
-        self.texture = self.handle
-
-    def get_size(self):
-        return (self.w, self.h)
-
-    def subsurface(self, rect):
-        x, y, w, h = rect
-        return HostTexture(
-            self.handle,
-            self.width,
-            self.height,
-            x=self.x + int(x),
-            y=self.y + int(y),
-            w=max(0, int(w)),
-            h=max(0, int(h)),
-        )
-
-    def __int__(self):
-        return self.handle
-
-    def __index__(self):
-        return self.handle
-
-
-class WgpuDraw:
+class WgpuDraw(RttPoolMixin, SurftreeMixin):
     def __init__(self):
         self.info = {
             "renderer": "wgpu",
@@ -387,163 +226,11 @@ class WgpuDraw:
             except Exception:
                 pass
 
-    def get_texture_size(self):
-        free_n = sum(len(v) for v in self._rtt_free.values())
-        live_n = len(self._rtt_prev_frame) + len(self._rtt_curr_frame)
-        return (live_n + free_n, len(self.texture_cache))
-
-    def _acquire_rtt(self, w, h):
-        """Borrow or create a render texture of size (w, h); tracked for recycle.
-
-        Bounds live RTTs per size to ``_rtt_pool_cap``. When the cap is hit
-        mid-prepare (before any product present can freelist), **reuse** the
-        oldest live handle of that size in place instead of allocating. This
-        is required for HuangmeiC splash/dissolve: frames=1 for many seconds
-        while nested mesh_bake thrash would otherwise allocate thousands of
-        1920×1080 targets and OOM the process.
-        """
-        import renpy_host  # type: ignore
-
-        w = max(1, int(w))
-        h = max(1, int(h))
-        # Feel residual H3: reverse-inflated RTT sizes (e.g. 2219x5567).
-        # Cap strictly to live drawable / layout virtual. Never use temporary
-        # mesh-bake virtual_size (it is set to the RTT size itself and would
-        # pass reverse-inflated requests through).
-        try:
-            dw = max(1, int(self.drawable_size[0]))
-            dh = max(1, int(self.drawable_size[1]))
-            lv = getattr(self, "layout_virtual_size", None) or self.virtual_size
-            lw = max(1, int(lv[0]))
-            lh = max(1, int(lv[1]))
-            # Strict ceiling: min(layout, drawable). Large windows must not pass
-            # reverse-inflated RTT requests; small windows must not allocate
-            # above the live surface.
-            hard_w = min(lw, dw)
-            hard_h = min(lh, dh)
-            if hard_w < 1:
-                hard_w = max(lw, dw, 1)
-            if hard_h < 1:
-                hard_h = max(lh, dh, 1)
-            if w > hard_w:
-                w = hard_w
-            if h > hard_h:
-                h = hard_h
-        except Exception:
-            w = min(w, 1920)
-            h = min(h, 1080)
-        key = (w, h)
-        free = self._rtt_free.get(key)
-        if free:
-            handle = int(free.pop())
-            self._rtt_curr_frame.append((handle, w, h))
-            return handle
-
-        live_same = [t for t in self._rtt_curr_frame if t[1] == w and t[2] == h]
-        if len(live_same) >= self._rtt_pool_cap:
-            # Reuse oldest live RTT of this size (overwrite). Safe for bake
-            # targets that are re-drawn every call; concurrent unique content
-            # is limited to _rtt_pool_cap simultaneous slots.
-            old_handle, _, _ = live_same[0]
-            # Rotate tracking: drop first occurrence, re-append as newest.
-            dropped = False
-            new_curr = []
-            for t in self._rtt_curr_frame:
-                if not dropped and t[0] == old_handle and t[1] == w and t[2] == h:
-                    dropped = True
-                    continue
-                new_curr.append(t)
-            new_curr.append((old_handle, w, h))
-            self._rtt_curr_frame = new_curr
-            return int(old_handle)
-
-        handle = int(renpy_host.create_render_texture(w, h))
-        self._rtt_curr_frame.append((handle, w, h))
-        return handle
-
-    def _release_rtt_now(self, handle, w=None, h=None):
-        """Return a short-lived RTT (e.g. is_pixel_opaque) to the freelist/destroy."""
-        if handle is None:
-            return
-        try:
-            handle = int(handle)
-        except (TypeError, ValueError):
-            return
-        if handle <= 0:
-            return
-        # Drop from curr/prev tracking if present (avoid double-free on recycle).
-        self._rtt_curr_frame = [
-            t for t in self._rtt_curr_frame if t[0] != handle
-        ]
-        self._rtt_prev_frame = [
-            t for t in self._rtt_prev_frame if t[0] != handle
-        ]
-        key = None
-        if w is not None and h is not None:
-            key = (max(1, int(w)), max(1, int(h)))
-        if key is not None:
-            bucket = self._rtt_free.setdefault(key, [])
-            if len(bucket) < self._rtt_pool_cap:
-                bucket.append(handle)
-                return
-        try:
-            import renpy_host  # type: ignore
-
-            renpy_host.destroy_texture(handle)
-        except Exception:
-            pass
-
-    def _recycle_frame_rtts(self):
-        """End-of-frame: freelist previous frame RTTs; promote current → previous.
-
-        Keeps RTTs alive for one extra frame so late same-frame / next-frame
-        reads of a just-baked handle remain valid, then reuses or destroys.
-        """
-        try:
-            import renpy_host  # type: ignore
-        except Exception:
-            renpy_host = None  # type: ignore
-
-        for handle, w, h in self._rtt_prev_frame:
-            key = (w, h)
-            bucket = self._rtt_free.setdefault(key, [])
-            if len(bucket) < self._rtt_pool_cap:
-                bucket.append(handle)
-            elif renpy_host is not None:
-                try:
-                    renpy_host.destroy_texture(handle)
-                except Exception:
-                    pass
-        self._rtt_prev_frame = self._rtt_curr_frame
-        self._rtt_curr_frame = []
-
-    def _destroy_all_rtts(self):
-        """Destroy freelist + tracked frame RTTs (kill_textures / resize)."""
-        try:
-            import renpy_host  # type: ignore
-        except Exception:
-            renpy_host = None  # type: ignore
-
-        handles = []
-        for bucket in self._rtt_free.values():
-            handles.extend(bucket)
-        handles.extend(h for h, _w, _h in self._rtt_prev_frame)
-        handles.extend(h for h, _w, _h in self._rtt_curr_frame)
-        self._rtt_free.clear()
-        self._rtt_prev_frame = []
-        self._rtt_curr_frame = []
-        if renpy_host is None:
-            return
-        for handle in handles:
-            try:
-                renpy_host.destroy_texture(int(handle))
-            except Exception:
-                pass
 
     def _refresh_scale(self):
         """Keep draw_per_virt / virt↔draw matrices in sync with window size."""
         vw = max(1, int(self.virtual_size[0]))
-        vh = max(1, int(self.virtual_size[1]))
+        _ = max(1, int(self.virtual_size[1]))
         dw = max(1, int(self.drawable_size[0]))
         dh = max(1, int(self.drawable_size[1]))
         self.drawable_viewport = (0, 0, dw, dh)
@@ -1060,7 +747,7 @@ class WgpuDraw:
                 cache = getattr(im, "cache", None)
                 if cache is not None:
                     try:
-                        lock = getattr(cache, "lock", None)
+                        _lock = getattr(cache, "lock", None)
                         it = list(getattr(cache, "cache", {}).values())
                     except Exception:
                         it = []
@@ -2717,447 +2404,11 @@ class WgpuDraw:
 
     # --- Tree walk (duck-typed Render / Model / Surface) ---------------------
 
-    def _virt_rect_to_ndc(self, x, y, w, h):
-        """Virtual-pixel top-left rect → NDC axis-aligned (x0,y0,x1,y1)."""
-        vw = float(self.virtual_size[0]) or 1.0
-        vh = float(self.virtual_size[1]) or 1.0
-        x0 = 2.0 * float(x) / vw - 1.0
-        x1 = 2.0 * (float(x) + float(w)) / vw - 1.0
-        # Virtual y grows downward; NDC y grows upward.
-        y1 = 1.0 - 2.0 * float(y) / vh
-        y0 = 1.0 - 2.0 * (float(y) + float(h)) / vh
-        return x0, y0, x1, y1
 
-    # --- Axis-aligned clip stack (GL2 mesh-crop parity, v1) --------------------
-    # GL2 (gl2draw.pyx:1661–1673): when r.xclipping/yclipping, push a local
-    # polygon and intersect with the current clip; empty → skip. Mesh is then
-    # cropped against clip_polygon (1552–1557) before draw. Wgpu v1 mirrors this
-    # with an absolute virtual-pixel AABB stack; no GPU set_scissor.
-    # Residual (not in v1): reverse-transformed clip rects — GL2 multiplies the
-    # clip polygon by r.forward when has_reverse (1745–1746). Axis-aligned only.
-
-    _CLIP_BIG = 65536.0  # GL2 BIG_PIXELS — unbounded axis when only one flag set.
-
-    def _clip_intersect(self, a, b):
-        """Intersect two AABBs (x0,y0,x1,y1). None with anything → other; empty → None."""
-        if a is None:
-            return b
-        if b is None:
-            return a
-        x0 = max(float(a[0]), float(b[0]))
-        y0 = max(float(a[1]), float(b[1]))
-        x1 = min(float(a[2]), float(b[2]))
-        y1 = min(float(a[3]), float(b[3]))
-        if x1 <= x0 or y1 <= y0:
-            return None
-        return (x0, y0, x1, y1)
-
-    def _clip_push_from_node(self, node, ox, oy):
-        """
-        If node has xclipping/yclipping, return (new_clip, empty).
-
-        new_clip is the absolute virtual-pixel AABB to install for children /
-        self-draw; empty is True when the intersect is vacant (caller must skip).
-        When the node does not clip, returns (current, False) unchanged.
-
-        Local clip box (GL2 parity):
-          x: [0, width] if xclipping else [-BIG, +BIG]
-          y: [0, height] if yclipping else [-BIG, +BIG]
-        then shifted by (ox, oy) into absolute virtual coords and intersected
-        with ``self._clip_rect``.
-
-        v1 residual: when node.reverse is non-identity, GL2 forward-maps the
-        clip polygon; we do **not**. Documented residual — no half-implement.
-        """
-        xclip = bool(getattr(node, "xclipping", False))
-        yclip = bool(getattr(node, "yclipping", False))
-        if not xclip and not yclip:
-            return self._clip_rect, False
-
-        big = self._CLIP_BIG
-        try:
-            nw = float(getattr(node, "width", 0) or getattr(node, "w", 0) or 0)
-            nh = float(getattr(node, "height", 0) or getattr(node, "h", 0) or 0)
-        except Exception:
-            nw = nh = 0.0
-        if nw <= 0 or nh <= 0:
-            try:
-                if hasattr(node, "get_size"):
-                    gw, gh = node.get_size()
-                    if nw <= 0:
-                        nw = float(gw or 0)
-                    if nh <= 0:
-                        nh = float(gh or 0)
-            except Exception:
-                pass
-        if nw <= 0:
-            nw = big if not xclip else 0.0
-        if nh <= 0:
-            nh = big if not yclip else 0.0
-
-        lx0 = 0.0 if xclip else -big
-        ly0 = 0.0 if yclip else -big
-        lx1 = float(nw) if xclip else big
-        ly1 = float(nh) if yclip else big
-        # Absolute virtual-pixel box at the node's draw offset.
-        local = (
-            float(ox) + lx0,
-            float(oy) + ly0,
-            float(ox) + lx1,
-            float(oy) + ly1,
-        )
-        inter = self._clip_intersect(self._clip_rect, local)
-        if inter is None:
-            return None, True
-        return inter, False
-
-    def _crop_virt_quad_uv(self, ox, oy, w, h, u0, v_bottom, u1, v_top):
-        """
-        Crop a virtual-pixel dest rect against ``self._clip_rect`` and remap UVs.
-
-        Returns (x, y, cw, ch, u0', v_bottom', u1', v_top') or None if empty.
-
-        UV convention matches ``_mesh_quad_ndc``: v_bottom is the larger image-v
-        (bottom of virtual rect), v_top is the smaller image-v (top of virtual).
-        Cropping the top edge increases oy and moves toward v_top; cropping the
-        bottom edge decreases height and moves toward v_bottom.
-        """
-        if w <= 0 or h <= 0:
-            return None
-        x0 = float(ox)
-        y0 = float(oy)
-        x1 = float(ox) + float(w)
-        y1 = float(oy) + float(h)
-        clip = self._clip_rect
-        if clip is None:
-            return (x0, y0, float(w), float(h), float(u0), float(v_bottom), float(u1), float(v_top))
-
-        cx0, cy0, cx1, cy1 = clip
-        ix0 = max(x0, float(cx0))
-        iy0 = max(y0, float(cy0))
-        ix1 = min(x1, float(cx1))
-        iy1 = min(y1, float(cy1))
-        if ix1 <= ix0 or iy1 <= iy0:
-            return None
-
-        span_x = x1 - x0
-        span_y = y1 - y0
-        if span_x <= 0.0 or span_y <= 0.0:
-            return None
-
-        # Fractional edges of the crop inside the original dest rect.
-        fx0 = (ix0 - x0) / span_x
-        fx1 = (ix1 - x0) / span_x
-        fy0 = (iy0 - y0) / span_y  # top edge (virtual y down)
-        fy1 = (iy1 - y0) / span_y  # bottom edge
-
-        u0f = float(u0)
-        u1f = float(u1)
-        vb = float(v_bottom)
-        vt = float(v_top)
-        # u interpolates left→right; v interpolates top(vt)→bottom(vb).
-        nu0 = u0f + (u1f - u0f) * fx0
-        nu1 = u0f + (u1f - u0f) * fx1
-        nvt = vt + (vb - vt) * fy0
-        nvb = vt + (vb - vt) * fy1
-        return (ix0, iy0, ix1 - ix0, iy1 - iy0, nu0, nvb, nu1, nvt)
-
-    def _remap_uv_frac(self, u0, v_bottom, u1, v_top, frac):
-        """Remap UV by dest-crop fractions (fx0, fy0, fx1, fy1) from _crop_virt_quad_uv."""
-        if frac is None:
-            return float(u0), float(v_bottom), float(u1), float(v_top)
-        fx0, fy0, fx1, fy1 = frac
-        u0f = float(u0)
-        u1f = float(u1)
-        vb = float(v_bottom)
-        vt = float(v_top)
-        nu0 = u0f + (u1f - u0f) * float(fx0)
-        nu1 = u0f + (u1f - u0f) * float(fx1)
-        nvt = vt + (vb - vt) * float(fy0)
-        nvb = vt + (vb - vt) * float(fy1)
-        return nu0, nvb, nu1, nvt
-
-    def _mesh_quad_ndc(
-        self,
-        x0=-1.0,
-        y0=-1.0,
-        x1=1.0,
-        y1=1.0,
-        color=(1.0, 1.0, 1.0, 1.0),
-        u0=0.0,
-        v0=1.0,
-        u1=1.0,
-        v1=0.0,
-    ):
-        """Upload an axis-aligned NDC quad (pos.xy, uv.xy, color.rgba).
-
-        UV convention (full texture default): bottom v=1, top v=0 so virtual-y
-        down maps to image-y down when the host samples with top-left origin.
-        Subsurface callers pass u0/u1/v0/v1 covering only the rect.
-
-        Results are cached by quantized geometry so identical quads (common for
-        full-screen and button rects) reuse one mesh handle instead of leaking
-        create_mesh allocations every draw.
-        """
-        import renpy_host  # type: ignore
-
-        r, g, b, a = (list(color) + [1.0, 1.0, 1.0, 1.0])[:4]
-
-        def _q(v, n=3):
-            try:
-                return round(float(v), n)
-            except (TypeError, ValueError):
-                return 0.0
-
-        # Coarse color quantization: dissolve dual-draw animates vertex alpha
-        # every frame; fine color keys would thrash create_mesh unbounded.
-        key = (
-            _q(x0),
-            _q(y0),
-            _q(x1),
-            _q(y1),
-            _q(u0),
-            _q(v0),
-            _q(u1),
-            _q(v1),
-            _q(r, 2),
-            _q(g, 2),
-            _q(b, 2),
-            _q(a, 1),  # alpha to 0.1 steps
-        )
-        cached = self._mesh_cache.get(key)
-        if cached is not None:
-            # Host mesh FIFO can destroy handles while Python still caches them
-            # (no mid-frame pin before touch_mesh/pin fix). Prefer alive reuse;
-            # drop dead entries so we recreate rather than draw a missing mesh
-            # id (encode_pass skip → prefs hover chrome holes).
-            alive = True
-            try:
-                probe = getattr(renpy_host, "mesh_alive", None)
-                if probe is not None:
-                    try:
-                        alive = bool(probe(int(cached)))
-                    except Exception:
-                        # Probe exists but failed — treat as dead and recreate
-                        # rather than risk encode_pass skip of a bad handle.
-                        alive = False
-            except Exception:
-                alive = True  # binding absent / import path
-            if alive:
-                try:
-                    touch = getattr(renpy_host, "touch_mesh", None)
-                    if touch is not None:
-                        touch(int(cached))
-                except Exception:
-                    pass
-                return cached
-            try:
-                del self._mesh_cache[key]
-            except Exception:
-                self._mesh_cache.pop(key, None)
-
-        verts = [
-            float(x0), float(y0), float(u0), float(v0), float(r), float(g), float(b), float(a),
-            float(x1), float(y0), float(u1), float(v0), float(r), float(g), float(b), float(a),
-            float(x1), float(y1), float(u1), float(v1), float(r), float(g), float(b), float(a),
-            float(x0), float(y1), float(u0), float(v1), float(r), float(g), float(b), float(a),
-        ]
-        handle = renpy_host.create_mesh(verts, [0, 1, 2, 0, 2, 3])
-        # Cap cache: drop arbitrary old entries. Do NOT destroy_mesh mid-frame —
-        # the handle may already be in host frame_cmds from an earlier leaf in
-        # this same draw_screen walk (dialog_config dense tree residual). Queue
-        # for destroy after end_frame_present instead.
-        if len(self._mesh_cache) >= self._mesh_cache_cap:
-            try:
-                old_key, old_h = next(iter(self._mesh_cache.items()))
-                del self._mesh_cache[old_key]
-                try:
-                    pending = self._mesh_deferred_destroy
-                except AttributeError:
-                    pending = []
-                    self._mesh_deferred_destroy = pending
-                pending.append(int(old_h))
-            except Exception:
-                # If eviction fails, still drop a key so the Python map stops
-                # growing; arena residual is bounded by cap churn + deferred flush.
-                if self._mesh_cache:
-                    self._mesh_cache.pop(next(iter(self._mesh_cache)), None)
-        self._mesh_cache[key] = handle
-        return handle
-
-    def _flush_deferred_meshes(self):
-        """Destroy mesh handles queued during mid-frame cache eviction.
-
-        Must run only after ``end_frame_present`` has drained ``frame_cmds``;
-        earlier destroy would make encode_pass skip draw cmds that still hold
-        those mesh ids (dense dialog_config panel residual).
-        """
-        try:
-            pending = self._mesh_deferred_destroy
-        except AttributeError:
-            self._mesh_deferred_destroy = []
-            return
-        if not pending:
-            return
-        self._mesh_deferred_destroy = []
-        try:
-            import renpy_host  # type: ignore
-
-            destroy = getattr(renpy_host, "destroy_mesh", None)
-            if destroy is None:
-                return
-            for h in pending:
-                try:
-                    destroy(int(h))
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    def _host_tex_uv(self, ht: HostTexture):
-        """Mesh UVs (u0, v_bottom, u1, v_top) for a HostTexture sub-rect.
-
-        Full texture (x,y,w,h)=(0,0,width,height) → (0, 1, 1, 0).
-        """
-        pw = float(ht.width) or 1.0
-        ph = float(ht.height) or 1.0
-        u0 = float(ht.x) / pw
-        u1 = float(ht.x + ht.w) / pw
-        # Bottom of image rect → higher v (matches full-quad v0=1).
-        v_bottom = float(ht.y + ht.h) / ph
-        v_top = float(ht.y) / ph
-        return u0, v_bottom, u1, v_top
-
-    def _host_tex_is_full(self, ht: HostTexture) -> bool:
-        return (
-            ht.x == 0
-            and ht.y == 0
-            and ht.w == ht.width
-            and ht.h == ht.height
-        )
-
-    def _resolve_texture(self, tex):
-        """Normalize texture-like values to a host handle (int) or None."""
-        ht = self._resolve_texture_full(tex)
-        return ht.handle if ht is not None else None
-
-    def _resolve_texture_full(self, tex):
-        """Normalize texture-like values to HostTexture or None (keeps UV rect).
-
-        Also runs present-path dead-handle recovery (class b) so surftree-held
-        HostTextures whose GPU slots were destroyed still draw when pixel stash
-        has the full-texture RGBA. Does not re-enter load_texture cache-miss.
-        """
-        if tex is None:
-            return None
-        if isinstance(tex, HostTexture):
-            if tex.handle <= 0:
-                return None
-            return self._ensure_host_texture_alive(tex)
-        if isinstance(tex, int) and not isinstance(tex, bool):
-            # Bare handle: unknown size; HostTexture(1x1 full) → UV 0–1.
-            if tex <= 0:
-                return None
-            ht = HostTexture(tex, 1, 1)
-            return self._ensure_host_texture_alive(ht)
-        # Nested object with .handle / .texture
-        for attr in ("handle", "texture"):
-            inner = getattr(tex, attr, None)
-            if isinstance(inner, HostTexture):
-                if inner.handle <= 0:
-                    return None
-                return self._ensure_host_texture_alive(inner)
-            if isinstance(inner, int) and not isinstance(inner, bool) and inner > 0:
-                ht = HostTexture(inner, 1, 1)
-                return self._ensure_host_texture_alive(ht)
-        # Surface-like → upload (HostTexture or raw handle)
-        if hasattr(tex, "get_size") or hasattr(tex, "_pixels"):
-            h = self.load_texture(tex, transient=True)
-            if isinstance(h, HostTexture):
-                return h if h.handle > 0 else None
-            if isinstance(h, int) and not isinstance(h, bool) and h > 0:
-                try:
-                    w, hh = tex.get_size()
-                    return HostTexture(h, max(1, int(w)), max(1, int(hh)))
-                except Exception:
-                    return HostTexture(h, 1, 1)
-        return None
-
-    def _resolve_mesh(self, node, x0=-1.0, y0=-1.0, x1=1.0, y1=1.0, color=None, uv=None):
-        """
-        Resolve mesh from a Model-like node.
-
-        Accepts:
-          - int handle
-          - MeshData (vertices / indices attrs)
-          - True / "quad" → unit or rect NDC quad
-          - node.vertices (+ optional node.indices)
-
-        ``uv`` is optional (u0, v_bottom, u1, v_top) for HostTexture sub-rects.
-        Explicit node.vertices always win (caller-supplied UVs preserved).
-        """
-        import renpy_host  # type: ignore
-
-        mesh = getattr(node, "mesh", None) if not isinstance(node, (int, float)) else None
-
-        # Explicit vertices on the node win for one-shot models.
-        verts = getattr(node, "vertices", None) if not isinstance(node, (int, float)) else None
-        if verts is not None:
-            idx = getattr(node, "indices", None)
-            return renpy_host.create_mesh(list(verts), list(idx) if idx is not None else None)
-
-        # bool is a subclass of int — treat True/"quad"/None as "make a rect quad"
-        # before accepting integer mesh handles.
-        if mesh is True or mesh == "quad" or mesh is None:
-            col = color
-            if col is None and not isinstance(node, (int, float, bool)):
-                col = getattr(node, "color", None)
-            if col is None:
-                col = (1.0, 1.0, 1.0, 1.0)
-            u0, v0, u1, v1 = (0.0, 1.0, 1.0, 0.0) if uv is None else uv
-            # Prefer cached full-window unit quad when covering NDC fully white + full UV.
-            if (
-                x0 == -1.0
-                and y0 == -1.0
-                and x1 == 1.0
-                and y1 == 1.0
-                and tuple(col)[:4] == (1.0, 1.0, 1.0, 1.0)
-                and (u0, v0, u1, v1) == (0.0, 1.0, 1.0, 0.0)
-            ):
-                self._ensure_pipes()
-                return self._quad_mesh
-            return self._mesh_quad_ndc(x0, y0, x1, y1, col, u0, v0, u1, v1)
-
-        if isinstance(mesh, int) and not isinstance(mesh, bool) and mesh > 0:
-            return mesh
-
-        # MeshData-like (host MeshData / future pure-Python meshes).
-        if mesh is not None and hasattr(mesh, "vertices"):
-            idx = getattr(mesh, "indices", None)
-            return renpy_host.create_mesh(
-                list(mesh.vertices), list(idx) if idx is not None else None
-            )
-
-        # Cython Mesh2 from Model.render (texture_rectangle / rectangle): no
-        # ``vertices`` attr — exposes get_points() / points / triangles. Product
-        # Model multi-tex (HuangmeiC dissolve_transform) stores Mesh2 on the
-        # Render; treat it as a full-UV NDC quad at the already-computed rect.
-        if mesh is not None and (
-            hasattr(mesh, "get_points") or hasattr(mesh, "points")
-        ):
-            col = color
-            if col is None and not isinstance(node, (int, float, bool)):
-                col = getattr(node, "color", None)
-            if col is None:
-                col = (1.0, 1.0, 1.0, 1.0)
-            u0, v0, u1, v1 = (0.0, 1.0, 1.0, 0.0) if uv is None else uv
-            return self._mesh_quad_ndc(x0, y0, x1, y1, col, u0, v0, u1, v1)
-
-        return None
 
     def _draw_model_like(self, node, ox=0.0, oy=0.0):
         """Emit one draw_model for a Model-like / textured leaf."""
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
 
@@ -4214,7 +3465,7 @@ class WgpuDraw:
         ``_host_tex_uv`` / ``_host_tex_is_full``. Doing so made Frame stretch
         sample wrong UVs (ClampToEdge edge-fill looked like a solid-tile pass).
         """
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         # _resolve_texture_full already runs class-(b) dead-handle recovery.
         ht = self._resolve_texture_full(tex)
@@ -4513,10 +3764,17 @@ class WgpuDraw:
                 is_mergeable,
             )
         except Exception:
-            composition_mode = lambda _n: None  # type: ignore
-            host_pipeline_key = lambda _n: None  # type: ignore
-            is_atomic = lambda _n: False  # type: ignore
-            is_mergeable = lambda _n: False  # type: ignore
+            def composition_mode(_n):
+                return None
+
+            def host_pipeline_key(_n):
+                return None
+
+            def is_atomic(_n):
+                return False
+
+            def is_mergeable(_n):
+                return False
 
         names = list(shaders or ())
         # Effect parts: strip composition-only (geometry / alpha).
@@ -4746,14 +4004,14 @@ class WgpuDraw:
     # --- Phase 5 transition helpers (exercise host pipelines) -----------------
 
     def draw_textured(self, texture: int, mesh: Optional[int] = None):
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         self._dm(self._tex_pipe, mesh or self._quad_mesh, texture)
 
     def draw_dissolve(self, texture: int, mesh: Optional[int] = None):
         """Draw with renpy.dissolve pipeline (alpha from vertex color / tex)."""
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         self._dm(self._dissolve_pipe, mesh or self._quad_mesh, texture)
@@ -4765,7 +4023,7 @@ class WgpuDraw:
         mesh: Optional[int] = None,
     ):
         """Draw with renpy.blur pipeline; uniforms[0] = blur_log2."""
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         u = [float(blur_log2)] + [0.0] * 15
@@ -4780,7 +4038,7 @@ class WgpuDraw:
         mesh: Optional[int] = None,
     ):
         """Draw with renpy.matrixcolor; matrix is 16 floats (column-major 4x4)."""
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         u = list(matrix)[:16]
@@ -4800,7 +4058,7 @@ class WgpuDraw:
         alpha_only: bool = False,
     ):
         """Draw dual-tex mask (or alpha_mask if alpha_only)."""
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         pipe = self._alpha_mask_pipe if alpha_only else self._mask_pipe
@@ -4841,7 +4099,7 @@ class WgpuDraw:
 
         texture=None → solid pipeline; otherwise textured (or explicit pipeline).
         """
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         if pipeline is None:
@@ -4861,7 +4119,7 @@ class WgpuDraw:
         inverted: bool = False,
     ):
         """Draw with live2d.mask / live2d.inverted_mask (mask UV from pos*ppu+offset)."""
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         pipe = (
@@ -4884,7 +4142,7 @@ class WgpuDraw:
         mesh: Optional[int] = None,
     ):
         """Draw with live2d.colors (multiply then screen blend)."""
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         m = list(multiply)[:4]
@@ -4900,7 +4158,7 @@ class WgpuDraw:
 
     def draw_live2d_flip(self, texture: int, mesh: Optional[int] = None):
         """Draw with live2d.flip_texture (V flip)."""
-        import renpy_host  # type: ignore
+        import renpy_host  # type: ignore  # via host_bridge
 
         self._ensure_pipes()
         self._dm(

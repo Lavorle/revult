@@ -156,6 +156,34 @@ def _apply_snippet_ir_defaults(meta: dict) -> dict:
     return meta
 
 
+def _sync_to_host(name: str, meta: dict) -> None:
+    """Best-effort sync a single part to Rust registry with layered errors."""
+    try:
+        import renpy_host  # type: ignore
+        fn = getattr(renpy_host, "register_shader_part", None)
+        if fn is None:
+            raise AttributeError("renpy_host.register_shader_part missing")
+        vh = [(int(h.get("priority", 0)), str(h.get("body", ""))) for h in meta.get("vertex_hooks") or []]
+        fh = [(int(h.get("priority", 0)), str(h.get("body", ""))) for h in meta.get("fragment_hooks") or []]
+        fn(
+            str(name),
+            int(meta.get("tex_count", 0)),
+            str(meta.get("uniform_layout_id", _UNIFORM_LAYOUT_NONE)),
+            vh,
+            fh,
+            bool(meta.get("atomic", False)),
+            bool(meta.get("composition_only", False)),
+        )
+    except (ImportError, AttributeError):
+        return
+    except Exception as e:
+        try:
+            print(f"[wgpu.shaders residual] sync {name!r}: {e}", flush=True)
+        except Exception:
+            pass
+        return
+
+
 def register_wgsl_shader(name: str, **kwargs):
     """
     Register a WGSL shader part on host builds.
@@ -165,13 +193,13 @@ def register_wgsl_shader(name: str, **kwargs):
     and normalized (see module docstring / snippet-ir.md).
     """
     if not getattr(renpy, "host_build", False):
-        # On SDL tree, no-op store only (dual-tree safe).
         pass
     meta = dict(kwargs)
     if "pipeline" not in meta and name in _PIPELINE_KEYS:
         meta["pipeline"] = _PIPELINE_KEYS[name]
     meta = _apply_snippet_ir_defaults(meta)
     _WGSL_PARTS[name] = meta
+    _sync_to_host(name, meta)
     return name
 
 

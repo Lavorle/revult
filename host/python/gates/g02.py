@@ -8,9 +8,14 @@ Uses renpy.wgpu.text bitmap path (Pillow glyphs → texture → draw_model).
 Full ftfont/atlas Cython path remains deferred.
 """
 
+import os
+
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
-from renpy.wgpu.text import render_text_rgba
+from renpy.wgpu.text import DEFAULT_FONT, render_text_rgba
+
+# One-shot determinism pin (R-AC4-G02). Documented host default font path.
+os.environ.setdefault("RENPY_HOST_FONT", DEFAULT_FONT)
 
 # Fixed dialogue string + layout so the golden is deterministic.
 line = "Eileen: Hello, renpy-host."

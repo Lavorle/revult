@@ -23,7 +23,9 @@ pipe = renpy_host.mask_pipeline()
 # mult=1, offset=0
 u = [1.0, 0.0] + [0.0] * 14
 
-for _ in range(8):
+# Single present: multi-frame Load-preserve re-blends partial mask α under PMA
+# and drives coverage toward opaque vs the single-frame bilinear baseline.
+for _ in range(1):
     renpy_host.begin_frame()
     renpy_host.draw_model(pipe, mesh, src, mask, u)
     renpy_host.end_frame_present()

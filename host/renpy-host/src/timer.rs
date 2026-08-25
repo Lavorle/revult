@@ -10,10 +10,13 @@ static NEXT_TIMER_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerKind {
     /// Ren'Py PERIODIC — default 50 ms repeating.
+    #[allow(dead_code)]
     Periodic,
     /// REDRAW one-shot or repeating.
+    #[allow(dead_code)]
     Redraw,
     /// TIMEEVENT one-shot or repeating.
+    #[allow(dead_code)]
     TimeEvent,
     /// Custom pygame event type id.
     Custom(u32),
@@ -22,6 +25,7 @@ pub enum TimerKind {
 #[derive(Debug, Clone)]
 struct TimerEntry {
     id: u64,
+    #[allow(dead_code)]
     kind: TimerKind,
     event_type: u32,
     interval_ms: u64,
@@ -72,6 +76,7 @@ impl TimerWheel {
         id
     }
 
+    #[allow(dead_code)]
     pub fn clear_timer_id(&mut self, id: u64) {
         self.entries.remove(&id);
     }
@@ -80,6 +85,7 @@ impl TimerWheel {
         self.entries.retain(|_, e| e.event_type != event_type);
     }
 
+    #[allow(dead_code)]
     pub fn next_deadline_ms(&self) -> Option<u64> {
         self.entries.values().map(|e| e.next_due_ms).min()
     }

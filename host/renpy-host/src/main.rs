@@ -9,6 +9,7 @@ mod input;
 mod input_trace;
 mod pump;
 mod python;
+mod shader;
 mod state;
 mod timer;
 
@@ -122,10 +123,7 @@ fn run_product_pump(python: PythonRuntime) -> Result<(), String> {
     if std::env::var_os("RENPY_HOST_GAME").is_none() {
         if let Some(game) = std::env::args().nth(1).filter(|a| !a.starts_with('-')) {
             // Ignore cargo noise / known non-game tokens.
-            let skip = matches!(
-                game.as_str(),
-                "run" | "build" | "test" | "check" | "smoke"
-            );
+            let skip = matches!(game.as_str(), "run" | "build" | "test" | "check" | "smoke");
             if !skip {
                 let path = {
                     let p = std::path::PathBuf::from(&game);
@@ -166,9 +164,9 @@ fn run_product_pump(python: PythonRuntime) -> Result<(), String> {
             .and_then(|s| s.parse::<u64>().ok()),
         benchmark_output: std::env::var("RENPY_HOST_BENCHMARK_OUTPUT").ok(),
         benchmark_start: None,
-        benchmark_total: Duration::from_secs(0),
+        benchmark_total: Duration::ZERO,
         benchmark_min: Duration::from_secs(u64::MAX),
-        benchmark_max: Duration::from_secs(0),
+        benchmark_max: Duration::ZERO,
         benchmark_count: 0,
     };
 
@@ -231,11 +229,7 @@ fn run_product_pump(python: PythonRuntime) -> Result<(), String> {
 
     // Write benchmark JSON if enabled
     if app.benchmark_frames.is_some() {
-        let avg = if app.benchmark_count > 0 {
-            app.benchmark_total.checked_div(app.benchmark_count as u32).unwrap_or(Duration::from_secs(0))
-        } else {
-            Duration::from_secs(0)
-        };
+        let avg = renpy_host::calculate_avg_duration(app.benchmark_total, app.benchmark_count);
         let json = format!(
             r#"{{
   "frames": {},
@@ -284,14 +278,8 @@ fn nested_pump_once(timeout: Duration) {
                 // honor deadlines here by setting host should_exit (cooperative
                 // unwind — same path as window X / request_quit).
                 let now = Instant::now();
-                let timed_out = app
-                    .smoke_deadline
-                    .map(|dl| now >= dl)
-                    .unwrap_or(false)
-                    || app
-                        .max_wall_deadline
-                        .map(|dl| now >= dl)
-                        .unwrap_or(false);
+                let timed_out = app.smoke_deadline.map(|dl| now >= dl).unwrap_or(false)
+                    || app.max_wall_deadline.map(|dl| now >= dl).unwrap_or(false);
                 if timed_out && !app.should_exit {
                     if app.smoke_deadline.map(|dl| now >= dl).unwrap_or(false) {
                         info!(

@@ -1,6 +1,7 @@
 //! GpuArena: textures, meshes, pipelines + high-level draw_model (Phase 2/5).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use log::{info, warn};
@@ -12,6 +13,33 @@ static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 
 fn next_handle() -> u64 {
     NEXT_HANDLE.fetch_add(1, Ordering::Relaxed)
+}
+
+#[inline]
+fn needs_bgra_swizzle(format: wgpu::TextureFormat) -> bool {
+    matches!(
+        format,
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+    )
+}
+
+fn maybe_swizzle_rgba<'a>(
+    src: &'a [u8],
+    expected: usize,
+    format: wgpu::TextureFormat,
+) -> std::borrow::Cow<'a, [u8]> {
+    if needs_bgra_swizzle(format) {
+        let mut bgra = Vec::with_capacity(expected);
+        for chunk in src[..expected].chunks_exact(4) {
+            bgra.push(chunk[2]);
+            bgra.push(chunk[1]);
+            bgra.push(chunk[0]);
+            bgra.push(chunk[3]);
+        }
+        std::borrow::Cow::Owned(bgra)
+    } else {
+        std::borrow::Cow::Borrowed(&src[..expected])
+    }
 }
 
 pub struct TextureSlot {
@@ -63,13 +91,97 @@ struct BgCacheKey {
     /// Uniform ring slot index; u32::MAX means no uniforms / unused slot.
     ubuf_slot: u32,
 }
-
 const UNIFORM_BYTES: u64 = 64; // 16 f32
 const UNIFORM_RING_INITIAL: usize = 256;
 
+/// Generic LRU slot map: HashMap + insertion-order queue + capacity.
+/// Used for sample textures and meshes to deduplicate FIFO logic.
+pub struct LruSlotMap<T> {
+    map: HashMap<u64, T>,
+    order: VecDeque<u64>,
+    capacity: usize,
+}
+
+impl<T> LruSlotMap<T> {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+            capacity,
+        }
+    }
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+    /// True if `id` is present.
+    pub fn alive(&self, id: u64) -> bool {
+        self.map.contains_key(&id)
+    }
+    pub fn contains_key(&self, k: &u64) -> bool {
+        self.map.contains_key(k)
+    }
+    pub fn get(&self, k: &u64) -> Option<&T> {
+        self.map.get(k)
+    }
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+    pub fn order_len(&self) -> usize {
+        self.order.len()
+    }
+    pub fn order(&self) -> &VecDeque<u64> {
+        &self.order
+    }
+    pub fn order_mut(&mut self) -> &mut VecDeque<u64> {
+        &mut self.order
+    }
+    /// Mark `id` as most-recently-used (move to back). No-op if missing.
+    pub fn touch(&mut self, id: u64) {
+        if id == 0 || !self.map.contains_key(&id) {
+            return;
+        }
+        if self.order.back().copied() == Some(id) {
+            return;
+        }
+        if let Some(pos) = self.order.iter().position(|&x| x == id) {
+            self.order.remove(pos);
+        }
+        self.order.push_back(id);
+    }
+    /// Insert and track order. If key existed, old order entry is replaced.
+    pub fn insert(&mut self, id: u64, value: T) {
+        if self.map.contains_key(&id) {
+            if let Some(pos) = self.order.iter().position(|&x| x == id) {
+                self.order.remove(pos);
+            }
+        }
+        self.map.insert(id, value);
+        self.order.push_back(id);
+    }
+    /// Remove and drop from order.
+    pub fn remove(&mut self, k: &u64) -> Option<T> {
+        if let Some(pos) = self.order.iter().position(|&x| x == *k) {
+            self.order.remove(pos);
+        }
+        self.map.remove(k)
+    }
+}
+
+impl<T> Deref for LruSlotMap<T> {
+    type Target = HashMap<u64, T>;
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+impl<T> DerefMut for LruSlotMap<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.map
+    }
+}
+
 pub struct GpuArena {
-    pub textures: HashMap<u64, TextureSlot>,
-    pub meshes: HashMap<u64, MeshSlot>,
+    pub textures: LruSlotMap<TextureSlot>,
+    pub meshes: LruSlotMap<MeshSlot>,
     pub pipelines: HashMap<u64, PipelineSlot>,
     pub pipeline_by_key: HashMap<String, u64>,
     pub sampler: Option<wgpu::Sampler>,
@@ -103,15 +215,6 @@ pub struct GpuArena {
     pub live2d_colors_pipeline: Option<u64>,
     pub live2d_flip_pipeline: Option<u64>,
     pub clear_color: wgpu::Color,
-    /// FIFO insertion order for sample textures (non-renderable). Used to
-    /// hard-cap arena growth when product thrash re-uploads every frame.
-    texture_order: Vec<u64>,
-    /// FIFO insertion order for meshes (same thrash guard).
-    mesh_order: Vec<u64>,
-    /// Max live sample textures before oldest is destroyed.
-    max_sample_textures: usize,
-    /// Max live meshes before oldest is destroyed.
-    max_meshes: usize,
     /// Mesh ids that would have been destroyed while still referenced by the
     /// open product frame. Flushed after end_frame_present drains frame_cmds.
     mesh_deferred_destroy: Vec<u64>,
@@ -165,8 +268,8 @@ pub struct GpuArena {
 impl GpuArena {
     pub fn new() -> Self {
         Self {
-            textures: HashMap::new(),
-            meshes: HashMap::new(),
+            textures: LruSlotMap::new(8192),
+            meshes: LruSlotMap::new(8192),
             pipelines: HashMap::new(),
             pipeline_by_key: HashMap::new(),
             sampler: None,
@@ -196,8 +299,6 @@ impl GpuArena {
                 b: 0.08,
                 a: 1.0,
             },
-            texture_order: Vec::new(),
-            mesh_order: Vec::new(),
             // Product splash/dissolve thrash can allocate thousands of meshes
             // and sample textures per second without Python-side reuse. Hard
             // caps keep VRAM bounded; least-recently-used sample handles are
@@ -205,8 +306,6 @@ impl GpuArena {
             // headroom for main_menu chrome + Movie + text atlas thrash without
             // silently killing dock HostTextures still held on the surftree
             // (encode_pass skips missing textures → permanent arena_rt_clear).
-            max_sample_textures: 8192,
-            max_meshes: 8192,
             mesh_deferred_destroy: Vec::new(),
             texture_deferred_destroy: Vec::new(),
             last_frame_sample_textures: Vec::new(),
@@ -245,9 +344,8 @@ impl GpuArena {
     /// last product present). Epoch pin stops dense prepare walks from
     /// FIFO-killing the background uploaded first in the tree.
     fn texture_pinned(&self, id: u64) -> bool {
-        let uses = |c: &DrawCmd| {
-            c.texture == Some(id) || c.texture1 == Some(id) || c.texture2 == Some(id)
-        };
+        let uses =
+            |c: &DrawCmd| c.texture == Some(id) || c.texture1 == Some(id) || c.texture2 == Some(id);
         if self.frame_cmds.iter().any(uses) {
             return true;
         }
@@ -278,37 +376,38 @@ impl GpuArena {
 
     fn evict_sample_textures_if_needed(&mut self) {
         // Cap is a thrash guard, not a hard VRAM budget. Prefer dropping the
-        // least-recently-used sample texture (front of texture_order). RTTs that
+        // least-recently-used sample texture (front of order). RTTs that
         // slip into the order list are skipped (not destroyed) so we only free
         // sample uploads. Callers that reuse a handle MUST touch_texture so
         // dock chrome is not treated as "oldest" while still live on the surftree.
         // Never destroy sample textures still referenced by open frame_cmds —
         // encode_pass skips missing textures after Clear → prefs chrome holes.
+        // Generic LRU: capacity via textures.capacity(), order via textures.order().
         let mut guard = 0usize;
-        while self.texture_order.len() > self.max_sample_textures {
+        while self.textures.order_len() > self.textures.capacity() {
             guard = guard.saturating_add(1);
-            if guard > self.texture_order.len().saturating_add(8) {
+            if guard > self.textures.order_len().saturating_add(8) {
                 // All remaining entries are renderable / pinned / missing — stop.
                 break;
             }
-            let Some(old) = self.texture_order.first().copied() else {
+            let Some(old) = self.textures.order().front().copied() else {
                 break;
             };
             // Only destroy non-renderable sample textures from the order list.
             if let Some(slot) = self.textures.get(&old) {
                 if slot.renderable {
                     // RTT slipped into order list — skip destroy, keep going.
-                    self.texture_order.remove(0);
+                    self.textures.order_mut().pop_front();
                     continue;
                 }
             }
             if self.texture_pinned(old) {
                 // Rotate pinned sample to end; try other eviction candidates.
-                self.texture_order.remove(0);
-                self.texture_order.push(old);
+                self.textures.order_mut().pop_front();
+                self.textures.order_mut().push_back(old);
                 continue;
             }
-            self.texture_order.remove(0);
+            self.textures.order_mut().pop_front();
             self.textures.remove(&old);
         }
     }
@@ -317,25 +416,21 @@ impl GpuArena {
     /// Used by Python load_texture / draw recovery when FIFO eviction may have
     /// destroyed a handle still referenced by HostTexture / texture_cache.
     pub fn texture_alive(&self, id: u64) -> bool {
-        self.textures.contains_key(&id)
+        self.textures.alive(id)
     }
 
     /// Sample (non-renderable) texture count currently in the arena map.
     pub fn sample_texture_count(&self) -> u32 {
-        self.textures
-            .values()
-            .filter(|s| !s.renderable)
-            .count() as u32
+        self.textures.values().filter(|s| !s.renderable).count() as u32
     }
 
     /// Total texture map size (sample + RTT).
     pub fn texture_map_len(&self) -> u32 {
         self.textures.len() as u32
     }
-
     /// Length of the sample-texture LRU order list (eviction basis).
     pub fn texture_order_len(&self) -> u32 {
-        self.texture_order.len() as u32
+        self.textures.order_len() as u32
     }
 
     /// Mark a sample texture as most-recently-used so thrash eviction prefers
@@ -352,27 +447,19 @@ impl GpuArena {
                 self.epoch_pin_texture(id);
             }
         }
-        // Move to end without realloc churn when already last.
-        if self.texture_order.last().copied() == Some(id) {
-            return;
-        }
-        if let Some(pos) = self.texture_order.iter().position(|&x| x == id) {
-            self.texture_order.remove(pos);
-        }
         // Only track non-renderable sample textures in the order list.
         if let Some(slot) = self.textures.get(&id) {
             if slot.renderable {
                 return;
             }
         }
-        self.texture_order.push(id);
+        self.textures.touch(id);
     }
-
     /// True if `id` is still a live arena mesh.
     /// Used by Python mesh-cache recovery when host FIFO eviction may have
     /// destroyed a handle still referenced by `_mesh_cache` / frame_cmds.
     pub fn mesh_alive(&self, id: u64) -> bool {
-        self.meshes.contains_key(&id)
+        self.meshes.alive(id)
     }
 
     /// Live mesh map size.
@@ -382,7 +469,7 @@ impl GpuArena {
 
     /// Length of the mesh LRU order list (eviction basis).
     pub fn mesh_order_len(&self) -> u32 {
-        self.mesh_order.len() as u32
+        self.meshes.order_len() as u32
     }
 
     /// Mark a mesh as most-recently-used so thrash eviction prefers truly idle
@@ -393,13 +480,7 @@ impl GpuArena {
             return;
         }
         self.epoch_pin_mesh(id);
-        if self.mesh_order.last().copied() == Some(id) {
-            return;
-        }
-        if let Some(pos) = self.mesh_order.iter().position(|&x| x == id) {
-            self.mesh_order.remove(pos);
-        }
-        self.mesh_order.push(id);
+        self.meshes.touch(id);
     }
 
     fn epoch_pin_mesh(&mut self, id: u64) {
@@ -438,13 +519,13 @@ impl GpuArena {
         // open frame (frame_cmds / nested stacks): encode_pass skips missing
         // mesh ids after LoadOp::Clear → partial prefs chrome holes on hover.
         // Budget is live MeshSlot count (includes deferred-destroy slots that
-        // left mesh_order but still occupy VRAM), not only mesh_order.len().
+        // left order but still occupy VRAM), not only order.len().
         let mut guard = 0usize;
-        while self.meshes.len() > self.max_meshes {
+        while self.meshes.len() > self.meshes.capacity() {
             guard = guard.saturating_add(1);
             let bound = self
-                .mesh_order
-                .len()
+                .meshes
+                .order_len()
                 .saturating_add(self.mesh_deferred_destroy.len())
                 .saturating_add(8);
             if guard > bound {
@@ -453,24 +534,24 @@ impl GpuArena {
                 // killing chrome still in frame_cmds.
                 break;
             }
-            if self.mesh_order.is_empty() {
+            if self.meshes.order_len() == 0 {
                 // Deferred-only over-cap: try flush (no-op if still pinned).
                 self.flush_deferred_meshes();
-                if self.meshes.len() <= self.max_meshes || self.mesh_order.is_empty() {
+                if self.meshes.len() <= self.meshes.capacity() || self.meshes.order_len() == 0 {
                     break;
                 }
                 continue;
             }
-            let Some(old) = self.mesh_order.first().copied() else {
+            let Some(old) = self.meshes.order().front().copied() else {
                 break;
             };
             if self.mesh_pinned(old) {
                 // Rotate pinned mesh to end; try other eviction candidates.
-                self.mesh_order.remove(0);
-                self.mesh_order.push(old);
+                self.meshes.order_mut().pop_front();
+                self.meshes.order_mut().push_back(old);
                 continue;
             }
-            self.mesh_order.remove(0);
+            self.meshes.order_mut().pop_front();
             self.meshes.remove(&old);
             self.mesh_deferred_destroy.retain(|&x| x != old);
         }
@@ -552,24 +633,7 @@ impl GpuArena {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        // Upload as tight RGBA8. When surface format is BGRA, swizzle channels so
-        // sample order matches the texture layout (byte 0 = B on Bgra8Unorm).
-        let upload: std::borrow::Cow<'_, [u8]> =
-            if matches!(
-                self.color_format,
-                wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
-            ) {
-                let mut bgra = Vec::with_capacity(expected);
-                for chunk in rgba[..expected].chunks_exact(4) {
-                    bgra.push(chunk[2]); // B
-                    bgra.push(chunk[1]); // G
-                    bgra.push(chunk[0]); // R
-                    bgra.push(chunk[3]); // A
-                }
-                std::borrow::Cow::Owned(bgra)
-            } else {
-                std::borrow::Cow::Borrowed(&rgba[..expected])
-            };
+        let upload = maybe_swizzle_rgba(rgba, expected, self.color_format);
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -601,7 +665,6 @@ impl GpuArena {
                 renderable: false,
             },
         );
-        self.texture_order.push(id);
         // New sample upload is part of the current prepare epoch — pin until
         // the next product present so dense walks cannot FIFO-kill bg first.
         self.epoch_pin_texture(id);
@@ -635,22 +698,7 @@ impl GpuArena {
         }
         let w = slot.width.max(1);
         let h = slot.height.max(1);
-        let upload: std::borrow::Cow<'_, [u8]> =
-            if matches!(
-                self.color_format,
-                wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
-            ) {
-                let mut bgra = Vec::with_capacity(expected);
-                for chunk in rgba[..expected].chunks_exact(4) {
-                    bgra.push(chunk[2]);
-                    bgra.push(chunk[1]);
-                    bgra.push(chunk[0]);
-                    bgra.push(chunk[3]);
-                }
-                std::borrow::Cow::Owned(bgra)
-            } else {
-                std::borrow::Cow::Borrowed(&rgba[..expected])
-            };
+        let upload = maybe_swizzle_rgba(rgba, expected, self.color_format);
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &slot.texture,
@@ -766,6 +814,7 @@ impl GpuArena {
     }
 
     /// Return an RTT handle to the freelist (preferred over destroy for thrash).
+    #[allow(dead_code)]
     pub fn release_render_texture(&mut self, id: u64) {
         let Some(slot) = self.textures.get(&id) else {
             return;
@@ -815,13 +864,12 @@ impl GpuArena {
                         self.texture_deferred_destroy.push(id);
                     }
                     // Leave slot alive; drop from LRU so it is not re-selected.
-                    self.texture_order.retain(|&x| x != id);
+                    self.textures.order_mut().retain(|&x| x != id);
                     return;
                 }
             }
         }
         self.textures.remove(&id);
-        self.texture_order.retain(|&x| x != id);
         self.texture_deferred_destroy.retain(|&x| x != id);
         self.last_frame_sample_textures.retain(|&x| x != id);
         self.epoch_sample_textures.retain(|&x| x != id);
@@ -849,7 +897,6 @@ impl GpuArena {
                 }
             }
             self.textures.remove(&id);
-            self.texture_order.retain(|&x| x != id);
             self.last_frame_sample_textures.retain(|&x| x != id);
             self.epoch_sample_textures.retain(|&x| x != id);
         }
@@ -927,7 +974,6 @@ impl GpuArena {
                 index_count,
             },
         );
-        self.mesh_order.push(id);
         self.epoch_pin_mesh(id);
         self.evict_meshes_if_needed();
         Ok(id)
@@ -942,11 +988,10 @@ impl GpuArena {
             }
             // Drop from LRU order so it is not re-selected as "live cache" growth,
             // but keep the MeshSlot until flush.
-            self.mesh_order.retain(|&x| x != id);
+            self.meshes.order_mut().retain(|&x| x != id);
             return;
         }
         self.meshes.remove(&id);
-        self.mesh_order.retain(|&x| x != id);
         self.mesh_deferred_destroy.retain(|&x| x != id);
         self.epoch_meshes.retain(|&x| x != id);
         self.last_frame_meshes.retain(|&x| x != id);
@@ -968,7 +1013,6 @@ impl GpuArena {
                 continue;
             }
             self.meshes.remove(&id);
-            self.mesh_order.retain(|&x| x != id);
             self.epoch_meshes.retain(|&x| x != id);
             self.last_frame_meshes.retain(|&x| x != id);
         }
@@ -1072,6 +1116,9 @@ impl GpuArena {
             return Err(format!(
                 "create_pipeline_from_wgsl: tex_count {tex_count} > 3 (max solid/1/2/3-tex)"
             ));
+        }
+        if let Some(id) = self.pipeline_by_key_lookup(key) {
+            return Ok(id);
         }
         self.create_pipeline(device, key, wgsl, tex_count, has_uniforms)
     }
@@ -1177,6 +1224,8 @@ impl GpuArena {
             },
         );
         self.pipeline_by_key.insert(key.to_string(), id);
+        // Keep parts_key live (read, not just write) to avoid dead_code warning.
+        let _ = self.pipelines.get(&id).map(|s| s.parts_key.len());
         info!("created pipeline {key} id={id} tex_count={tex_count} uniforms={has_uniforms}");
         Ok(id)
     }
@@ -1434,9 +1483,11 @@ impl GpuArena {
 
         let preserve = !self.game_rt_needs_clear;
         if let Some(view) = self.game_rt_view.clone() {
-            let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("product-frame"),
-            });
+            let mut encoder = gpu
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("product-frame"),
+                });
             self.encode_pass_into(gpu, &mut encoder, &view, &cmds, preserve)?;
             self.game_rt_needs_clear = false;
 
@@ -1515,7 +1566,6 @@ impl GpuArena {
         Ok(true)
     }
 
-
     /// Blit the last good game RT to the swapchain without re-encoding cmds.
     ///
     /// Used by empty/sparse/incomplete product-present suppress paths: the game RT
@@ -1541,9 +1591,11 @@ impl GpuArena {
             .surface
             .get_current_texture()
             .map_err(|e| format!("swapchain: {e}"))?;
-        let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("present-last-game-rt"),
-        });
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("present-last-game-rt"),
+            });
         encoder.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: game_tex,
@@ -1605,9 +1657,11 @@ impl GpuArena {
         // Always Load-preserve on re-present: we re-draw the same chrome + movie.
         let preserve = !self.game_rt_needs_clear;
         if let Some(view) = self.game_rt_view.clone() {
-            let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("re-present-product"),
-            });
+            let mut encoder = gpu
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("re-present-product"),
+                });
             self.encode_pass_into(gpu, &mut encoder, &view, &cmds, preserve)?;
             self.game_rt_needs_clear = false;
 
@@ -1691,8 +1745,7 @@ impl GpuArena {
                 "read_texture_rgba: texture {handle} has no COPY_SRC (use RTT or game RT)"
             ));
         }
-        let (rw, rh, mut bytes) =
-            read_texture_rgba(gpu, &slot.texture, slot.width, slot.height)?;
+        let (rw, rh, mut bytes) = read_texture_rgba(gpu, &slot.texture, slot.width, slot.height)?;
         if matches!(
             self.color_format,
             wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
@@ -1704,15 +1757,13 @@ impl GpuArena {
         Ok((rw, rh, bytes))
     }
 
-
     /// Drop cached bind groups that reference a destroyed sample/RTT texture.
     fn invalidate_bg_cache_for_texture(&mut self, id: u64) {
         if self.bg_cache.is_empty() {
             return;
         }
-        self.bg_cache.retain(|k, _| {
-            k.texture != id && k.texture1 != id && k.texture2 != id
-        });
+        self.bg_cache
+            .retain(|k, _| k.texture != id && k.texture1 != id && k.texture2 != id);
     }
 
     fn ensure_uniform_ring(&mut self, device: &wgpu::Device, need: usize) {
@@ -1832,7 +1883,9 @@ impl GpuArena {
                     None
                 };
                 let tex1_id = if pipe.tex_count >= 2 {
-                    let Some(tex1_id) = cmd.texture1 else { continue };
+                    let Some(tex1_id) = cmd.texture1 else {
+                        continue;
+                    };
                     if !self.textures.contains_key(&tex1_id) {
                         continue;
                     }
@@ -1841,7 +1894,9 @@ impl GpuArena {
                     None
                 };
                 let tex2_id = if pipe.tex_count >= 3 {
-                    let Some(tex2_id) = cmd.texture2 else { continue };
+                    let Some(tex2_id) = cmd.texture2 else {
+                        continue;
+                    };
                     if !self.textures.contains_key(&tex2_id) {
                         continue;
                     }
@@ -1861,11 +1916,8 @@ impl GpuArena {
                     if slot >= self.uniform_ring.len() {
                         continue;
                     }
-                    gpu.queue.write_buffer(
-                        &self.uniform_ring[slot],
-                        0,
-                        cast_f32(&cmd.uniforms),
-                    );
+                    gpu.queue
+                        .write_buffer(&self.uniform_ring[slot], 0, cast_f32(&cmd.uniforms));
                     self.uniform_ring_next = slot + 1;
                     slot as u32
                 } else {

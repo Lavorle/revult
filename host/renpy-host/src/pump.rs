@@ -19,6 +19,7 @@ pub fn get_ticks_ms() -> u64 {
 }
 
 /// Compute a pump timeout from an absolute host deadline (ms since start).
+#[allow(dead_code)]
 pub fn timeout_until(deadline_ms: u64) -> Option<Duration> {
     let now = get_ticks_ms();
     if deadline_ms <= now {

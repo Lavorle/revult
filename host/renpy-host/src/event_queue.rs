@@ -13,9 +13,11 @@ pub struct HostEvent {
 #[derive(Debug, Clone)]
 pub enum EventValue {
     Int(i64),
+    #[allow(dead_code)]
     Float(f64),
     Bool(bool),
     Str(String),
+    #[allow(dead_code)]
     None,
 }
 
@@ -54,6 +56,7 @@ impl EventQueue {
         self.inner.lock().ok().and_then(|mut q| q.pop_front())
     }
 
+    #[allow(dead_code)]
     pub fn peek_type(&self) -> Option<u32> {
         self.inner
             .lock()
@@ -65,6 +68,7 @@ impl EventQueue {
         self.inner.lock().map(|q| q.len()).unwrap_or(0)
     }
 
+    #[allow(dead_code)]
     pub fn clear(&self) {
         if let Ok(mut q) = self.inner.lock() {
             q.clear();

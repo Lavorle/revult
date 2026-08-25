@@ -49,7 +49,7 @@ impl PcmRing {
 
 /// cpal::Stream is !Send on some platforms; we only start/stop from the main
 /// (winit) thread, so this wrapper is intentional.
-struct SendStream(cpal::Stream);
+struct SendStream(#[allow(dead_code)] cpal::Stream);
 // SAFETY: AudioEngine methods that touch the stream are only called from the
 // main host thread; the callback itself only touches the Arc ring/volume.
 unsafe impl Send for SendStream {}
@@ -82,6 +82,7 @@ impl AudioEngine {
             .store((v * 1_000_000.0) as u32, Ordering::Relaxed);
     }
 
+    #[allow(dead_code)]
     pub fn volume_f32(&self) -> f32 {
         self.volume.load(Ordering::Relaxed) as f32 / 1_000_000.0
     }

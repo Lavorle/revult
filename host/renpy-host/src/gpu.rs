@@ -27,7 +27,6 @@ pub struct GpuState {
     pub surface_format: wgpu::TextureFormat,
 }
 
-
 fn present_mode_name(mode: wgpu::PresentMode) -> &'static str {
     match mode {
         wgpu::PresentMode::Fifo => "fifo",
@@ -63,11 +62,18 @@ fn select_present_mode(supported: &[wgpu::PresentMode]) -> (wgpu::PresentMode, u
         .and_then(|s| parse_present_mode_override(&s));
     if let Some(want) = override_mode {
         if supported.contains(&want) {
-            let latency = if matches!(want, wgpu::PresentMode::Fifo) { 2 } else { 1 };
+            let latency = if matches!(want, wgpu::PresentMode::Fifo) {
+                2
+            } else {
+                1
+            };
             info!(
                 "PresentMode override={} (supported={:?}) desired_maximum_frame_latency={}",
                 present_mode_name(want),
-                supported.iter().map(|m| present_mode_name(*m)).collect::<Vec<_>>(),
+                supported
+                    .iter()
+                    .map(|m| present_mode_name(*m))
+                    .collect::<Vec<_>>(),
                 latency
             );
             return (want, latency);
@@ -75,7 +81,10 @@ fn select_present_mode(supported: &[wgpu::PresentMode]) -> (wgpu::PresentMode, u
         log::warn!(
             "RENPY_HOST_PRESENT_MODE={} not in supported {:?}; falling back to policy chain",
             present_mode_name(want),
-            supported.iter().map(|m| present_mode_name(*m)).collect::<Vec<_>>()
+            supported
+                .iter()
+                .map(|m| present_mode_name(*m))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -91,11 +100,18 @@ fn select_present_mode(supported: &[wgpu::PresentMode]) -> (wgpu::PresentMode, u
         .find(|m| supported.contains(m))
         .unwrap_or(wgpu::PresentMode::Fifo);
     // Non-Fifo: try latency 1 for tighter pacing; Fifo keeps 2 for stability.
-    let latency = if matches!(chosen, wgpu::PresentMode::Fifo) { 2 } else { 1 };
+    let latency = if matches!(chosen, wgpu::PresentMode::Fifo) {
+        2
+    } else {
+        1
+    };
     info!(
         "PresentMode selected={} supported={:?} desired_maximum_frame_latency={}",
         present_mode_name(chosen),
-        supported.iter().map(|m| present_mode_name(*m)).collect::<Vec<_>>(),
+        supported
+            .iter()
+            .map(|m| present_mode_name(*m))
+            .collect::<Vec<_>>(),
         latency
     );
     (chosen, latency)

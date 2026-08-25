@@ -64,11 +64,13 @@ mask_u = [1.0, 1.0, 0.5, 0.5, 0.5] + [0.0] * 11
 colors_u = [1.0, 1.0, 1.0, 1.0, 0.05, 0.02, 0.08, 0.0] + [0.0] * 8
 
 for _ in range(8):
-    renpy_host.begin_frame()
+    # Bake mask into RTT: present WHILE target is active (host RTT contract).
+    # end_target before end_frame_present dumps the mask quad onto game RT.
     renpy_host.begin_target(mask_rtt)
+    renpy_host.begin_frame()
     renpy_host.draw_model(pipe_tex, mesh_mask_quad, mask_src)
-    renpy_host.end_target()
     renpy_host.end_frame_present()
+    renpy_host.end_target()
 
     renpy_host.begin_frame()
     renpy_host.draw_model(pipe_flip, mesh_body, body)

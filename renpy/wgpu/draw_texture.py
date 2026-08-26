@@ -57,52 +57,22 @@ class TextureMixin:
         need = w * h * 4
         if not isinstance(pixels, (bytes, bytearray)) or len(pixels) < need:
             return
-        store = getattr(self, "_handle_pixels", None)
-        if store is None:
-            self._handle_pixels = {}
-            store = self._handle_pixels
-        cap = int(getattr(self, "_handle_pixels_cap", 2048) or 2048)
-        if len(store) >= cap and handle not in store:
-            self._evict_handle_pixels(store, cap)
-        store[handle] = (w, h, bytes(pixels[:need]))
+        # T7: _handle_pixels is a GpuHandleCache; size-aware eviction keeps small
+        # UI chrome and drops oversize frames first (was _evict_handle_pixels).
+        store = self._handle_pixels
+        val = (w, h, bytes(pixels[:need]))
+        if handle not in store and len(store) >= store._cap:
+            store.evict_some(max(1, store._cap // 8), area_fn=lambda e: int(e[0]) * int(e[1]),
+                             keep_below=256 * 256)
+        store.set(handle, val)
 
     def _evict_handle_pixels(self, store, cap):
-        if not store:
+        # Retained for legacy callers / signature parity; delegates to size-aware
+        # GpuHandleCache eviction (keeps small chrome, drops oversize first).
+        if not getattr(store, "evict_some", None):
             return
-        drop_n = max(1, int(cap) // 8)
-        pin_px = 1920 * 1080  # keep panels ≤ full HD; drop > HD first
-        chrome_px = 256 * 256  # always try to keep tiny Solid / icon chrome
-        def _area(ent):
-            try:
-                return int(ent[0]) * int(ent[1])
-            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                return 0
-        items = list(store.items())
-        oversize = [(k, _area(v)) for k, v in items if _area(v) > pin_px]
-        oversize.sort(key=lambda kv: kv[1], reverse=True)
-        dropped = 0
-        for k, _a in oversize:
-            if dropped >= drop_n:
-                break
-            store.pop(k, None)
-            dropped += 1
-        if dropped >= drop_n:
-            return
-        mid = [(k, _area(v)) for k, v in store.items() if _area(v) > chrome_px]
-        mid.sort(key=lambda kv: kv[1], reverse=True)
-        for k, _a in mid:
-            if dropped >= drop_n:
-                break
-            store.pop(k, None)
-            dropped += 1
-        if dropped >= drop_n:
-            return
-        for k in list(store.keys()):
-            if dropped >= drop_n:
-                break
-            if k in store:
-                store.pop(k, None)
-                dropped += 1
+        store.evict_some(max(1, int(cap) // 8), area_fn=lambda e: int(e[0]) * int(e[1]),
+                         keep_below=256 * 256)
 
     def _log_once(self, key: str, exc: Exception) -> None:
         _host_draw_fail(key, exc)
@@ -145,12 +115,12 @@ class TextureMixin:
                 return ht
         except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
-        # State 2: REMAPPED — single dict lookup, no chain walk
-        remap = getattr(self, "_handle_remap", None)
-        if remap is None:
-            self._handle_remap = {}
-            remap = self._handle_remap
-        remapped = remap.get(handle)
+        # State 2: REMAPPED — single lookup, no chain walk
+        remap = self._handle_remap
+        try:
+            remapped = remap.get(handle)
+        except Exception:
+            remapped = None
         if remapped is not None:
             try:
                 import renpy_host  # type: ignore
@@ -168,8 +138,11 @@ class TextureMixin:
             except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
         # State 3: DEAD_RECOVER — single _handle_pixels lookup + create_texture_rgba
-        store = getattr(self, "_handle_pixels", None) or {}
-        pix_ent = store.get(handle)
+        store = self._handle_pixels
+        try:
+            pix_ent = store.get(handle)
+        except Exception:
+            pix_ent = None
         if pix_ent is not None:
             try:
                 import renpy_host  # type: ignore
@@ -187,14 +160,31 @@ class TextureMixin:
                 new_h = int(renpy_host.create_texture_rgba(int(cw), int(ch), pixels))
                 if new_h <= 0:
                     return None
-                remap[handle] = int(new_h)
+                # remap: handle both GpuHandleCache.set and plain dict
+                try:
+                    remap.set(handle, int(new_h))  # type: ignore[attr-defined]
+                except AttributeError:
+                    remap[handle] = int(new_h)  # type: ignore[index]
                 self._set_handle(ht, new_h)
                 # keep capacity semantics via stash
-                if isinstance(pixels, (bytes, bytearray)):
-                    store[int(new_h)] = (int(cw), int(ch), bytes(pixels[: int(cw * ch * 4)]))
-                else:
-                    store[int(new_h)] = (int(cw), int(ch), pixels)
-                store.pop(handle, None)
+                try:
+                    if isinstance(pixels, (bytes, bytearray)):
+                        store.set(int(new_h), (int(cw), int(ch), bytes(pixels[: int(cw * ch * 4)])))  # type: ignore[attr-defined]
+                    else:
+                        store.set(int(new_h), (int(cw), int(ch), pixels))  # type: ignore[attr-defined]
+                except AttributeError:
+                    # plain dict fallback
+                    if isinstance(pixels, (bytes, bytearray)):
+                        store[int(new_h)] = (int(cw), int(ch), bytes(pixels[: int(cw * ch * 4)]))  # type: ignore[index]
+                    else:
+                        store[int(new_h)] = (int(cw), int(ch), pixels)  # type: ignore[index]
+                try:
+                    store.pop(handle, None)  # type: ignore[attr-defined]
+                except AttributeError:
+                    try:
+                        store.pop(handle, None)
+                    except Exception:
+                        pass
                 return ht
             except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 self._log_once("dead_recover", e)
@@ -203,7 +193,7 @@ class TextureMixin:
 
     def _recover_pixels_for_dead_handle(self, old, cur, ht):
         # Legacy shim: im.cache full traversal deleted (slop). Single-lookup via _handle_pixels.
-        store = getattr(self, "_handle_pixels", None) or {}
+        store = self._handle_pixels
         ent = store.get(int(old))
         if ent is None:
             ent = store.get(int(cur))
@@ -529,7 +519,7 @@ class TextureMixin:
         self.texture_cache.clear()
         self._transient_tex.clear()
         try:
-            self._handle_remap = {}
+            self._handle_remap.clear()
         except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
         try:

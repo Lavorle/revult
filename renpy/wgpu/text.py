@@ -5,12 +5,47 @@ Phase 3 toward G-VN: render a string to RGBA, upload texture, draw textured quad
 Full ftfont/atlas integration remains for later when Cython host build is wired.
 """
 
-from __future__ import annotations
-
 import os
+import shutil
+import subprocess
 from functools import lru_cache
 
-DEFAULT_FONT = "/usr/share/fonts/google-noto/NotoSans-Regular.ttf"
+from .constants import PIL_PADDING
+
+FALLBACK_FONT = "/usr/share/fonts/google-noto/NotoSans-Regular.ttf"
+
+
+def _find_system_font():
+    """Locate a usable sans-serif .ttf/.ttc via known paths, then fontconfig.
+
+    Returns an absolute path string or None. Tries the distro DejaVu / Noto
+    locations first, then delegates to ``fc-match`` when available so the host
+    still renders text in containers that ship no bundled NotoSans.
+    """
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+    ]
+    if shutil.which("fc-match"):
+        try:
+            out = subprocess.run(
+                ["fc-match", "--format", "%{file}", "sans"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            path = (out.stdout or "").strip()
+            if path:
+                candidates.append(path)
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            pass
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
+DEFAULT_FONT = _find_system_font() or FALLBACK_FONT
 
 
 @lru_cache(maxsize=8)
@@ -18,18 +53,16 @@ def _font(size: int):
     from PIL import ImageFont  # type: ignore
 
     path = os.environ.get("RENPY_HOST_FONT", DEFAULT_FONT)
-    try:
-        # Explicitly pin to BASIC layout to suppress hinting/RAQM drift across Pillow versions.
-        # Fallback to no-layout_engine if Pillow does not support the kwarg.
-        try:
-            return ImageFont.truetype(path, size, layout_engine=ImageFont.Layout.BASIC)
-        except (TypeError, AttributeError):
-            return ImageFont.truetype(path, size)
-        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            # Any FreeType-specific failure with BASIC, retry without it
-            return ImageFont.truetype(path, size)
-    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+    # Missing/unset font path: degrade to Pillow's built-in default rather
+    # than aborting the wgpu host frame.
+    if not path or not os.path.exists(path):
         return ImageFont.load_default()
+    # Pin RAQM layout for stable complex-script shaping. Older Pillow lacks
+    # the layout_engine kwarg -> fall back to the plain signature.
+    try:
+        return ImageFont.truetype(path, size, layout_engine=ImageFont.Layout.RAQM)
+    except TypeError:
+        return ImageFont.truetype(path, size)
 
 
 def render_text_rgba(
@@ -37,10 +70,11 @@ def render_text_rgba(
     size: int = 32,
     color=(255, 255, 255, 255),
     bg=(0, 0, 0, 0),
-    padding: int = 4,
+    padding: int = PIL_PADDING,
 ) -> tuple[int, int, bytes]:
     """Return (w, h, rgba_bytes) for the rendered string."""
     from PIL import Image, ImageDraw  # type: ignore
+
 
     font = _font(size)
     # Measure — prefer font.getbbox (more stable than draw.textbbox across versions).

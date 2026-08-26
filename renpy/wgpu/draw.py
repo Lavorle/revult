@@ -11,6 +11,17 @@ Phase 8: create_mesh upload + draw_model_mesh for assimp/procedural models.
 from __future__ import annotations
 
 import os
+from .constants import (
+    AUTO_MIPMAP_THRESH,
+    GOLDEN_FALLBACK_H,
+    GOLDEN_FALLBACK_W,
+    HANDLE_PIXELS_CAP,
+    MAX_TEX_H,
+    MAX_TEX_W,
+    MESH_CACHE_CAP,
+    RTT_FREELIST_CAP,
+    RTT_POOL_MAX_PER_SIZE,
+)
 from typing import Any
 
 # --- P0 decomposition: re-exports keep pickle/import compat ---
@@ -55,6 +66,182 @@ except Exception:  # pragma: no cover  # noqa: BLE001 -- wgpu host must not abor
     _host_bridge = None  # type: ignore
 
 
+class GpuHandleCache:
+    """Generic LRU-style GPU-handle cache bounded by a count cap.
+
+    Core: a plain ``dict`` ``{K: V}`` plus an ordered ``list[K]`` recency
+    ring. Lookup is O(1) via the dict; eviction pops the LRU key(s) once the
+    cap is exceeded. No host/renpy import — safe to construct at import time
+    and from pure unit tests (no GPU/renpy_host needed).
+
+    ``alive_fn`` is an optional probe ``Callable[[V], bool]``; when supplied it
+    is consulted on ``get`` so dead-stale entries fall through to a caller
+    re-create path instead of returning a destroyed handle (mesh-alive parity).
+
+    Two eviction policies are supported (not mutually exclusive):
+      * ``_evict`` — drop the single LRU key when count exceeds ``cap`` (the
+        default ``set`` path).
+      * ``evict_some`` — size-aware bulk drop, used by the pixel stash which
+        prefers to keep small UI chrome and drop oversize frames.
+
+    ``deferred_destroy`` buffers popped handles (mesh ids already queued in a
+    frame's ``frame_cmds``) so the host destroy runs only after present drains.
+    """
+
+    __slots__ = ("_map", "_ring", "_cap", "_alive_fn", "_deferred")
+
+    def __init__(self, cap, alive_fn=None):
+        self._map = {}  # type: dict
+        self._ring = []  # type: list
+        self._cap = int(cap)
+        self._alive_fn = alive_fn
+        self._deferred = []  # type: list
+
+    # --- dict-like core -----------------------------------------------------
+    def get(self, key, default=None):
+        v = self._map.get(key, default)
+        if v is default:
+            return v
+        if self._alive_fn is not None:
+            try:
+                if not self._alive_fn(v):
+                    return default
+            except Exception:  # noqa: BLE001 -- probe must never abort a frame
+                pass
+        self._touch(key)
+        return v
+
+    def set(self, key, value):
+        existed = key in self._map
+        self._map[key] = value
+        if not existed:
+            self._ring.append(key)
+        else:
+            self._touch(key)
+        self._evict_if_needed()
+        return value
+
+    def pop(self, key, default=None):
+        if key not in self._map:
+            return default
+        v = self._map.pop(key)
+        try:
+            self._ring.remove(key)
+        except ValueError:
+            pass
+        return v
+
+    def __contains__(self, key):
+        return key in self._map
+
+    def __len__(self):
+        return len(self._map)
+
+    def __iter__(self):
+        return iter(self._map)
+
+    def items(self):
+        return self._map.items()
+
+    def keys(self):
+        return self._map.keys()
+
+    def values(self):
+        return self._map.values()
+
+    def clear(self):
+        self._map.clear()
+        del self._ring[:]
+        del self._deferred[:]
+
+    # --- eviction -----------------------------------------------------------
+    def _touch(self, key):
+        ring = self._ring
+        try:
+            ring.remove(key)
+        except ValueError:
+            pass
+        ring.append(key)
+
+    def set_cap(self, cap):
+        self._cap = int(cap)
+        self._evict_if_needed()
+
+    def _evict_if_needed(self):
+        while len(self._map) > self._cap and self._ring:
+            old = self._ring.pop(0)
+            self._map.pop(old, None)
+
+    def evict_if_needed(self):
+        """Public single-point eviction trigger (wraps internal trim)."""
+        self._evict_if_needed()
+
+    def evict_some(self, n, area_fn=None, keep_below=None):
+        """Drop up to ``n`` keys, preferring large-area entries first.
+
+        ``area_fn(V) -> int`` returns the pixel area of a value (default 0).
+        When ``keep_below`` is given, entries with area <= it are never
+        dropped while oversize entries remain (UI-chrome keep policy).
+        Returns the number of keys actually removed.
+        """
+        if n <= 0 or not self._map:
+            return 0
+        items = list(self._map.items())
+        if area_fn is not None:
+            def _area(v):
+                try:
+                    return int(area_fn(v) or 0)
+                except Exception:  # noqa: BLE001
+                    return 0
+            if keep_below is not None:
+                over = [(k, _area(v)) for k, v in items if _area(v) > int(keep_below)]
+                over.sort(key=lambda kv: kv[1], reverse=True)
+                dropped = 0
+                for k, _a in over:
+                    if dropped >= n:
+                        break
+                    self.pop(k)
+                    dropped += 1
+                if dropped >= n:
+                    return dropped
+                mid = [(k, _area(v)) for k, v in items if _area(v) > 0]
+                mid.sort(key=lambda kv: kv[1], reverse=True)
+                for k, _a in mid:
+                    if dropped >= n:
+                        break
+                    self.pop(k)
+                    dropped += 1
+                return dropped
+            alls = [(k, _area(v)) for k, v in items]
+            alls.sort(key=lambda kv: kv[1], reverse=True)
+            dropped = 0
+            for k, _a in alls:
+                if dropped >= n:
+                    break
+                self.pop(k)
+                dropped += 1
+            return dropped
+        dropped = 0
+        for k in list(self._map.keys()):
+            if dropped >= n:
+                break
+            self.pop(k)
+            dropped += 1
+        return dropped
+
+    # --- deferred host destroy ---------------------------------------------
+    def deferred_destroy(self, handle):
+        """Buffer a handle for destroy after present (see _flush_deferred)."""
+        self._deferred.append(int(handle))
+
+    def take_deferred(self):
+        if not self._deferred:
+            return None
+        out = self._deferred
+        self._deferred = []
+        return out
+
+
 class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixin, TextureMixin, ScreenMixin, PipelineMixin):
     def __init__(self):
         self.info = {
@@ -85,41 +272,43 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         # Stock get_movie_texture always passes transient=True on a stable
         # channel Surface; without reuse, each frame allocates a full-size
         # sample texture and arena FIFO eviction kills dock chrome handles.
-        self._transient_tex = {}
         # Present-path dead-handle recovery (class b): handle → (w, h, rgba).
         # load_texture already re-uploads on cache miss (~657–664) when callers
         # re-enter load_texture; surftree-held HostTextures after kill_textures
         # / FIFO eviction never re-enter that path. Stash full-texture pixels at
         # upload so _draw_texture_at / resolve can re-create and remap in place.
         # Cap count + skip large Movie frames to bound RAM.
-        self._handle_pixels = {}  # handle -> (w, h, pixels)
-        # Prefer keeping UI chrome (Solid 10×10 + prefs/confirm panels) under
-        # flowchart thrash. 512 dropped mid-size panels before present revive.
-        self._handle_pixels_cap = 2048
-        self._handle_remap = {}  # dead_handle -> live_handle (subsurface share)
+        #
+        # T7: unified under one GpuHandleCache (was _handle_pixels + ad-hoc cap).
+        # Cap now sourced from constants.HANDLE_PIXELS_CAP (single source).
+        self._handle_pixels = GpuHandleCache(HANDLE_PIXELS_CAP)
+        self._handle_pixels_cap = HANDLE_PIXELS_CAP  # legacy alias for mixins
+        # dead_handle → live_handle (subsurface share). Small table, unified too.
+        self._handle_remap = GpuHandleCache(RTT_POOL_MAX_PER_SIZE)  # remap table cap
         # Nested product draw depth (reentrancy guard inside the process lock).
         self._draw_screen_depth = 0
-        # Pending draw_model args for one product frame; flushed once under
+        self._rtt_pool_cap = RTT_FREELIST_CAP  # per-size free-handle cap
         # renpy_host.draw_models (single host lock) before end_frame_present.
         self._draw_batch = []
         # Size-keyed freelist for offscreen render targets. mesh_bake /
         # render_to_texture re-create full-screen RTTs every frame; without
         # recycle, HuangmeiC splash/dissolve thrash OOMs the X server
-        # (thousands of 1920×1080 RTTs in seconds).
+        # (thousands of full-HD RTTs in seconds).
+        # rtt_pool keeps _rtt_* as plain dicts (their shape is list-valued
+        # freelists + frame rings, not KV handle maps); mutations route through
+        # GpuHandleCache helpers in rtt_pool only as the single eviction point.
         self._rtt_free = {}  # (w, h) -> [handle, ...]
         self._rtt_prev_frame = []  # [(handle, w, h), ...]
         self._rtt_curr_frame = []
-        self._rtt_pool_cap = 8  # max free handles per size
         # Geometry-keyed mesh cache. Every textured draw used to call
         # create_mesh for an identical NDC quad; HuangmeiC main-menu trees
         # allocate thousands of mesh buffers per second and OOM the process.
-        self._mesh_cache = {}  # key -> mesh handle
-        # Dense preferences pages (dialog_config_1/2) walk 700+ unique HostTexture
-        # quads in one product present. Cap 512 + mid-frame destroy_mesh killed
-        # early layout meshes (1849×846 background) already queued in frame_cmds;
-        # encode_pass then skipped them → pure arena-clear panel while image_config
-        # (lighter tree) stayed white. Keep headroom for full prefs chrome.
-        self._mesh_cache_cap = 4096
+        #
+        # T7: unified under one GpuHandleCache (was _mesh_cache + loose cap).
+        # Deferred-destroy buffer kept alongside so mid-frame eviction can queue
+        # host destroy_mesh after present (see _flush_deferred_meshes).
+        self._mesh_cache = GpuHandleCache(MESH_CACHE_CAP)
+        self._mesh_cache_cap = MESH_CACHE_CAP  # legacy alias for mixins
         # Handles popped from the Python cache but still referenced by the open
         # product frame_cmds list. Destroy only after end_frame_present so
         # encode_pass can still resolve mesh ids drawn earlier in the walk.
@@ -237,7 +426,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         _ = max(1, int(self.virtual_size[1]))
         dw = max(1, int(self.drawable_size[0]))
         dh = max(1, int(self.drawable_size[1]))
-        self.drawable_viewport = (0, 0, dw, dh)
+        self.auto_mipmap = self.draw_per_virt < AUTO_MIPMAP_THRESH
         self.draw_per_virt = float(dw) / float(vw)
         try:
             from renpy.display import render
@@ -331,7 +520,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         self.virtual_size = virtual_size
         self.layout_virtual_size = virtual_size
         # AC2: env-gated once-log so HuangmeiC playtest can confirm virtual is
-        # product 1920×1080 after init (constructor default is 1280×720 only).
+        # product full-HD after init (constructor default is 1280×720 only).
         # Do NOT hardcode constructor default for all games.
         try:
             if os.environ.get("RENPY_HOST_ASSERT_VIRTUAL", "").strip() in (
@@ -348,9 +537,9 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                     file=sys.stderr,
                     flush=True,
                 )
-                if (vw, vh) != (1920, 1080):
+                if (vw, vh) != (GOLDEN_FALLBACK_W, GOLDEN_FALLBACK_H):
                     print(
-                        f"AC2_WARN virtual_size=({vw}, {vh}) expected=(1920, 1080) "
+                        f"AC2_WARN virtual_size=({vw}, {vh}) expected=({GOLDEN_FALLBACK_W}, {GOLDEN_FALLBACK_H}) "
                         f"for HuangmeiC full-bleed",
                         file=sys.stderr,
                         flush=True,
@@ -422,8 +611,8 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                 height = max(256, int(vh or 720))
 
             # Cap to a sane max (desktop-ish) when host exposes no monitor query.
-            width = min(width, 7680)
-            height = min(height, 4320)
+            width = min(width, MAX_TEX_W)
+            height = min(height, MAX_TEX_H)
 
             if want_fs:
                 if hasattr(renpy_host, "set_fullscreen"):

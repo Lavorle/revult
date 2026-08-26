@@ -18,6 +18,26 @@ Re-exported methods keep `WgpuDraw._acquire_rtt` etc public.
 """
 from __future__ import annotations
 
+from .constants import RTT_POOL_MAX_PER_SIZE
+
+
+def _clamp_rtt_size(w, h, lw, dw, lh, dh):
+    """Single-point strict ceiling used by ``_acquire_rtt``.
+
+    Clamp a requested (w, h) to ``min(layout, drawable)`` so reverse-inflated
+    RTT requests (e.g. 2219×5567) or oversized windows never allocate above
+    the live surface. ``lw``/``dw`` are the layout-virtual / drawable widths;
+    ``lh``/``dh`` the matching heights. Any bound of None/0 falls back to the
+    requested dimension so a missing bound never over-constrains.
+    """
+    hard_w = min(lw, dw) if (lw and dw) else (lw or dw or w)
+    hard_h = min(lh, dh) if (lh and dh) else (lh or dh or h)
+    if hard_w < 1:
+        hard_w = max(lw, dw, 1)
+    if hard_h < 1:
+        hard_h = max(lh, dh, 1)
+    return max(1, min(w, hard_w)), max(1, min(h, hard_h))
+
 
 class RttPoolMixin:
     # type hints for attributes owned by WgpuDraw; not initialized here
@@ -28,12 +48,26 @@ class RttPoolMixin:
     drawable_size: tuple[int, int]  # type: ignore
     virtual_size: tuple[int, int]  # type: ignore
     layout_virtual_size: tuple[int, int]  # type: ignore
-    texture_cache: dict  # type: ignore
-
     def get_texture_size(self):
         free_n = sum(len(v) for v in self._rtt_free.values())
         live_n = len(self._rtt_prev_frame) + len(self._rtt_curr_frame)
         return (live_n + free_n, len(self.texture_cache))
+
+    def _rtt_free_push(self, handle, w, h):
+        """Single-point freelist insert bounded by ``_rtt_pool_cap`` per size.
+
+        Keeps the per-(w,h) free-handle cap in exactly one place so eviction is
+        not duplicated across _release_rtt_now / _recycle_frame_rtts. Returns
+        True if the handle was parked on the freelist, False if it must be
+        destroyed by the caller (cap already reached for this size).
+        """
+        key = (max(1, int(w)), max(1, int(h)))
+        bucket = self._rtt_free.setdefault(key, [])
+        if len(bucket) < self._rtt_pool_cap:
+            bucket.append(int(handle))
+            return True
+        return False
+
 
     def _acquire_rtt(self, w, h):
         """Borrow or create a render texture of size (w, h); tracked for recycle.
@@ -62,14 +96,7 @@ class RttPoolMixin:
             # Strict ceiling: min(layout, drawable). Large windows must not pass
             # reverse-inflated RTT requests; small windows must not allocate
             # above the live surface.
-            hard_w = min(lw, dw)
-            hard_h = min(lh, dh)
-            if hard_w < 1:
-                hard_w = max(lw, dw, 1)
-            if hard_h < 1:
-                hard_h = max(lh, dh, 1)
-            w = min(w, hard_w)
-            h = min(h, hard_h)
+            w, h = _clamp_rtt_size(w, h, lw, dw, lh, dh)
         except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             w = min(w, 1920)
             h = min(h, 1080)
@@ -78,8 +105,6 @@ class RttPoolMixin:
         if free:
             handle = int(free.pop())
             self._rtt_curr_frame.append((handle, w, h))
-            return handle
-
         live_same = [t for t in self._rtt_curr_frame if t[1] == w and t[2] == h]
         if len(live_same) >= self._rtt_pool_cap:
             # Reuse oldest live RTT of this size (overwrite). Safe for bake

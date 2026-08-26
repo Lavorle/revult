@@ -263,10 +263,7 @@ class SurftreeMixin:
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
                 return cached
-            try:
-                del self._mesh_cache[key]
-            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                self._mesh_cache.pop(key, None)
+            self._mesh_cache.pop(key, None)
 
         verts = [
             float(x0), float(y0), float(u0), float(v0), float(r), float(g), float(b), float(a),
@@ -275,26 +272,19 @@ class SurftreeMixin:
             float(x0), float(y1), float(u0), float(v1), float(r), float(g), float(b), float(a),
         ]
         handle = renpy_host.create_mesh(verts, [0, 1, 2, 0, 2, 3])
-        # Cap cache: drop arbitrary old entries. Do NOT destroy_mesh mid-frame —
+        # Cap cache via GpuHandleCache single-point eviction; on overflow the
+        # LRU key is evicted by the cache itself. Do NOT destroy_mesh mid-frame —
         # the handle may already be in host frame_cmds from an earlier leaf in
         # this same draw_screen walk (dialog_config dense tree residual). Queue
-        # for destroy after end_frame_present instead.
-        if len(self._mesh_cache) >= self._mesh_cache_cap:
+        # the evicted handle for destroy after end_frame_present instead.
+        if len(self._mesh_cache) > self._mesh_cache._cap:
             try:
                 old_key, old_h = next(iter(self._mesh_cache.items()))
-                del self._mesh_cache[old_key]
-                try:
-                    pending = self._mesh_deferred_destroy
-                except AttributeError:
-                    pending = []
-                    self._mesh_deferred_destroy = pending
-                pending.append(int(old_h))
+                self._mesh_cache.pop(old_key, None)
+                self._mesh_deferred_destroy.append(int(old_h))
             except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                # If eviction fails, still drop a key so the Python map stops
-                # growing; arena residual is bounded by cap churn + deferred flush.
-                if self._mesh_cache:
-                    self._mesh_cache.pop(next(iter(self._mesh_cache)), None)
-        self._mesh_cache[key] = handle
+                pass
+        self._mesh_cache.set(key, handle)
         return handle
 
     def _flush_deferred_meshes(self):

@@ -140,3 +140,17 @@ def get_num_displays():
 
 def get_desktop_sizes():
     return [get_size()]
+
+
+class Window:
+    """Minimal SDL3-style Window handle (host: window owned by winit)."""
+
+    def __init__(self, title, size):
+        self.title = title
+        self.size = tuple(size)
+
+    def destroy(self):
+        return None
+
+    def __repr__(self):
+        return f"Window(title={self.title!r}, size={self.size})"

@@ -4,6 +4,31 @@ from __future__ import annotations
 
 _pos = (0, 0)
 _buttons = (False, False, False)
+_last_pos = (0, 0)
+_rel = (0, 0)
+
+
+class ColorCursor:
+    """Hardware cursor backed by a hotspot + surface (SDL3-compatible shape)."""
+
+    __slots__ = ("hotspot", "surface")
+
+    def __init__(self, hotspot, surface):
+        self.hotspot = tuple(hotspot)
+        self.surface = surface
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, ColorCursor)
+            and self.hotspot == other.hotspot
+            and self.surface is other.surface
+        )
+
+    def __hash__(self):
+        return hash((self.hotspot, id(self.surface)))
+
+    def __repr__(self):
+        return f"ColorCursor(hotspot={self.hotspot}, surface={self.surface!r})"
 
 
 def get_pos():
@@ -11,8 +36,11 @@ def get_pos():
 
 
 def set_pos(pos):
-    global _pos
-    _pos = tuple(pos)
+    global _pos, _last_pos, _rel
+    nx, ny = int(pos[0]), int(pos[1])
+    _rel = (nx - _pos[0], ny - _pos[1])
+    _last_pos = _pos
+    _pos = (nx, ny)
 
 
 def get_pressed():
@@ -35,10 +63,15 @@ def set_pressed(buttons):
 
 
 def get_rel():
-    return (0, 0)
+    return _rel
 
 
 def set_visible(visible):
+    try:
+        import renpy_host  # type: ignore
+        renpy_host.set_cursor_visible(bool(visible))
+    except Exception:
+        pass
     return None
 
 
@@ -48,6 +81,7 @@ def get_focused():
 
 def reset():
     """Stock pygame.mouse.reset / focus-reset — host no-op."""
-    global _pos, _buttons
+    global _pos, _buttons, _rel
     _pos = (0, 0)
     _buttons = (False, False, False)
+    _rel = (0, 0)

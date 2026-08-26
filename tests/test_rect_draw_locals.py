@@ -100,3 +100,57 @@ def test_contains():
     assert outer.contains(Rect(5, 5, 10, 10)) is False
     # touching edge but outside due to width
     assert outer.contains(Rect(0, 0, 11, 10)) is False
+
+
+# --- draw.py smoke (polygon / ellipse) ---
+def _load_draw():
+    """Load host_pygame.draw + surface with rect injected (no package side effects)."""
+    import importlib.util
+    import pathlib
+    import sys
+    base = pathlib.Path(__file__).resolve().parents[1] / "host" / "python" / "host_pygame"
+    sys.modules.setdefault("host_pygame", type(sys)("host_pygame"))
+    # ensure rect accessible as host_pygame.rect for the relative import
+    if "host_pygame.rect" not in sys.modules:
+        rspec = importlib.util.spec_from_file_location("host_pygame.rect", base / "rect.py")
+        rmod = importlib.util.module_from_spec(rspec)
+        sys.modules["host_pygame.rect"] = rmod
+        rspec.loader.exec_module(rmod)
+    if "host_pygame.surface" not in sys.modules:
+        sspec = importlib.util.spec_from_file_location("host_pygame.surface", base / "surface.py")
+        smod = importlib.util.module_from_spec(sspec)
+        sys.modules["host_pygame.surface"] = smod
+        sspec.loader.exec_module(smod)
+    if "host_pygame.draw" not in sys.modules:
+        dspec = importlib.util.spec_from_file_location("host_pygame.draw", base / "draw.py")
+        dmod = importlib.util.module_from_spec(dspec)
+        sys.modules["host_pygame.draw"] = dmod
+        dspec.loader.exec_module(dmod)
+    return sys.modules["host_pygame.draw"], sys.modules["host_pygame.surface"]
+
+
+def test_polygon_fills():
+    draw, surface = _load_draw()
+    s = surface.Surface((20, 20))
+    draw.polygon(s, (255, 0, 0, 255), [(2, 2), (18, 2), (10, 18)])
+    # Center pixel must be painted (inside the triangle).
+    assert s.get_at((10, 10))[0] == 255
+    # Corner outside must stay transparent.
+    assert s.get_at((0, 0))[3] == 0
+
+
+def test_ellipse_draws():
+    draw, surface = _load_draw()
+    s = surface.Surface((20, 20))
+    draw.ellipse(s, (0, 255, 0, 255), (2, 2, 16, 16))
+    # Center of ellipse should be green-ish.
+    assert s.get_at((10, 10))[1] > 0
+
+
+def test_arc_draws():
+    draw, surface = _load_draw()
+    s = surface.Surface((20, 20))
+    draw.arc(s, (0, 0, 255, 255), (2, 2, 16, 16), 0.0, 3.14)
+    # arc paints something along the boundary
+    painted = sum(1 for y in range(20) for x in range(20) if s.get_at((x, y))[2] > 0)
+    assert painted > 0

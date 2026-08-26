@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import renpy_host  # type: ignore
 
+from .locals import KMOD_LSHIFT, KMOD_RSHIFT, KMOD_LCTRL, KMOD_RCTRL, KMOD_LALT, KMOD_RALT, KMOD_LGUI, KMOD_RGUI
+
 _mods = 0
 _pressed = set()
+_ime_rect = None
 
 
 def get_pressed():
@@ -39,5 +42,18 @@ def stop_text_input():
 
 
 def set_text_input_rect(x, y, w, h):
-    # Phase 1: IME rect not yet forwarded; API present for core.py callers.
-    return None
+    """Store IME candidate rect; forward to host when available."""
+    global _ime_rect
+    _ime_rect = (int(x), int(y), int(w), int(h))
+    try:
+        renpy_host.set_text_input_rect(int(x), int(y), int(w), int(h))
+    except Exception:
+        pass
+
+
+def has_screen_keyboard_support():
+    return False
+
+
+def is_screen_keyboard_shown():
+    return False

@@ -30,66 +30,46 @@ Chunked decode (product 360@30):
 
 from __future__ import annotations
 
+import contextlib
 import os
+import queue as _queue
 import shutil
 import subprocess
+import tempfile
+import threading as _threading
+import time as _time
 from collections import deque
 from collections.abc import Callable, Sequence
+from typing import Protocol, runtime_checkable
 
+try:
+    from renpy.wgpu.constants import (
+        FFMPEG_CHUNK_FRAMES as _C_CHUNK,
+        FFMPEG_KICKSTART_FRAMES as _C_KICK,
+        FFMPEG_TIMEOUT_BASE as _C_TBASE,
+        FFMPEG_TIMEOUT_PER_FRAME as _C_TPER,
+    )
+except Exception:  # noqa: BLE001 -- constants fallback keeps dual-tree safe
+    _C_CHUNK = 20
+    _C_KICK = 8
+    _C_TBASE = 30.0
+    _C_TPER = 0.15
 
-class FrameBag(list):
-    """RGBA frame list that can carry absolute decode counters.
+_DEFAULT_CHUNK_FRAMES = int(_C_CHUNK)
+_DEFAULT_KICKSTART_FRAMES = int(_C_KICK)
+_CHUNK_TIMEOUT_FLOOR_S = float(_C_TBASE)
+_CHUNK_TIMEOUT_PER_FRAME_S = float(_C_TPER)
 
-    Built-in ``list`` rejects arbitrary attributes on some Python builds; a
-    thin subclass keeps ``_abs_total`` reliable after ring trims.
-    """
-
-    __slots__ = ("_abs_total",)
-
-    def __init__(self, iterable=(), *, abs_total: int = 0):
-        super().__init__(iterable)
-        self._abs_total = int(abs_total or 0)
-
-
-def _as_frame_bag(frames) -> FrameBag:
-    if isinstance(frames, FrameBag):
-        return frames
-    try:
-        abs_total = int(getattr(frames, "_abs_total", 0) or 0)
-    except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
-        abs_total = 0
-    bag = FrameBag(frames or (), abs_total=abs_total if abs_total > 0 else len(frames or ()))
-    return bag
-
-
-def _set_abs_total(frames, n: int) -> None:
-    n = int(n)
-    try:
-        frames._abs_total = n  # type: ignore[attr-defined]
-        return
-    except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-        pass
-    try:
-        frames._abs_total = n
-    except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-        pass
-
-
-def _get_abs_total(frames) -> int:
-    try:
-        n = int(getattr(frames, "_abs_total", 0) or 0)
-    except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
-        n = 0
-    if n > 0:
-        return n
-    return len(frames) if frames is not None else 0
-
+# Also expose under canonical names for importers/tests that read constants.
+FFMPEG_CHUNK_FRAMES = _DEFAULT_CHUNK_FRAMES
+FFMPEG_KICKSTART_FRAMES = _DEFAULT_KICKSTART_FRAMES
+FFMPEG_TIMEOUT_BASE = _CHUNK_TIMEOUT_FLOOR_S
+FFMPEG_TIMEOUT_PER_FRAME = _CHUNK_TIMEOUT_PER_FRAME_S
 
 try:
     import renpy_host  # type: ignore
 except ImportError:  # pragma: no cover - SDL tree
     renpy_host = None  # type: ignore
-
 
 # Full-screen NDC quad: x,y,u,v,r,g,b,a
 _FULLSCREEN_VERTS = [
@@ -100,13 +80,87 @@ _FULLSCREEN_VERTS = [
 ]
 _FULLSCREEN_INDICES = [0, 1, 2, 0, 2, 3]
 
-# Env: RENPY_HOST_MOVIE_CHUNK_FRAMES — progressive publish interval after kickstart.
-# Per-chunk wall timeout is max(30, 0.15 * n_frames) seconds so 360@30
-# product decodes finish without a single 30s hard wall.
-_DEFAULT_CHUNK_FRAMES = 20
-_DEFAULT_KICKSTART_FRAMES = 8
-_CHUNK_TIMEOUT_FLOOR_S = 30.0
-_CHUNK_TIMEOUT_PER_FRAME_S = 0.15
+
+class FrameBag(list):
+    """RGBA frame list that can carry absolute decode counters.
+
+    Built-in ``list`` rejects arbitrary attributes on some Python builds; a
+    thin subclass keeps ``_abs_total`` reliable after ring trims. When
+    ``live_cap`` is given, an internal ``deque(maxlen=live_cap)`` enforces a
+    bounded ring while preserving the ``list``-like API and ``isinstance``
+    checks used across the decode pipeline.
+    """
+
+    def __init__(self, iterable=(), *, abs_total: int = 0, live_cap: int | None = None):
+        if iterable is None:
+            iterable = ()
+        super().__init__(iterable)
+        self._abs_total = int(abs_total or 0)
+        self._live_cap = live_cap
+        if live_cap is not None:
+            self.frames: deque = deque(self, maxlen=live_cap)
+        else:
+            self.frames: deque = deque(self)
+
+    def append(self, item):  # type: ignore[override]
+        if self._live_cap is not None:
+            self.frames.append(item)
+            super().__init__(self.frames)
+        else:
+            super().append(item)
+            self.frames.append(item)
+
+    def extend(self, iterable):  # type: ignore[override]
+        for it in iterable:
+            self.append(it)
+
+    def clear(self):  # type: ignore[override]
+        super().clear()
+        with contextlib.suppress(Exception):
+            self.frames.clear()
+
+    def __setitem__(self, key, value):  # type: ignore[override]
+        super().__setitem__(key, value)
+        if self._live_cap is not None:
+            if len(self) > self._live_cap:
+                trimmed = list(self)[-self._live_cap:]
+                super().__init__(trimmed)
+            self.frames = deque(self, maxlen=self._live_cap)
+        else:
+            self.frames = deque(self)
+
+
+def _as_frame_bag(frames) -> FrameBag:
+    if isinstance(frames, FrameBag):
+        return frames
+    abs_total = getattr(frames, "_abs_total", 0) or 0
+    with contextlib.suppress(Exception):
+        abs_total = int(abs_total)
+    if not isinstance(abs_total, int):
+        abs_total = 0
+    bag = FrameBag(
+        frames or (),
+        abs_total=abs_total if abs_total > 0 else len(frames or ()),
+    )
+    return bag
+
+
+def _set_abs_total(frames, n: int) -> None:
+    n = int(n)
+    with contextlib.suppress(Exception):
+        frames._abs_total = n  # type: ignore[attr-defined]
+        return
+    with contextlib.suppress(Exception):
+        object.__setattr__(frames, "_abs_total", n)
+
+
+def _get_abs_total(frames) -> int:
+    n = getattr(frames, "_abs_total", 0) or 0
+    with contextlib.suppress(Exception):
+        n = int(n)
+    if isinstance(n, int) and n > 0:
+        return n
+    return len(frames) if frames is not None else 0
 
 
 def _solid_frame(width: int, height: int, rgba: tuple[int, int, int, int]) -> bytes:  # type: ignore - shim retained (smoke init)
@@ -178,19 +232,251 @@ def _vf_scale_fps(width: int, height: int, fps: float, *, scale: bool = True) ->
     return f"fps={fps}"
 
 
+class FfmpegCmdBuilder:
+    """Single point constructing the ffmpeg prefix.
+
+    Produces ``["ffmpeg","-hide_banner","-threads","0","-vf",<vf>]`` and
+    appends ``["-f","rawvideo"]`` only for pipe output. The three duplicate
+    ``-hide_banner -threads 0 -vf scale+fps`` sites in the decode path are
+    routed through this builder.
+    """
+
+    @staticmethod
+    def build(
+        path: str,
+        w: int,
+        h: int,
+        fps: float,
+        use_file: bool,
+        scale: bool | None = None,
+    ) -> list[str]:
+        _ = path  # kept for call-site symmetry; prefix is path-independent
+        vf = _vf_scale_fps(int(w), int(h), float(fps), scale=True if scale is None else bool(scale))
+        cmd = ["ffmpeg", "-hide_banner", "-threads", "0", "-vf", vf]
+        if not use_file:
+            cmd += ["-f", "rawvideo"]
+        return cmd
+
+
+@runtime_checkable
+class Decoder(Protocol):
+    def read_chunk(self) -> bytes | None: ...
+    def publish(self, bag: FrameBag) -> None: ...
+
+
+class _BaseDecoder:
+    """Shared decode/ingest/publish cadence behind the Decoder Protocol."""
+
+    def __init__(
+        self,
+        *,
+        raw_size: int,
+        width: int,
+        height: int,
+        fps: float,
+        path: str,
+        live_cap: int,
+        all_frames: list[bytes],
+        on_chunk: Callable[[list[bytes]], None] | None,
+        kickstart: int,
+        publish_every: int,
+        timeout: float,
+        t0: float,
+        max_frames: int = 0,
+    ):
+        self._raw_size = int(raw_size)
+        self._width = int(width)
+        self._height = int(height)
+        self._fps = float(fps)
+        self._path = path
+        self._live: FrameBag = FrameBag(live_cap=live_cap)
+        self._all_frames = all_frames
+        self._on_chunk = on_chunk
+        self._kickstart = max(1, int(kickstart))
+        self._publish_every = max(1, int(publish_every))
+        self._timeout = float(timeout)
+        self._t0 = t0
+        self._max_frames = int(max_frames)
+        self.decoded = 0
+        self._since_publish = 0
+        self._last_published_n = 0
+        self._pending: bytes | None = None
+        self._proc = None
+
+    # — centralised read: one try covers every transport ————————
+    def read_chunk(self) -> bytes | None:
+        try:
+            return self._read_one()
+        except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
+            return None
+
+    def _read_one(self) -> bytes | None:
+        raise NotImplementedError
+
+    def publish(self, bag: FrameBag) -> None:
+        """Append the most recently read frame to ``bag`` and run cadence."""
+        if self._pending is not None:
+            frame = self._pending
+            self._pending = None
+            with contextlib.suppress(Exception):
+                bag.append(frame)
+            self._ingest(frame)
+
+    def _ingest(self, frame: bytes) -> None:
+        self._live.append(frame)
+        self.decoded += 1
+        self._since_publish += 1
+        with contextlib.suppress(Exception):
+            _set_abs_total(self._all_frames, self.decoded)
+        if self._on_chunk is None:
+            return
+        if self.decoded <= self._kickstart or self._since_publish >= self._publish_every:
+            self._sync_and_publish()
+
+    def _sync_and_publish(self) -> None:
+        ring = list(self._live)
+        # wgpu must-not-abort-frame guard — single centralised suppress
+        with contextlib.suppress(Exception):
+            self._all_frames[:] = ring
+            _set_abs_total(self._all_frames, self.decoded)
+            if self._on_chunk is None:
+                self._last_published_n = self.decoded
+                self._since_publish = 0
+                return
+            snap = FrameBag(ring, abs_total=self.decoded)
+            with contextlib.suppress(Exception):
+                self._on_chunk(snap)
+            self._last_published_n = self.decoded
+            self._since_publish = 0
+
+    def is_done(self) -> bool:
+        raise NotImplementedError
+
+    def kill(self) -> None:
+        with contextlib.suppress(Exception):
+            if self._proc is not None and self._proc.poll() is not None:  # type: ignore[union-attr]
+                self._proc.kill()  # type: ignore[union-attr]
+
+    def join(self) -> None:
+        pass
+
+
+class PipeReader(_BaseDecoder):
+    """Wraps the Popen stdout pipe path (background reader thread + queue)."""
+
+    def __init__(self, *, proc, **kw):
+        super().__init__(**kw)
+        self._proc = proc
+        self._queue: _queue.Queue = _queue.Queue()
+        self._sentinel = object()
+        self._finished = False
+        self._start_reader()
+
+    def _start_reader(self) -> None:
+        reader = _threading.Thread(
+            target=self._reader, name="host-movie-pipe-reader", daemon=True
+        )
+        reader.start()
+
+    def _reader(self) -> None:
+        buf = bytearray()
+        try:
+            chunk = max(self._raw_size, self._raw_size * 2) if self._raw_size else 4096
+            stdout = self._proc.stdout  # type: ignore[union-attr]
+            while True:
+                block = stdout.read(chunk)
+                if not block:
+                    break
+                buf.extend(block)
+                while len(buf) >= self._raw_size:
+                    frame = bytes(buf[: self._raw_size])
+                    del buf[: self._raw_size]
+                    self._queue.put(frame)
+        except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
+            pass
+        finally:
+            with contextlib.suppress(Exception):
+                self._queue.put(self._sentinel)
+            with contextlib.suppress(Exception):
+                self._proc.stdout.close()  # type: ignore[union-attr]
+
+    def _read_one(self) -> bytes | None:
+        try:
+            item = self._queue.get(timeout=0.05)
+        except _queue.Empty:
+            if self._proc is not None and self._proc.poll() is not None and self._queue.empty():
+                self._finished = True
+            return None
+        if item is self._sentinel:
+            self._finished = True
+            return None
+        self._pending = item
+        return item
+
+    def is_done(self) -> bool:
+        if self._finished:
+            return True
+        if self._proc is not None and self._proc.poll() is not None and self._queue.empty():
+            return True
+        return False
+
+    def join(self) -> None:
+        pass
+
+
+class FilePoller(_BaseDecoder):
+    """Wraps the file-backed poll path (temp .rgba file drained by offset)."""
+
+    def __init__(self, *, tmp_path: str, proc=None, **kw):
+        super().__init__(**kw)
+        self._tmp_path = str(tmp_path) if tmp_path is not None else ""
+        self._proc = proc
+        self._pos = 0
+
+    def _read_one(self) -> bytes | None:
+        if not self._tmp_path:
+            return None
+        raw_size = self._raw_size
+        if raw_size <= 0:
+            return None
+        try:
+            size = os.path.getsize(self._tmp_path)
+        except OSError:
+            size = 0
+        if size - self._pos < raw_size:
+            return None
+        with open(self._tmp_path, "rb") as fh:
+            fh.seek(self._pos)
+            data = fh.read(raw_size)
+        if not data or len(data) < raw_size:
+            return None
+        self._pos += raw_size
+        self._pending = data
+        return data
+
+    def is_done(self) -> bool:
+        if self._proc is not None and self._proc.poll() is None:
+            return False
+        try:
+            size = os.path.getsize(self._tmp_path) if self._tmp_path else 0
+        except OSError:
+            return True
+        return (size - self._pos) < (self._raw_size or 1)
+
+
 def _media_is_native_size(path: str, width: int, height: int) -> bool:
     """Cheap probe: cache (path,w,h)->bool for this process."""
     key = (path, int(width), int(height))
     cache = getattr(_media_is_native_size, "_cache", None)
     if cache is None:
         cache = {}
-        _media_is_native_size._cache = cache
+        _media_is_native_size._cache = cache  # type: ignore[attr-defined]
     if key in cache:
         return cache[key]
     ok = False
-    try:
-        # Prefer ffprobe when available; fail open to scale.
+    with contextlib.suppress(Exception):
         import json as _json
+
         proc = subprocess.run(
             [
                 "ffprobe",
@@ -215,12 +501,8 @@ def _media_is_native_size(path: str, width: int, height: int) -> bool:
             sw = int(streams[0].get("width") or 0)
             sh = int(streams[0].get("height") or 0)
             ok = sw == int(width) and sh == int(height)
-    except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
-        ok = False
     cache[key] = ok
     return ok
-
-
 
 
 def _split_raw_rgba(data: bytes, width: int, height: int, max_frames: int) -> list[bytes]:
@@ -261,8 +543,12 @@ def _decode_ffmpeg_chunk(
     timeout = _chunk_timeout_s(n_frames)
     need_scale = not _media_is_native_size(path, width, height)
 
-    # Frame0 fast path: no fps resample (avoids empty single-frame outputs).
     if start_frame == 0 and n_frames == 1:
+        # Frame0 fast path: scale-only (no fps), built via the shared prefix.
+        prefix = FfmpegCmdBuilder.build(path, width, height, fps, use_file=False, scale=need_scale)
+        vf0 = prefix[5] if len(prefix) > 5 else (f"scale={width}:{height}:flags=fast_bilinear" if need_scale else "null")
+        # frame0 uses scale-only vf (strip the trailing ,fps=… if present)
+        vf0 = vf0.split(",fps=")[0] if need_scale else "null"
         cmd = [
             "ffmpeg",
             "-hide_banner",
@@ -275,10 +561,7 @@ def _decode_ffmpeg_chunk(
             "-an",
         ]
         if need_scale:
-            cmd += [
-                "-vf",
-                f"scale={width}:{height}:flags=fast_bilinear",
-            ]
+            cmd += ["-vf", vf0]
         cmd += [
             "-frames:v",
             "1",
@@ -289,6 +572,7 @@ def _decode_ffmpeg_chunk(
             "pipe:1",
         ]
     else:
+        prefix = FfmpegCmdBuilder.build(path, width, height, fps, use_file=False, scale=need_scale)
         cmd = [
             "ffmpeg",
             "-hide_banner",
@@ -302,7 +586,7 @@ def _decode_ffmpeg_chunk(
             path,
             "-an",
             "-vf",
-            _vf_scale_fps(width, height, fps, scale=need_scale),
+            prefix[5] if len(prefix) > 5 else _vf_scale_fps(width, height, fps, scale=need_scale),
             "-vframes",
             str(n_frames),
             "-f",
@@ -344,11 +628,6 @@ def _stream_ffmpeg_remaining(
 
     Absolute progress is tracked with ``_set_abs_total`` / ``FrameBag``.
     """
-    import queue as _queue
-    import tempfile
-    import threading as _threading
-    import time as _time
-
     bag = _as_frame_bag(all_frames)
     abs_have = _get_abs_total(bag)
     remaining = max_frames - abs_have
@@ -383,64 +662,37 @@ def _stream_ffmpeg_remaining(
     if mode in ("pipe", "0", "false", "no"):
         use_file = False
     elif mode in ("", "auto"):
-        # 1080p RGBA is 8 MiB/frame — pipe backpressure under product GIL is the
-        # dominant 4-5s sticky class. File-backed keeps ffmpeg free.
         use_file = raw_size >= (1600 * 900 * 4)
 
-    vf = _vf_scale_fps(width, height, fps, scale=need_scale)
-    live: deque = deque(bag, maxlen=live_cap)
-    decoded = abs_have
-    last_published_n = decoded
-    since_publish = 0
     t0 = _time.monotonic()
+    prefix = FfmpegCmdBuilder.build(path, width, height, fps, use_file, scale=need_scale)
+    vf = prefix[5] if len(prefix) > 5 else _vf_scale_fps(width, height, fps, scale=need_scale)
 
-    def _sync_and_publish() -> None:
-        nonlocal last_published_n, since_publish
-        ring_list = list(live)
-        try:
-            all_frames[:] = ring_list
-        except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
-            try:
-                all_frames.clear()
-                all_frames.extend(ring_list)
-            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                pass
-        _set_abs_total(all_frames, decoded)
-        if on_chunk is None:
-            last_published_n = decoded
-            since_publish = 0
-            return
-        snap = FrameBag(ring_list, abs_total=decoded)
-        try:
-            on_chunk(snap)
-        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-            pass
-        last_published_n = decoded
-        since_publish = 0
-
-    def _ingest(frame: bytes) -> None:
-        nonlocal decoded, since_publish
-        live.append(frame)
-        decoded += 1
-        since_publish += 1
-        _set_abs_total(all_frames, decoded)
-        if on_chunk is None:
-            return
-        if decoded <= kickstart or since_publish >= publish_every:
-            _sync_and_publish()
+    decoder_kwargs = dict(
+        raw_size=raw_size,
+        width=width,
+        height=height,
+        fps=fps,
+        path=path,
+        live_cap=live_cap,
+        all_frames=all_frames,
+        on_chunk=on_chunk,
+        kickstart=kickstart,
+        publish_every=publish_every,
+        timeout=timeout,
+        t0=t0,
+        max_frames=max_frames,
+    )
 
     if use_file:
         tmp_dir = None
         if os.path.isdir("/dev/shm") and os.access("/dev/shm", os.W_OK):
-            # Need headroom for remaining frames.
-            try:
+            with contextlib.suppress(Exception):
                 st = os.statvfs("/dev/shm")
                 free = st.f_bavail * st.f_frsize
                 need = int(raw_size) * int(remaining) + (32 << 20)
                 if free >= need:
                     tmp_dir = "/dev/shm"
-            except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
-                tmp_dir = "/dev/shm"
         tmp_path = None
         proc = None
         try:
@@ -474,61 +726,18 @@ def _stream_ffmpeg_remaining(
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-            consumed = 0
-            with open(tmp_path, "rb") as fh:
-                while decoded < max_frames:
-                    try:
-                        size = os.path.getsize(tmp_path)
-                    except OSError:
-                        size = 0
-                    # Drain all complete new frames.
-                    while size - consumed >= raw_size and decoded < max_frames:
-                        if fh.tell() != consumed:
-                            fh.seek(consumed)
-                        data = fh.read(raw_size)
-                        if not data or len(data) < raw_size:
-                            break
-                        consumed += raw_size
-                        _ingest(data)
-                    if proc.poll() is not None:
-                        try:
-                            size = os.path.getsize(tmp_path)
-                        except OSError:
-                            size = 0
-                        if size - consumed < raw_size:
-                            break
-                        continue
-                    if (_time.monotonic() - t0) > timeout:
-                        try:
-                            proc.kill()
-                        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                            pass
-                        break
-                    # Free GIL for product present thread.
-                    _time.sleep(0.0005)
-            if decoded > last_published_n:
-                _sync_and_publish()
-            else:
-                try:
-                    all_frames[:] = list(live)
-                except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                    pass
-                _set_abs_total(all_frames, decoded)
+            decoder = FilePoller(tmp_path=tmp_path, proc=proc, **decoder_kwargs)
+            decoder.decoded = abs_have
+            _run_decode_loop(decoder)
         finally:
             if proc is not None and proc.poll() is None:
-                try:
+                with contextlib.suppress(Exception):
                     proc.kill()
-                except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                    pass
-                try:
+                with contextlib.suppress(Exception):
                     proc.wait(timeout=2)
-                except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                    pass
             if tmp_path:
-                try:
+                with contextlib.suppress(Exception):
                     os.unlink(tmp_path)
-                except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                    pass
         return all_frames
 
     # ---- pipe path (smaller frames / explicit mode=pipe) ----
@@ -564,80 +773,40 @@ def _stream_ffmpeg_remaining(
     except Exception:  # noqa: BLE001 -- media/host best-effort — failure must not block playback or crash frame
         return all_frames
     assert proc.stdout is not None
+    decoder = PipeReader(proc=proc, **decoder_kwargs)
+    decoder.decoded = abs_have
     try:
-        qmax = int(os.environ.get("RENPY_HOST_MOVIE_PIPE_QUEUE", "180"))
-    except (TypeError, ValueError):
-        qmax = 180
-    qmax = max(16, min(qmax, 360))
-    frame_q: _queue.Queue = _queue.Queue(maxsize=qmax)
-    sentinel = object()
-
-    def _reader() -> None:
-        buf = bytearray()
-        try:
-            chunk = max(raw_size, raw_size * 2)
-            while True:
-                block = proc.stdout.read(chunk)
-                if not block:
-                    break
-                buf.extend(block)
-                while len(buf) >= raw_size:
-                    frame = bytes(buf[:raw_size])
-                    del buf[:raw_size]
-                    frame_q.put(frame)
-        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-            pass
-        finally:
-            try:
-                frame_q.put(sentinel)
-            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                pass
-            try:
-                proc.stdout.close()
-            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                pass
-
-    reader = _threading.Thread(
-        target=_reader, name="host-movie-pipe-reader", daemon=True
-    )
-    reader.start()
-    try:
-        while decoded < max_frames:
-            try:
-                item = frame_q.get(timeout=0.5)
-            except _queue.Empty:
-                if proc.poll() is not None and frame_q.empty():
-                    break
-                if (_time.monotonic() - t0) > timeout:
-                    break
-                continue
-            if item is sentinel:
-                break
-            _ingest(item)
-        if decoded > last_published_n:
-            _sync_and_publish()
-        else:
-            try:
-                all_frames[:] = list(live)
-            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                pass
-            _set_abs_total(all_frames, decoded)
+        _run_decode_loop(decoder)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             if proc.poll() is None:
                 proc.kill()
-        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-            pass
-        try:
+        with contextlib.suppress(Exception):
             proc.wait(timeout=3)
-        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-            pass
-        try:
-            reader.join(timeout=2)
-        except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-            pass
+        with contextlib.suppress(Exception):
+            decoder.join()
     return all_frames
 
+
+def _run_decode_loop(decoder: _BaseDecoder) -> None:
+    """Shared timeout/loop semantics behind the Decoder Protocol indirection."""
+    while decoder.decoded < decoder._max_frames:
+        frame = decoder.read_chunk()
+        if frame is not None:
+            decoder.publish(decoder._live)
+            continue
+        if decoder.is_done():
+            break
+        if (_time.monotonic() - decoder._t0) > decoder._timeout:
+            decoder.kill()
+            break
+        _time.sleep(0.0005)
+    if decoder.decoded > decoder._last_published_n:
+        decoder._sync_and_publish()
+    else:
+        with contextlib.suppress(Exception):
+            decoder._all_frames[:] = list(decoder._live)
+            _set_abs_total(decoder._all_frames, decoder.decoded)
 
 
 def decode_frames_ffmpeg(
@@ -652,7 +821,7 @@ def decode_frames_ffmpeg(
     Decode up to `max_frames` RGBA frames from `path` via the ffmpeg CLI.
 
     Phase 6 MVP path (no libav* linkage). Phase 9 may replace with in-process
-    FFmpeg. Returns [] on total failure so callers can use synthetic frames.
+    FFmpeg. Returns [] on total failure so callers can use() synthetic frames.
 
     Progressive / frame0-first warm (``on_chunk`` set):
       1. One-frame scale-only ffmpeg for true frame0 (end_splash hold).
@@ -676,10 +845,8 @@ def decode_frames_ffmpeg(
         first = _decode_ffmpeg_chunk(path, width, height, 0, 1, fps)
         if first:
             all_frames.extend(first)
-            try:
+            with contextlib.suppress(Exception):
                 on_chunk(all_frames)
-            except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-                pass
 
         if len(all_frames) < max_frames:
             try:
@@ -749,17 +916,11 @@ def continue_frames_ffmpeg(
     abs_have = _get_abs_total(all_frames)
     if abs_have >= max_frames:
         return all_frames
-    # Continue publish cadence: env CHUNK may be 90 for warm thrash
-    # control, but that freezes read_video for ~8s between publishes at
-    # 1080p. Cap continue publish interval so the path cache grows at a
-    # human-visible rate even when CHUNK is large.
     try:
         cont_pub = int(os.environ.get("RENPY_HOST_MOVIE_CONTINUE_PUBLISH", "1"))
     except (TypeError, ValueError):
         cont_pub = 4
     cont_pub = max(1, min(cont_pub, _chunk_frame_budget()))
-    # Keep a short kickstart window on continue so the first new frames
-    # after warm appear immediately (breaks the warm-boundary freeze).
     try:
         cont_kick = int(os.environ.get("RENPY_HOST_MOVIE_CONTINUE_KICKSTART", "64"))
     except (TypeError, ValueError):
@@ -875,11 +1036,9 @@ def play_movie_smoke(  # type: ignore - shim retained (gate smoke)
     drawn = vt.play_frames(frames, frame_ms=frame_ms)
 
     # A/V clock handoff: short beep on movie channel while video plays.
-    try:
+    with contextlib.suppress(Exception):
         renpy_host.audio_start()
         renpy_host.audio_beep(660.0, 80, 0.1)
-    except Exception:  # noqa: BLE001, S110 -- media/host best-effort — failure must not block playback or crash frame
-        pass
 
     # After multi-frame play with wait_until, clock must be > 0.
     pos = vt.pos()

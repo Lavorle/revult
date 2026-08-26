@@ -5,3 +5,5 @@ from __future__ import annotations
 # T1 placeholder — will be expanded in T6 to the full table.
 # Kept as single source to avoid magic literals scattered in draw/rtt_pool/video/text.
 PIL_PADDING = 4
+ISO_BASIS_X = 0.866
+ISO_BASIS_Y = 0.5

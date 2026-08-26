@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time as _time
+from enum import Enum
 
 from .draw_debug import (
     _UI_TRACE_LOGGED,
@@ -13,6 +14,14 @@ from .draw_debug import (
     _ui_trace_once,
 )
 from .host_texture import HostTexture, _surf_fingerprint
+
+try:
+    from .host_texture import AliveState as HandleState  # type: ignore
+except Exception:  # noqa: BLE001
+    class HandleState(Enum):
+        ALIVE = 1
+        REMAPPED = 2
+        DEAD_RECOVER = 3
 
 
 class TextureMixin:
@@ -95,264 +104,110 @@ class TextureMixin:
                 store.pop(k, None)
                 dropped += 1
 
-    def _forget_handle_pixels(self, handle):
-        try:
-            handle = int(handle or 0)
-        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            return
-        if handle <= 0:
-            return
-        store = getattr(self, "_handle_pixels", None)
-        if store is not None:
-            store.pop(handle, None)
-        remap = getattr(self, "_handle_remap", None)
-        if remap is not None:
-            remap.pop(handle, None)
-            dead = [k for k, v in remap.items() if int(v) == handle]
-            for k in dead:
-                remap.pop(k, None)
+    def _log_once(self, key: str, exc: Exception) -> None:
+        _host_draw_fail(key, exc)
 
-    def _ensure_host_texture_alive(self, ht):
+    def _set_handle(self, ht, value):
+        v = int(value)
+        if hasattr(ht, "handle"):
+            ht.handle = v
+        if hasattr(ht, "texture"):
+            ht.texture = v
+
+    def _ensure_host_texture_alive(self, ht, w: int | None = None, h: int | None = None):
         if ht is None:
             return None
         try:
-            old = int(getattr(ht, "handle", 0) or 0)
-        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            handle = int(getattr(ht, "handle", 0) or 0)
+            if handle == 0 and isinstance(ht, int) and not isinstance(ht, bool):
+                handle = int(ht)
+        except Exception:  # noqa: BLE001
+            return None
+        if handle <= 0:
             return ht
-        if old <= 0:
-            return ht
+        # State 1: ALIVE probe — single lookup via mesh_alive / texture_alive
+        try:
+            import renpy_host  # type: ignore
+
+            alive_fn = getattr(renpy_host, "mesh_alive", None)
+            if alive_fn is None:
+                alive_fn = getattr(renpy_host, "texture_alive", None)
+            if alive_fn is not None:
+                is_alive = bool(alive_fn(int(handle)))
+            else:
+                is_alive = True
+            if is_alive:
+                if hasattr(renpy_host, "touch_texture"):
+                    try:
+                        renpy_host.touch_texture(int(handle))
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                        pass
+                return ht
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            pass
+        # State 2: REMAPPED — single dict lookup, no chain walk
         remap = getattr(self, "_handle_remap", None)
         if remap is None:
             self._handle_remap = {}
             remap = self._handle_remap
-        seen = set()
-        cur = old
-        while cur in remap and cur not in seen:
-            seen.add(cur)
-            try:
-                cur = int(remap[cur])
-            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                break
-        if cur != old and cur > 0:
+        remapped = remap.get(handle)
+        if remapped is not None:
             try:
                 import renpy_host  # type: ignore
-                alive_mapped = True
-                if hasattr(renpy_host, "texture_alive"):
-                    alive_mapped = bool(renpy_host.texture_alive(int(cur)))
-                if alive_mapped:
-                    ht.handle = int(cur)
-                    ht.texture = int(cur)
+
+                alive_fn = getattr(renpy_host, "mesh_alive", None)
+                if alive_fn is None:
+                    alive_fn = getattr(renpy_host, "texture_alive", None)
+                if alive_fn is not None:
+                    is_alive = bool(alive_fn(int(remapped)))
+                else:
+                    is_alive = True
+                if is_alive:
+                    self._set_handle(ht, remapped)
                     return ht
             except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
-        try:
-            import renpy_host  # type: ignore
-            alive = True
-            if hasattr(renpy_host, "texture_alive"):
-                alive = bool(renpy_host.texture_alive(int(cur if cur > 0 else old)))
-            if alive:
-                if hasattr(renpy_host, "touch_texture"):
-                    try:
-                        renpy_host.touch_texture(int(ht.handle))
-                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                        pass
-                return ht
-            store = getattr(self, "_handle_pixels", None) or {}
-            ent = store.get(old) or store.get(cur)
-            if ent is None and remap:
-                for k, v in list(remap.items()):
-                    try:
-                        if int(v) in (old, cur) and k in store:
-                            ent = store.get(k)
-                            break
-                    except Exception:  # noqa: BLE001, S112 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                        continue
-            if ent is None:
-                ent = self._recover_pixels_for_dead_handle(old, cur, ht)
-            if ent is None:
-                if (
-                    os.environ.get("RENPY_HOST_UI_TRACE") == "1"
-                    and "dead_present" not in _UI_TRACE_LOGGED
-                ):
-                    _ui_trace_once(
-                        "dead_present",
-                        f"handle={old} alive=0 size=({getattr(ht, 'w', '?')},"
-                        f"{getattr(ht, 'h', '?')}) recover=no_pixels",
-                    )
-                return ht
-            sw, sh, pixels = ent
+        # State 3: DEAD_RECOVER — single _handle_pixels lookup + create_texture_rgba
+        store = getattr(self, "_handle_pixels", None) or {}
+        pix_ent = store.get(handle)
+        if pix_ent is not None:
             try:
-                new_h = int(renpy_host.create_texture_rgba(int(sw), int(sh), pixels))
+                import renpy_host  # type: ignore
+
+                if isinstance(pix_ent, (tuple, list)) and len(pix_ent) == 3:
+                    sw, sh, pixels = pix_ent
+                else:
+                    pixels = pix_ent
+                    sw = w if w is not None else int(getattr(ht, "w", 1) or 1)
+                    sh = h if h is not None else int(getattr(ht, "h", 1) or 1)
+                cw = int(w) if w is not None else int(sw)
+                ch = int(h) if h is not None else int(sh)
+                if cw <= 0 or ch <= 0:
+                    return None
+                new_h = int(renpy_host.create_texture_rgba(int(cw), int(ch), pixels))
+                if new_h <= 0:
+                    return None
+                remap[handle] = int(new_h)
+                self._set_handle(ht, new_h)
+                # keep capacity semantics via stash
+                if isinstance(pixels, (bytes, bytearray)):
+                    store[int(new_h)] = (int(cw), int(ch), bytes(pixels[: int(cw * ch * 4)]))
+                else:
+                    store[int(new_h)] = (int(cw), int(ch), pixels)
+                store.pop(handle, None)
+                return ht
             except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                if (
-                    os.environ.get("RENPY_HOST_UI_TRACE") == "1"
-                    and "dead_present" not in _UI_TRACE_LOGGED
-                ):
-                    _ui_trace_once(
-                        "dead_present",
-                        f"handle={old} alive=0 recover=create_fail "
-                        f"err={type(e).__name__}:{e}",
-                    )
-                return ht
-            if new_h <= 0:
-                return ht
-            remap[old] = int(new_h)
-            if cur != old:
-                remap[cur] = int(new_h)
-            store.pop(old, None)
-            store.pop(cur, None)
-            store[int(new_h)] = (int(sw), int(sh), pixels)
-            try:
-                for k, (fp, h, tw, th) in list(self.texture_cache.items()):
-                    try:
-                        if int(h) in (old, cur):
-                            self.texture_cache[k] = (fp, int(new_h), tw, th)
-                    except Exception:  # noqa: BLE001, S112 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                        continue
-            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                pass
-            try:
-                from renpy.display import im  # type: ignore
-                cache = getattr(im, "cache", None)
-                if cache is not None:
-                    try:
-                        _lock = getattr(cache, "lock", None)
-                        it = list(getattr(cache, "cache", {}).values())
-                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                        it = []
-                    for ce in it:
-                        tex = getattr(ce, "texture", None)
-                        if isinstance(tex, HostTexture):
-                            try:
-                                if int(getattr(tex, "handle", 0) or 0) in (old, cur):
-                                    tex.handle = int(new_h)
-                                    tex.texture = int(new_h)
-                            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                                pass
-                        elif isinstance(tex, int) and not isinstance(tex, bool):
-                            try:
-                                if int(tex) in (old, cur):
-                                    ce.texture = HostTexture(
-                                        int(new_h),
-                                        int(getattr(ht, "width", sw) or sw),
-                                        int(getattr(ht, "height", sh) or sh),
-                                    )
-                            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                                pass
-            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                pass
-            ht.handle = int(new_h)
-            ht.texture = int(new_h)
-            if hasattr(renpy_host, "touch_texture"):
-                try:
-                    renpy_host.touch_texture(int(new_h))
-                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                    pass
-            if (
-                os.environ.get("RENPY_HOST_UI_TRACE") == "1"
-                and "dead_present" not in _UI_TRACE_LOGGED
-            ):
-                _ui_trace_once(
-                    "dead_present",
-                    f"handle={old} alive=0 size=({getattr(ht, 'w', '?')},"
-                    f"{getattr(ht, 'h', '?')}) recover=ok new_handle={int(new_h)}",
-                )
-            return ht
-        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            if (
-                os.environ.get("RENPY_HOST_UI_TRACE") == "1"
-                and "dead_present" not in _UI_TRACE_LOGGED
-            ):
-                _ui_trace_once(
-                    "dead_present",
-                    f"texture_alive probe fail handle={old} err={type(e).__name__}:{e}",
-                )
-            return ht
+                self._log_once("dead_recover", e)
+                return None
+        return None
 
     def _recover_pixels_for_dead_handle(self, old, cur, ht):
-        try:
-            from renpy.display import im  # type: ignore
-        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            return None
-        cache = getattr(im, "cache", None)
-        if cache is None:
-            return None
-        entries = None
-        try:
-            lock = getattr(cache, "lock", None)
-            if lock is not None:
-                with lock:
-                    entries = list(getattr(cache, "cache", {}).values())
-            else:
-                entries = list(getattr(cache, "cache", {}).values())
-        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            try:
-                entries = list(getattr(cache, "cache", {}).values())
-            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                return None
-        want = set()
-        try:
-            want.add(int(old))
-            want.add(int(cur))
-        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            pass
-        for ce in entries:
-            try:
-                tex = getattr(ce, "texture", None)
-                th = None
-                if isinstance(tex, HostTexture):
-                    th = int(getattr(tex, "handle", 0) or 0)
-                elif isinstance(tex, int) and not isinstance(tex, bool):
-                    th = int(tex)
-                if th is None or th not in want:
-                    continue
-                surf = getattr(ce, "surf", None)
-                if surf is None:
-                    what = getattr(ce, "what", None)
-                    if what is not None and hasattr(what, "load"):
-                        try:
-                            surf = what.load()
-                        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                            surf = None
-                if surf is None:
-                    continue
-                try:
-                    sw, sh = surf.get_size()
-                    sw, sh = int(sw), int(sh)
-                except Exception:  # noqa: BLE001, S112 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                    continue
-                if sw <= 0 or sh <= 0:
-                    continue
-                try:
-                    bounds = getattr(ce, "bounds", None)
-                    if (
-                        bounds is not None
-                        and len(bounds) >= 4
-                        and tuple(bounds) != (0, 0, sw, sh)
-                        and hasattr(surf, "subsurface")
-                    ):
-                        sub = surf.subsurface(tuple(bounds[:4]))
-                        if sub is not None:
-                            surf = sub
-                            sw, sh = surf.get_size()
-                            sw, sh = int(sw), int(sh)
-                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                    pass
-                pixels = getattr(surf, "_pixels", None)
-                if pixels is None and hasattr(surf, "get_buffer"):
-                    try:
-                        pixels = bytes(surf.get_buffer())
-                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                        pixels = None
-                if not isinstance(pixels, (bytes, bytearray)):
-                    continue
-                need = sw * sh * 4
-                if len(pixels) < need:
-                    continue
-                return (sw, sh, bytes(pixels[:need]))
-            except Exception:  # noqa: BLE001, S112 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                continue
-        return None
+        # Legacy shim: im.cache full traversal deleted (slop). Single-lookup via _handle_pixels.
+        store = getattr(self, "_handle_pixels", None) or {}
+        ent = store.get(int(old))
+        if ent is None:
+            ent = store.get(int(cur))
+        return ent
 
     def load_texture(self, surf, transient=False, properties=None):
         try:

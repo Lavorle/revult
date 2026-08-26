@@ -220,6 +220,10 @@ def host_pipeline_key(name: str) -> str | None:
     if part.get("composition_only"):
         return None
     key = part.get("pipeline") or _PIPELINE_KEYS.get(name)
+    # Composition-only parts (geometry/alpha) are applied in the Python draw
+    # path, never a host pipeline factory — never return a key for them.
+    if key in _COMPOSITION_ONLY:
+        return None
     if key in (None, "geometry", "alpha", "ftl"):
         # Defensive: never return dead factory names.
         return _PIPELINE_KEYS.get(name)

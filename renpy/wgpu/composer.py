@@ -11,20 +11,24 @@ Fallback 抽至 composer_fallback.py，主文件保持清晰分层与异常分�
 
 from __future__ import annotations
 
+import hashlib
 import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from renpy.wgpu import shaders as _shaders
+from .shaders import (
+    _PIPELINE_KEYS,
+    _COMPOSITION_ONLY,
+    _UNIFORM_LAYOUT_NONE as _UNIFORM_NONE,
+    _UNIFORM_LAYOUT_PARAMS16 as _UNIFORM_PARAMS16,
+    _UNIFORM_LAYOUT_MATRIXCOLOR16 as _UNIFORM_MATRIXCOLOR16,
+)
 
 
 class ComposerError(Exception):
     """Raised when composition is illegal or host pipeline creation fails hard."""
 
-
-_UNIFORM_NONE = "none"
-_UNIFORM_PARAMS16 = "params16"
-_UNIFORM_MATRIXCOLOR16 = "matrixcolor16"
 
 _DEFAULT_TEXTURE = "renpy.texture"
 _DEFAULT_SOLID = "renpy.solid"
@@ -107,73 +111,22 @@ def _log_residual(msg: str) -> None:
 # Host delegation helpers — layered exception handling
 # ---------------------------------------------------------------------------
 
-def _try_host_compose_wgsl(
-    partnames: Iterable[str], has_texture: bool
-) -> tuple[list[str], int, str, bool, str, str]:
-    """Try renpy_host.compose_shader_wgsl, layered errors.
+def _try_host_inner(fn, *args):
+    """Call ``fn(*args)`` on ``renpy_host``; on any host error log a residual and
+    raise ``AttributeError`` (the uniform fallback signal used throughout this module).
 
-    Returns 6-tuple (effect_parts, tex_count, layout, has_uniforms, key, wgsl).
-    Raises ComposerError for validation failures (hard_fail),
-    ImportError/AttributeError for fallback signal,
-    other Exceptions are logged and re-raised as AttributeError for fallback.
+    ``ComposerError`` / ``ValueError`` / ``RuntimeError`` from the host are collapsed
+    to ``AttributeError`` so callers fall through to the offline composer path; the
+    offline path raises ``ComposerError`` itself when composition is genuinely illegal.
     """
     try:
-        import renpy_host  # type: ignore
-    except ImportError as e:  # noqa: TRY203 -- explicit re-raise preserves fallback signal; handler not useless
-        raise e  # noqa: TRY201 -- `raise e` preserves original ImportError type for fallback branching
-    fn = getattr(renpy_host, "compose_shader_wgsl", None)
-    if fn is None:
-        raise AttributeError("renpy_host.compose_shader_wgsl missing")
-    try:
-        result = fn(list(partnames), bool(has_texture))
-    except ComposerError:
-        raise
-    except (ValueError, RuntimeError) as e:
-        raise ComposerError(str(e)) from e
-    except Exception as e:
-        _log_residual(f"compose_shader_wgsl residual: {e}")
-        raise AttributeError(f"host compose failed: {e}") from e
-    # normalize return
-    try:
-        eff_parts, tex_count, layout, has_uniforms, key, wgsl = result
-    except Exception as e:
-        _log_residual(f"host compose return shape invalid: {e}")
-        raise AttributeError(f"host compose bad shape: {e}") from e
-    return list(eff_parts), int(tex_count), str(layout), bool(has_uniforms), str(key), str(wgsl)
-
-
-def _try_host_get_or_compile(
-    partnames: Iterable[str], has_texture: bool
-) -> tuple[int, str, int, str, bool, str]:
-    """Try renpy_host.get_or_compile_pipeline_from_parts.
-
-    Returns 6-tuple (pipeline, key, tex_count, layout, has_uniforms, wgsl).
-    Same layered error contract as _try_host_compose_wgsl.
-    """
-    try:
-        import renpy_host  # type: ignore
-    except ImportError as e:  # noqa: TRY203 -- explicit re-raise preserves fallback signal; handler not useless
-        raise e  # noqa: TRY201 -- `raise e` preserves original ImportError type for fallback branching
-    fn = getattr(renpy_host, "get_or_compile_pipeline_from_parts", None)
-    if fn is None:
-        fn = getattr(renpy_host, "create_pipeline_from_parts", None)
-    if fn is None:
-        raise AttributeError("renpy_host.get_or_compile_pipeline_from_parts missing")
-    try:
-        result = fn(list(partnames), bool(has_texture))
-    except ComposerError:
-        raise
-    except (ValueError, RuntimeError) as e:
-        raise ComposerError(str(e)) from e
-    except Exception as e:
-        _log_residual(f"get_or_compile residual: {e}")
-        raise AttributeError(f"host get_or_compile failed: {e}") from e
-    try:
-        pipe, key, tex_count, layout, has_uniforms, wgsl = result
-    except Exception as e:
-        _log_residual(f"host get_or_compile return shape invalid: {e}")
-        raise AttributeError(f"host get_or_compile bad shape: {e}") from e
-    return int(pipe), str(key), int(tex_count), str(layout), bool(has_uniforms), str(wgsl)
+        return fn(*args)
+    except (ComposerError, ValueError, RuntimeError) as e:
+        _log_residual(f"host pipeline call residual: {e}")
+        raise AttributeError(str(e)) from e
+    except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
+        _log_residual(f"host pipeline call residual: {e}")
+        raise AttributeError(str(e)) from e
 
 
 def _create_host_pipeline(
@@ -199,6 +152,138 @@ def _create_host_pipeline(
 
 
 # ---------------------------------------------------------------------------
+# Offline WGSL emit (single source of truth; byte-equal to Rust emit_wgsl).
+# composer_fallback re-exports these for 1-version compat.
+# ---------------------------------------------------------------------------
+
+def _indent(body: str, spaces: int = 4) -> str:
+    pad = " " * spaces
+    lines = body.splitlines()
+    return "\n".join(pad + line if line.strip() else line for line in lines)
+
+
+def _uniform_binding(tex_count: int) -> int:
+    if tex_count <= 0:
+        return 0
+    if tex_count == 1:
+        return 2
+    if tex_count == 2:
+        return 4
+    return 4
+
+
+def _emit_wgsl_offline(
+    *,
+    tex_count: int,
+    uniform_layout_id: str,
+    vertex_hooks: Sequence[dict],
+    fragment_hooks: Sequence[dict],
+) -> str:
+    """Emit WGSL offline — byte-equal to ``renpy_host.emit_wgsl`` (no host needed)."""
+    has_uniforms = uniform_layout_id != _UNIFORM_NONE
+    chunks: list[str] = []
+
+    chunks.append(
+        """\
+// composed by renpy.wgpu.composer
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};"""
+    )
+
+    if uniform_layout_id == _UNIFORM_MATRIXCOLOR16:
+        chunks.append(
+            """\
+struct Params {
+    col0: vec4<f32>,
+    col1: vec4<f32>,
+    col2: vec4<f32>,
+    col3: vec4<f32>,
+};"""
+        )
+    elif uniform_layout_id == _UNIFORM_PARAMS16 or has_uniforms:
+        chunks.append(
+            """\
+struct Params {
+    data0: vec4<f32>,
+    data1: vec4<f32>,
+    data2: vec4<f32>,
+    data3: vec4<f32>,
+};"""
+        )
+
+    if tex_count >= 1:
+        chunks.append("@group(0) @binding(0) var t_color: texture_2d<f32>;")
+        chunks.append("@group(0) @binding(1) var s_color: sampler;")
+        if tex_count >= 2:
+            chunks.append("@group(0) @binding(2) var t_tex1: texture_2d<f32>;")
+        if tex_count >= 3:
+            chunks.append("@group(0) @binding(3) var t_tex2: texture_2d<f32>;")
+
+    if has_uniforms:
+        ub = _uniform_binding(tex_count)
+        chunks.append(f"@group(0) @binding({ub}) var<uniform> u: Params;")
+
+    vs_lines = [
+        "@vertex",
+        "fn vs_main(v: VsIn) -> VsOut {",
+        "    var o: VsOut;",
+        "    o.clip = vec4<f32>(v.pos, 0.0, 1.0);",
+        "    o.uv = v.uv;",
+        "    o.color = v.color;",
+    ]
+    for h in vertex_hooks:
+        body = (h.get("body") or "").strip()
+        if body:
+            vs_lines.append(_indent(body, 4))
+    vs_lines.append("    return o;")
+    vs_lines.append("}")
+    chunks.append("\n".join(vs_lines))
+
+    fs_lines = [
+        "@fragment",
+        "fn fs_main(v: VsOut) -> @location(0) vec4<f32> {",
+        "    var color: vec4<f32> = vec4<f32>(0.0);",
+    ]
+    for h in fragment_hooks:
+        body = (h.get("body") or "").strip()
+        if body:
+            fs_lines.append(_indent(body, 4))
+    fs_lines.extend(
+        [
+            "    let a = clamp(color.a, 0.0, 1.0);",
+            "    return vec4<f32>(color.rgb * a, a);",
+            "}",
+        ]
+    )
+    chunks.append("\n".join(fs_lines))
+
+    return "\n\n".join(chunks) + "\n"
+
+
+def _cache_key(sorted_names: Sequence[str]) -> str:
+    material = ",".join(sorted_names)
+    digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:16]
+    return f"composed:{digest}"
+
+
+def _normalize_partnames(partnames: Iterable[str]) -> list[str]:
+    names: set[str] = set()
+    for p in partnames:
+        if not p:
+            continue
+        names.add(p)
+    return sorted(names)
+
+
+# ---------------------------------------------------------------------------
 # Fallback shims (lazy import to avoid circular)
 # ---------------------------------------------------------------------------
 
@@ -217,23 +302,6 @@ def _fallback_compose_wgsl(
         raise ComposerError(str(e)) from e
 
 
-def _fallback_emit_wgsl(
-    *,
-    tex_count: int,
-    uniform_layout_id: str,
-    vertex_hooks: Sequence[dict],
-    fragment_hooks: Sequence[dict],
-) -> str:
-    from renpy.wgpu.composer_fallback import emit_wgsl as fb_emit
-
-    return fb_emit(
-        tex_count=tex_count,
-        uniform_layout_id=uniform_layout_id,
-        vertex_hooks=vertex_hooks,
-        fragment_hooks=fragment_hooks,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Public surface — SSOT
 # ---------------------------------------------------------------------------
@@ -245,9 +313,10 @@ def emit_wgsl(
     vertex_hooks: Sequence[dict],
     fragment_hooks: Sequence[dict],
 ) -> str:
-    """Emit WGSL — delegates to fallback offline impl (host emit is internal)."""
-    # Host has no direct PyO3 emit_wgsl export; use fallback which is byte-equal to Rust emit_wgsl.
-    # If host later exposes emit, try it first.
+    """Emit WGSL — delegates to offline impl (byte-equal to Rust emit_wgsl).
+
+    Host has no direct PyO3 emit_wgsl export; try it first if present.
+    """
     try:
         import renpy_host  # type: ignore
 
@@ -268,7 +337,7 @@ def emit_wgsl(
         raise
     except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
         _log_residual(f"emit_wgsl host path residual: {e}")
-    return _fallback_emit_wgsl(
+    return _emit_wgsl_offline(
         tex_count=tex_count,
         uniform_layout_id=uniform_layout_id,
         vertex_hooks=vertex_hooks,
@@ -283,8 +352,13 @@ def compose_wgsl(
 ) -> tuple[list[str], int, str, str]:
     """Normalize + merge + emit WGSL via Rust SSOT, fallback offline."""
     try:
-        eff_parts, tex_count, layout, _has_uniforms, _key, wgsl = _try_host_compose_wgsl(
-            partnames, has_texture
+        import renpy_host  # type: ignore
+
+        fn = getattr(renpy_host, "compose_shader_wgsl", None)
+        if fn is None:
+            raise AttributeError("renpy_host.compose_shader_wgsl missing")
+        eff_parts, tex_count, layout, _has_uniforms, _key, wgsl = _try_host_inner(
+            fn, list(partnames), bool(has_texture)
         )
         return list(eff_parts), int(tex_count), str(layout), str(wgsl)
     except ComposerError:
@@ -316,14 +390,28 @@ class WgslShaderCache:
         # ---- host fast path (no per-part sync loop) ----
         # Rust registry is kept in sync by shaders.py register_wgsl_shader at init time.
         try:
-            pipe_handle, h_key, h_tex_count, h_layout, h_has_uniforms, h_wgsl = _try_host_get_or_compile(
-                partnames, has_texture
+            import renpy_host  # type: ignore
+
+            get_fn = getattr(renpy_host, "get_or_compile_pipeline_from_parts", None)
+            if get_fn is None:
+                get_fn = getattr(renpy_host, "create_pipeline_from_parts", None)
+            if get_fn is None:
+                raise AttributeError("renpy_host.get_or_compile_pipeline_from_parts missing")
+            pipe_handle, h_key, h_tex_count, h_layout, h_has_uniforms, h_wgsl = _try_host_inner(
+                get_fn, list(partnames), bool(has_texture)
             )
-            # Need authoritative effect_parts for cache key — ask host compose
-            try:
-                eff_parts, _, _, _, _, _ = _try_host_compose_wgsl(partnames, has_texture)
-            except (ImportError, AttributeError):
-                # host compose unavailable but get_or_compile succeeded — derive via fallback normalize
+            # Need authoritative effect_parts for cache key — ask host compose.
+            compose_fn = getattr(renpy_host, "compose_shader_wgsl", None)
+            eff_parts = None
+            if compose_fn is not None:
+                try:
+                    eff_parts, _, _, _, _, _ = _try_host_inner(compose_fn, list(partnames), bool(has_texture))
+                except (ImportError, AttributeError):
+                    eff_parts = None
+                except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
+                    _log_residual(f"effect_parts derive residual: {e}")
+                    eff_parts = None
+            if eff_parts is None:
                 from renpy.wgpu.composer_fallback import (
                     _ensure_builtins,
                     _normalize_partnames,
@@ -331,21 +419,7 @@ class WgslShaderCache:
                 )
 
                 _ensure_builtins()
-                sorted_names = _normalize_partnames(partnames)
-                eff_parts = _resolve_effect_parts(sorted_names, has_texture=has_texture)
-            except ComposerError:
-                raise
-            except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
-                _log_residual(f"effect_parts derive residual: {e}")
-                from renpy.wgpu.composer_fallback import (
-                    _ensure_builtins,
-                    _normalize_partnames,
-                    _resolve_effect_parts,
-                )
-
-                _ensure_builtins()
-                sorted_names = _normalize_partnames(partnames)
-                eff_parts = _resolve_effect_parts(sorted_names, has_texture=has_texture)
+                eff_parts = _resolve_effect_parts(_normalize_partnames(partnames), has_texture=has_texture)
 
             cache_key_parts = tuple(eff_parts)
             hit = self._cache.get(cache_key_parts)
@@ -395,9 +469,7 @@ class WgslShaderCache:
         if hit is not None:
             return hit
 
-        from renpy.wgpu.composer_fallback import _cache_key as _fb_cache_key
-
-        key = _fb_cache_key(effect_parts)
+        key = _cache_key(effect_parts)
         has_uniforms = layout != _UNIFORM_NONE
 
         try:
@@ -507,8 +579,15 @@ def create_pipeline_from_parts(
     (pipeline_handle, key, tex_count, uniform_layout_id, has_uniforms, wgsl_source).
     """
     try:
-        pipe, key, tex_count, layout, has_uniforms, wgsl = _try_host_get_or_compile(
-            partnames, has_texture
+        import renpy_host  # type: ignore
+
+        get_fn = getattr(renpy_host, "get_or_compile_pipeline_from_parts", None)
+        if get_fn is None:
+            get_fn = getattr(renpy_host, "create_pipeline_from_parts", None)
+        if get_fn is None:
+            raise AttributeError("renpy_host.get_or_compile_pipeline_from_parts missing")
+        pipe, key, tex_count, layout, has_uniforms, wgsl = _try_host_inner(
+            get_fn, list(partnames), bool(has_texture)
         )
         return int(pipe), str(key), int(tex_count), str(layout), bool(has_uniforms), str(wgsl)
     except ComposerError:

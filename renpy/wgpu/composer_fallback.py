@@ -1,47 +1,47 @@
 """
-Offline fallback composer (host not compiled).
+Offline fallback composer (host not compiled) — DEPRECATED re-export shim.
 
-Mirrors Rust shader.rs logic for environments without renpy_host.
-Kept separate from composer.py to keep the SSOT host透传 path lean.
-Hash/layout/emit must stay byte-equal to host/renpy-host/src/shader.rs
-so that `cargo test` parity and offline lint both pass.
+This module is kept only for one release of backwards-compat
+(``from renpy.wgpu.composer_fallback import emit_wgsl`` still resolves). The
+offline WGSL emit + shared helpers are now the single-source-of-truth in
+``renpy.wgpu.composer``; this file re-exports them. New code should import
+from ``renpy.wgpu.composer`` directly.
+
+The offline ``compose_wgsl`` (merge/validate) logic remains here because it is
+the only consumer path when ``renpy_host`` is absent; it delegates emit to the
+composer's offline impl (byte-equal to host/renpy-host/src/shader.rs).
 """
 
 from __future__ import annotations
 
-import hashlib
-from collections.abc import Iterable, Sequence
+import warnings
+from .composer import (  # noqa: F401
+    _cache_key,
+    _DEFAULT_SOLID,  # type: ignore
+    _DEFAULT_TEXTURE,  # type: ignore
+    _normalize_partnames,
+    _uniform_binding,
+    emit_wgsl,
+)
 
 from renpy.wgpu import shaders as _shaders
+
+warnings.warn(
+    "renpy.wgpu.composer_fallback is deprecated; import emit_wgsl/_uniform_binding/"
+    "_cache_key/_normalize_partnames from renpy.wgpu.composer",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 _UNIFORM_NONE = "none"
 _UNIFORM_PARAMS16 = "params16"
 _UNIFORM_MATRIXCOLOR16 = "matrixcolor16"
 
-_DEFAULT_TEXTURE = "renpy.texture"
-_DEFAULT_SOLID = "renpy.solid"
+_FALLBACK_DEPRECATED = True
 
 
 class FallbackComposerError(Exception):
     """Offline validation error (translated to ComposerError by composer.py)."""
-
-
-def _uniform_binding(tex_count: int) -> int:
-    if tex_count <= 0:
-        return 0
-    if tex_count == 1:
-        return 2
-    if tex_count == 2:
-        return 3
-    return 4
-
-
-def _indent(body: str, spaces: int = 4) -> str:
-    pad = " " * spaces
-    lines = body.strip("\n").splitlines()
-    if not lines:
-        return ""
-    return "\n".join(pad + line if line.strip() else line for line in lines)
 
 
 def _ensure_builtins() -> None:
@@ -49,38 +49,14 @@ def _ensure_builtins() -> None:
         _shaders.register_builtin_core()
 
 
-def _normalize_partnames(partnames: Iterable[str]) -> list[str]:
-    names: set[str] = set()
-    for raw in partnames:
-        if raw is None:
-            continue
-        name = str(raw).strip()
-        if not name or name.startswith("-"):
-            if name.startswith("-") and len(name) > 1:
-                names.discard(name[1:])
-            continue
-        names.add(name)
-    return sorted(names)
-
-
-def _cache_key(sorted_names: Sequence[str]) -> str:
-    material = ",".join(sorted_names)
-    digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:16]
-    return f"composed:{digest}"
-
-
 def _strip_composition_only(sorted_names: Sequence[str]) -> list[str]:
     effect: list[str] = []
-    for name in sorted_names:
-        ir = _shaders.get_snippet_ir(name)
-        if ir is not None and ir.get("composition_only"):
+    for n in sorted_names:
+        if n in _shaders._COMPOSITION_ONLY:
             continue
-        part = _shaders.get_wgsl_part(name) or {}
-        if part.get("composition_only"):
-            continue
-        if ir is None and _shaders.composition_mode(name) is not None:
-            continue
-        effect.append(name)
+        effect.append(n)
+    if not effect:
+        effect = [_DEFAULT_TEXTURE]
     return effect
 
 
@@ -156,101 +132,6 @@ def _merge_hooks(pairs: Sequence[tuple[str, dict]], field_name: str) -> list[dic
     return hooks
 
 
-def emit_wgsl(
-    *,
-    tex_count: int,
-    uniform_layout_id: str,
-    vertex_hooks: Sequence[dict],
-    fragment_hooks: Sequence[dict],
-) -> str:
-    has_uniforms = uniform_layout_id != _UNIFORM_NONE
-    chunks: list[str] = []
-
-    chunks.append(
-        """\
-// composed by renpy.wgpu.composer
-struct VsIn {
-    @location(0) pos: vec2<f32>,
-    @location(1) uv: vec2<f32>,
-    @location(2) color: vec4<f32>,
-};
-struct VsOut {
-    @builtin(position) clip: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-    @location(1) color: vec4<f32>,
-};"""
-    )
-
-    if uniform_layout_id == _UNIFORM_MATRIXCOLOR16:
-        chunks.append(
-            """\
-struct Params {
-    col0: vec4<f32>,
-    col1: vec4<f32>,
-    col2: vec4<f32>,
-    col3: vec4<f32>,
-};"""
-        )
-    elif uniform_layout_id == _UNIFORM_PARAMS16 or has_uniforms:
-        chunks.append(
-            """\
-struct Params {
-    data0: vec4<f32>,
-    data1: vec4<f32>,
-    data2: vec4<f32>,
-    data3: vec4<f32>,
-};"""
-        )
-
-    if tex_count >= 1:
-        chunks.append("@group(0) @binding(0) var t_color: texture_2d<f32>;")
-        chunks.append("@group(0) @binding(1) var s_color: sampler;")
-        if tex_count >= 2:
-            chunks.append("@group(0) @binding(2) var t_tex1: texture_2d<f32>;")
-        if tex_count >= 3:
-            chunks.append("@group(0) @binding(3) var t_tex2: texture_2d<f32>;")
-
-    if has_uniforms:
-        ub = _uniform_binding(tex_count)
-        chunks.append(f"@group(0) @binding({ub}) var<uniform> u: Params;")
-
-    vs_lines = [
-        "@vertex",
-        "fn vs_main(v: VsIn) -> VsOut {",
-        "    var o: VsOut;",
-        "    o.clip = vec4<f32>(v.pos, 0.0, 1.0);",
-        "    o.uv = v.uv;",
-        "    o.color = v.color;",
-    ]
-    for h in vertex_hooks:
-        body = (h.get("body") or "").strip()
-        if body:
-            vs_lines.append(_indent(body, 4))
-    vs_lines.append("    return o;")
-    vs_lines.append("}")
-    chunks.append("\n".join(vs_lines))
-
-    fs_lines = [
-        "@fragment",
-        "fn fs_main(v: VsOut) -> @location(0) vec4<f32> {",
-        "    var color: vec4<f32> = vec4<f32>(0.0);",
-    ]
-    for h in fragment_hooks:
-        body = (h.get("body") or "").strip()
-        if body:
-            fs_lines.append(_indent(body, 4))
-    fs_lines.extend(
-        [
-            "    let a = clamp(color.a, 0.0, 1.0);",
-            "    return vec4<f32>(color.rgb * a, a);",
-            "}",
-        ]
-    )
-    chunks.append("\n".join(fs_lines))
-
-    return "\n\n".join(chunks) + "\n"
-
-
 def compose_wgsl(
     partnames: Iterable[str],
     *,
@@ -272,3 +153,13 @@ def compose_wgsl(
         fragment_hooks=f_hooks,
     )
     return list(effect_parts), tex_count, layout, wgsl
+
+
+__all__ = [
+    "FallbackComposerError",
+    "compose_wgsl",
+    "emit_wgsl",
+    "_cache_key",
+    "_normalize_partnames",
+    "_uniform_binding",
+]

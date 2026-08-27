@@ -1250,6 +1250,8 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(audio_queue_pcm_f32, &module)?)?;
     module.add_function(wrap_pyfunction!(audio_beep, &module)?)?;
     module.add_function(wrap_pyfunction!(audio_ring_len, &module)?)?;
+    module.add_function(wrap_pyfunction!(audio_probe, &module)?)?;
+    module.add_function(wrap_pyfunction!(audio_mixer_probe, &module)?)?;
     // Phase 6 video A/V clock
     module.add_function(wrap_pyfunction!(video_clock_start, &module)?)?;
     module.add_function(wrap_pyfunction!(video_clock_stop, &module)?)?;
@@ -2284,6 +2286,27 @@ fn audio_beep(freq_hz: f32, duration_ms: u32, amplitude: f32) {
 #[pyfunction]
 fn audio_ring_len() -> usize {
     with_host_state_mut(|st| st.audio.ring.len())
+}
+
+#[pyfunction]
+fn audio_probe(path: String) -> PyResult<String> {
+    let p = std::path::Path::new(&path);
+    match crate::audio_mixer::probe_symphonia(p) {
+        Ok(pr) => Ok(format!(
+            "codec={} rate={} ch={} frames={}",
+            pr.codec, pr.rate, pr.channels, pr.frames
+        )),
+        Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e)),
+    }
+}
+
+#[pyfunction]
+fn audio_mixer_probe() -> PyResult<String> {
+    let cfg = crate::audio_mixer::MixerConfig::from_env();
+    Ok(format!(
+        "channels={} rate={} buffer_ms={}",
+        cfg.channels, cfg.sample_rate, cfg.buffer_ms
+    ))
 }
 
 // --- Phase 6 video A/V clock FFI ---------------------------------------------

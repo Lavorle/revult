@@ -2,6 +2,7 @@
 mod app;
 mod arena;
 mod audio;
+mod audio_mixer;
 mod event_queue;
 mod gpu;
 mod input;

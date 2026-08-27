@@ -40,11 +40,23 @@ impl PcmRing {
 
     pub fn fill_output(&self, out: &mut [f32]) {
         let mut q = self.buf.lock().unwrap();
-        for s in out.iter_mut() {
-            *s = q.pop_front().unwrap_or(0.0);
-        }
-        // Increment sample clock by frames (not samples) — only atomic add, no alloc.
         let ch = GLOBAL_CHANNELS.load(Ordering::Relaxed).max(1) as usize;
+        // Multi-channel expansion: per-frame interleaved fill.
+        // ch==2 fast-path stays zero-change vs legacy sample-wise loop;
+        // ch==1 (mono) / ch==6 (5.1) share the same chunked path so 5.1
+        // preparation needs no extra allocation — underrun tails zero-fill.
+        if ch == 1 || ch == 2 || ch == 6 {
+            for frame in out.chunks_mut(ch) {
+                for s in frame.iter_mut() {
+                    *s = q.pop_front().unwrap_or(0.0);
+                }
+            }
+        } else {
+            // Unexpected ch (should not happen after MixerConfig clamp); fallback.
+            for s in out.iter_mut() {
+                *s = q.pop_front().unwrap_or(0.0);
+            }
+        }
         let frames = out.len() / ch.max(1);
         if frames > 0 {
             GLOBAL_SAMPLE_CLOCK.fetch_add(frames as u64, Ordering::Relaxed);
@@ -82,10 +94,28 @@ pub struct AudioEngine {
 
 impl AudioEngine {
     pub fn new() -> Self {
+        // MixerConfig is SSOT for initial channel/rate/buffer sizing (T5).
+        // Consumes RENPY_HOST_AUDIO_CHANNELS env via from_env() which logs
+        // AudioMixer — required for RUST_LOG=info verification greps.
+        let cfg = crate::audio_mixer::MixerConfig::from_env();
+        let cap_samples = (cfg.sample_rate as usize)
+            .checked_mul(cfg.channels as usize)
+            .and_then(|v| v.checked_mul(2))
+            .unwrap_or(48000 * 2 * 2)
+            .max(48000 * 2);
+        GLOBAL_CHANNELS.store(cfg.channels as u32, Ordering::Relaxed);
+        info!(
+            "[renpy-host] AudioMixer init channels={} rate={} buffer_ms={} cap_samples={} sample_clock={}",
+            cfg.channels,
+            cfg.sample_rate,
+            cfg.buffer_ms,
+            cap_samples,
+            GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed)
+        );
         Self {
-            ring: Arc::new(PcmRing::new(48000 * 2 * 2)),
-            sample_rate: AtomicU32::new(48000),
-            channels: AtomicU32::new(2),
+            ring: Arc::new(PcmRing::new(cap_samples)),
+            sample_rate: AtomicU32::new(cfg.sample_rate),
+            channels: AtomicU32::new(cfg.channels as u32),
             running: AtomicBool::new(false),
             volume: Arc::new(AtomicU32::new(1_000_000)),
             sample_clock: AtomicU64::new(0),

@@ -1,5 +1,6 @@
 pub mod arena;
 pub mod audio;
+pub mod audio_mixer;
 pub mod config;
 pub mod event_queue;
 pub mod gpu;

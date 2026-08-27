@@ -337,6 +337,23 @@ def write_pcm(channel, samples):
     """Host extension: push f32 interleaved PCM to cpal ring."""
     renpy_host.audio_queue_pcm_f32(list(samples))
 
+def audio_probe(path):
+    """Probe audio file via host symphonia stub (V1 ext-only).
+
+    Returns probe string like ``codec=webm rate=48000 ch=2 frames=0`` when
+    ``renpy_host.audio_probe`` is available, otherwise ``None``.
+    Guarded with try/except so SDL-tree / headless CI without host stays green.
+    """
+    try:
+        import renpy_host  # type: ignore
+
+        if hasattr(renpy_host, "audio_probe"):
+            return renpy_host.audio_probe(str(path))
+    except Exception:
+        pass
+    return None
+
+
 
 # --- Video channel surface (product Movie → get_movie_texture) ----------------
 

@@ -65,11 +65,11 @@ Builtin parts ported as WGSL-producing registrations (host pipelines in `GpuAren
 
 | Part | Host pipeline | Role |
 |------|---------------|------|
-| `renpy.geometry` | (compose) | clip transform |
+| `renpy.geometry` | (compose) | clip transform — `composition_only=True`, applied in Python vertex path, no separate WGSL pipeline |
 | `renpy.texture` | `textured_pipeline` | sample tex0 |
 | `renpy.solid` | `solid_pipeline` | flat color |
-| `renpy.ftl` | (compose) | premultiply / FTL |
-| `renpy.alpha` | (compose) | alpha modulate |
+| `renpy.ftl` | (compose) | premultiply / FTL — `composition_only=True`, merged as fragment hook, no separate pipeline |
+| `renpy.alpha` | (compose) | alpha modulate — `composition_only=True`, vertex color alpha fold, no separate pipeline |
 | `renpy.dissolve` / `renpy.imagedissolve` | `dissolve_pipeline` | dissolve |
 | `renpy.blur` | `blur_pipeline` | blur (`uniforms[0]=blur_log2`) |
 | `renpy.matrixcolor` | `matrixcolor_pipeline` | 4×4 color matrix |
@@ -79,6 +79,8 @@ Builtin parts ported as WGSL-producing registrations (host pipelines in `GpuAren
 | `live2d.inverted_mask` | `live2d_inverted_mask_pipeline` | inverted mask |
 | `live2d.colors` | `live2d_colors_pipeline` | multiply/screen |
 | `live2d.flip_texture` | `live2d_flip_pipeline` | V flip |
+
+`composition_only` (see `renpy/wgpu/shaders.py:_COMPOSITION_ONLY`) means the part has no host pipeline factory (`renpy_host.<factory>()`); it is applied in the Python draw walk (geometry/alpha) or as a composable WGSL hook (ftl) and is excluded from `WgslShaderCache` keying. `assert_pipeline_map_honest()` verifies every `_PIPELINE_KEYS` entry resolves to a real `renpy_host` factory or is in `_COMPOSITION_ONLY`.
 
 Host text (MVP): bitmap upload via `renpy.wgpu.text` (Pillow glyphs → `create_texture_rgba` →
 textured quad). Full `textshader.*` WGSL atlas compose is a later product step; GLSL textshader

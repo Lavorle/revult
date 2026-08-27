@@ -194,7 +194,9 @@ impl ShaderPartRegistry {
         reg
     }
     pub fn register_part(&mut self, part: ShaderPart) {
-        let _ = part.validate();
+        if let Err(e) = part.validate() {
+            log::warn!("shader part {} failed validation: {}", part.name, e);
+        }
         self.parts.insert(part.name.clone(), part);
     }
 

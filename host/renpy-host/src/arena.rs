@@ -1,6 +1,6 @@
 //! GpuArena: textures, meshes, pipelines + high-level draw_model (Phase 2/5).
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -8,6 +8,31 @@ use log::{info, warn};
 use wgpu::util::DeviceExt;
 
 use crate::gpu::{GpuState, SWAPCHAIN_FORMAT};
+
+pub const BG_CACHE_SOFT_CAP: usize = 4096;
+pub const RING_INIT: usize = 256;
+pub const MAX_RTTS_PER_SIZE: usize = 16;
+pub const QUERY_RESOLVE_SIZE: usize = 16;
+
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
+#[allow(dead_code)]
+pub struct TextureHandle(pub u64);
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
+#[allow(dead_code)]
+pub struct MeshHandle(pub u64);
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
+#[allow(dead_code)]
+pub struct PipelineHandle(pub u64);
+
+impl From<u64> for TextureHandle {
+    fn from(v: u64) -> Self { Self(v) }
+}
+impl From<u64> for MeshHandle {
+    fn from(v: u64) -> Self { Self(v) }
+}
+impl From<u64> for PipelineHandle {
+    fn from(v: u64) -> Self { Self(v) }
+}
 
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 
@@ -92,7 +117,7 @@ struct BgCacheKey {
     ubuf_slot: u32,
 }
 const UNIFORM_BYTES: u64 = 64; // 16 f32
-const UNIFORM_RING_INITIAL: usize = 256;
+const UNIFORM_RING_INITIAL: usize = RING_INIT;
 
 /// Generic LRU slot map: HashMap + insertion-order queue + capacity.
 /// Used for sample textures and meshes to deduplicate FIFO logic.
@@ -240,10 +265,10 @@ pub struct GpuArena {
     /// Sample textures created or touched since the last product present.
     /// Protects early prepare uploads (bg first in tree) from FIFO kill before
     /// draw_model queues them into frame_cmds. Cleared/replaced on present.
-    epoch_sample_textures: Vec<u64>,
+    epoch_sample_textures: HashSet<u64>,
     /// Meshes created or touched since the last product present (same role as
     /// epoch_sample_textures for geometry / mesh-cache thrash).
-    epoch_meshes: Vec<u64>,
+    epoch_meshes: HashSet<u64>,
     /// Free RTT handles keyed by (w, h).
     rtt_free: HashMap<(u32, u32), Vec<u64>>,
     /// Live RTT handles keyed by (w, h) (still may be referenced by Python).
@@ -314,13 +339,13 @@ impl GpuArena {
             last_frame_meshes: Vec::new(),
             last_frame_cmd_count: 0,
             last_product_cmds: Vec::new(),
-            epoch_sample_textures: Vec::new(),
-            epoch_meshes: Vec::new(),
+            epoch_sample_textures: HashSet::new(),
+            epoch_meshes: HashSet::new(),
             rtt_free: HashMap::new(),
             rtt_live: HashMap::new(),
             // Full-screen RTT thrash (mesh bake / dissolve) without recycle
             // OOMs the process; reuse oldest once this many live per size.
-            max_rtts_per_size: 16,
+            max_rtts_per_size: MAX_RTTS_PER_SIZE,
             color_format: SWAPCHAIN_FORMAT,
             game_rt_needs_clear: true,
             bg_cache: HashMap::new(),
@@ -359,7 +384,7 @@ impl GpuArena {
         if self.last_frame_sample_textures.iter().any(|&x| x == id) {
             return true;
         }
-        if self.epoch_sample_textures.iter().any(|&x| x == id) {
+        if self.epoch_sample_textures.contains(&id) {
             return true;
         }
         false
@@ -371,9 +396,7 @@ impl GpuArena {
         if id == 0 {
             return;
         }
-        if !self.epoch_sample_textures.iter().any(|&x| x == id) {
-            self.epoch_sample_textures.push(id);
-        }
+        self.epoch_sample_textures.insert(id);
     }
 
     fn evict_sample_textures_if_needed(&mut self) {
@@ -489,9 +512,7 @@ impl GpuArena {
         if id == 0 {
             return;
         }
-        if !self.epoch_meshes.iter().any(|&x| x == id) {
-            self.epoch_meshes.push(id);
-        }
+        self.epoch_meshes.insert(id);
     }
 
     /// True when `id` is still referenced by the open product frame_cmds, any
@@ -507,7 +528,7 @@ impl GpuArena {
                 return true;
             }
         }
-        if self.epoch_meshes.iter().any(|&x| x == id) {
+        if self.epoch_meshes.contains(&id) {
             return true;
         }
         if self.last_frame_meshes.iter().any(|&x| x == id) {
@@ -951,6 +972,43 @@ impl GpuArena {
             }
         }
     }
+    /// Blit the current game RT to the swapchain.
+    /// Merges three previous `copy_texture_to_texture` sites (product, present_last, re-present).
+    #[inline]
+    fn blit_game_rt_to_swapchain(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        gpu: &GpuState,
+        frame: &wgpu::SurfaceTexture,
+    ) {
+        let Some(game_tex) = self.game_rt.as_ref() else {
+            return;
+        };
+        let (rw, rh) = self.game_rt_size;
+        if rw == 0 || rh == 0 {
+            return;
+        }
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: game_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &frame.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: rw.max(1).min(gpu.config.width.max(1)),
+                height: rh.max(1).min(gpu.config.height.max(1)),
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
 
     /// Vertex layout: pos.xy, uv.xy, color.rgba  (8 f32 = 32 bytes)
     pub fn create_mesh(
@@ -1505,28 +1563,7 @@ impl GpuArena {
             self.encode_pass_into(gpu, &mut encoder, &view, &cmds, preserve)?;
             self.game_rt_needs_clear = false;
 
-            if let Some(game_tex) = self.game_rt.as_ref() {
-                let (rw, rh) = self.game_rt_size;
-                encoder.copy_texture_to_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: game_tex,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &frame.texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::Extent3d {
-                        width: rw.max(1).min(gpu.config.width.max(1)),
-                        height: rh.max(1).min(gpu.config.height.max(1)),
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
+            self.blit_game_rt_to_swapchain(&mut encoder, gpu, &frame);
             gpu.queue.submit(Some(encoder.finish()));
         } else {
             // Fallback: no game RT - encode directly to swapchain.
@@ -1539,29 +1576,31 @@ impl GpuArena {
         // Remember sample textures used by this product frame so the next
         // prepare walk cannot FIFO-kill them before draw_model re-touches
         // (dense dialog_config after image_config thrash residual).
+        let mut seen = HashSet::with_capacity(cmds.len().saturating_mul(3));
         let mut last = Vec::with_capacity(cmds.len().saturating_mul(2));
         for c in &cmds {
             if let Some(t) = c.texture {
-                if !last.contains(&t) {
+                if seen.insert(t) {
                     last.push(t);
                 }
             }
             if let Some(t) = c.texture1 {
-                if !last.contains(&t) {
+                if seen.insert(t) {
                     last.push(t);
                 }
             }
             if let Some(t) = c.texture2 {
-                if !last.contains(&t) {
+                if seen.insert(t) {
                     last.push(t);
                 }
             }
         }
         self.last_frame_sample_textures = last;
         // Also pin meshes used by this product present across the next prepare.
+        let mut seen_meshes = HashSet::with_capacity(cmds.len());
         let mut last_meshes = Vec::with_capacity(cmds.len());
         for c in &cmds {
-            if c.mesh != 0 && !last_meshes.contains(&c.mesh) {
+            if c.mesh != 0 && seen_meshes.insert(c.mesh) {
                 last_meshes.push(c.mesh);
             }
         }
@@ -1594,13 +1633,6 @@ impl GpuArena {
         let w = gpu.config.width.max(1);
         let h = gpu.config.height.max(1);
         self.ensure_game_rt(&gpu.device, w, h);
-        let Some(game_tex) = self.game_rt.as_ref() else {
-            return Ok(false);
-        };
-        let (rw, rh) = self.game_rt_size;
-        if rw == 0 || rh == 0 {
-            return Ok(false);
-        }
         let frame = gpu
             .surface
             .get_current_texture()
@@ -1610,25 +1642,7 @@ impl GpuArena {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("present-last-game-rt"),
             });
-        encoder.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: game_tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyTextureInfo {
-                texture: &frame.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width: rw.max(1).min(gpu.config.width.max(1)),
-                height: rh.max(1).min(gpu.config.height.max(1)),
-                depth_or_array_layers: 1,
-            },
-        );
+        self.blit_game_rt_to_swapchain(&mut encoder, gpu, &frame);
         gpu.queue.submit(Some(encoder.finish()));
         frame.present();
         Ok(true)
@@ -1679,28 +1693,7 @@ impl GpuArena {
             self.encode_pass_into(gpu, &mut encoder, &view, &cmds, preserve)?;
             self.game_rt_needs_clear = false;
 
-            if let Some(game_tex) = self.game_rt.as_ref() {
-                let (rw, rh) = self.game_rt_size;
-                encoder.copy_texture_to_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: game_tex,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &frame.texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::Extent3d {
-                        width: rw.max(1).min(gpu.config.width.max(1)),
-                        height: rh.max(1).min(gpu.config.height.max(1)),
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
+            self.blit_game_rt_to_swapchain(&mut encoder, gpu, &frame);
             gpu.queue.submit(Some(encoder.finish()));
         } else {
             let swap_view = frame
@@ -1858,7 +1851,6 @@ impl GpuArena {
 
         // Cap cache growth: dense thrash can create many unique (pipe,tex) pairs.
         // Keep a soft ceiling; overflow clears (safe: rebuild next draws).
-        const BG_CACHE_SOFT_CAP: usize = 4096;
         if self.bg_cache.len() > BG_CACHE_SOFT_CAP {
             self.bg_cache.clear();
         }
@@ -2032,11 +2024,13 @@ impl GpuArena {
             &gpu.query_readback_buffer,
         ) {
             encoder.resolve_query_set(qs, 0..2, resolve_buf, 0);
-            encoder.copy_buffer_to_buffer(resolve_buf, 0, readback_buf, 0, 16);
+            encoder.copy_buffer_to_buffer(resolve_buf, 0, readback_buf, 0, QUERY_RESOLVE_SIZE as u64);
         }
         Ok(())
     }
 }
+
+
 
 fn build_bind_group_layout(
     device: &wgpu::Device,

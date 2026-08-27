@@ -243,13 +243,13 @@ impl GpuState {
                 });
                 let resolve_buf = device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("timestamp-resolve"),
-                    size: 16,
+                    size: crate::arena::QUERY_RESOLVE_SIZE as u64,
                     usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
                     mapped_at_creation: false,
                 });
                 let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("timestamp-readback"),
-                    size: 16,
+                    size: crate::arena::QUERY_RESOLVE_SIZE as u64,
                     usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
@@ -353,7 +353,7 @@ impl GpuState {
             &self.query_readback_buffer,
         ) {
             encoder.resolve_query_set(qs, 0..2, resolve_buf, 0);
-            encoder.copy_buffer_to_buffer(resolve_buf, 0, readback_buf, 0, 16);
+            encoder.copy_buffer_to_buffer(resolve_buf, 0, readback_buf, 0, crate::arena::QUERY_RESOLVE_SIZE as u64);
         }
         self.queue.submit(Some(encoder.finish()));
         // Read back GPU timestamps if supported

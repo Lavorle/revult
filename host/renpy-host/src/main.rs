@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! renpy-host entry — winit outermost, Python pumped (plan §4.1.1).
 mod app;
 mod atlas;
@@ -22,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use log::{error, info};
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 use winit::window::{Window, WindowId};
@@ -606,6 +607,15 @@ impl ApplicationHandler for ProductApp {
             }
             _ => {}
         }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        crate::input::handle_device_event(&event);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {

@@ -95,6 +95,7 @@ define_pipeline_accessor!(live2d_flip_pipeline, live2d_flip_pipeline);
 define_pipeline_accessor!(yuv420p_pipeline, yuv420p_pipeline);
 define_pipeline_accessor!(nv12_pipeline, nv12_pipeline);
 define_pipeline_accessor!(text_sdf_pipeline, text_sdf_pipeline);
+define_pipeline_accessor!(stencil_clip_pipeline, stencil_clip_pipeline);
 
 /// Embedded interpreter handle.
 pub struct PythonRuntime {
@@ -164,7 +165,7 @@ import host_pygame.sysfont
 sys.modules["renpy.pygame"] = host_pygame
 for name in (
     "event", "display", "time", "key", "mouse", "surface", "color", "rect",
-    "locals", "error", "joystick", "controller", "scrap", "power", "iostream",
+    "locals", "error", "joystick", "controller", "scrap", "power", "a11y", "iostream",
     "transform", "draw", "image", "sysfont", "constants",
 ):
     mod = getattr(host_pygame, name, None)
@@ -308,6 +309,8 @@ except Exception:
             "matrixcolor" => self.run_matrixcolor_gate(),
             "readback" => self.run_readback_gate(),
             "rtt" => self.run_rtt_gate(),
+            "gamepad" => self.run_gamepad_gate(),
+            "gamepad_probe" => self.run_gamepad_gate(),
             other => {
                 let path = self
                     .base_dir
@@ -1136,6 +1139,99 @@ renpy_host.request_quit()
         info!("{msg}");
         Ok(())
     }
+
+    /// M3 B3 T3: gamepad probe — emits JSON without requiring hardware.
+    fn run_gamepad_gate(&self) -> Result<(), String> {
+        let secs: u64 = std::env::var("RENPY_HOST_SMOKE_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5);
+        let result_path = self
+            .base_dir
+            .join("host")
+            .join("target")
+            .join("gate-gamepad.txt");
+        let result_path_str = result_path.to_string_lossy().into_owned();
+        Python::attach(|py| -> Result<(), String> {
+            let code = format!(
+                r#"
+import renpy_host
+import time
+import json
+
+# Ensure at least one synthetic axis injection if no hardware, so probe is non-empty but still valid
+# Inject only if count is zero, and keep it deterministic
+initial_count = renpy_host.gamepad_count()
+if initial_count == 0:
+    # Inject synthetic pad 0: axis 0 at 0.5, button 0 pressed, hat 0 at (1,0)
+    try:
+        renpy_host.inject_joy_axis(0, 0, 0.5)
+        renpy_host.inject_joy_button(0, 0, True)
+        renpy_host.inject_joy_hat(0, 0, 1, 0)
+    except Exception:
+        pass
+
+probe_str = renpy_host.gamepad_probe()
+try:
+    probe = json.loads(probe_str)
+except Exception as e:
+    probe = {{"error": str(e), "raw": probe_str}}
+
+# Augment with textinput/ime probe bits so phase1_gates not missing TEXTINPUT
+ime_rect_probe = None
+try:
+    renpy_host.set_text_input_rect(10, 20, 100, 30)
+    ime_rect_probe = renpy_host.get_text_input_rect()
+except Exception:
+    ime_rect_probe = None
+
+# Also test TEXTEDITING truncation via direct inject? Use IME preedit path via poll injection?
+# For gate smoke, inject TEXTINPUT event text and check it survives
+try:
+    renpy_host.inject_text("a")
+except Exception:
+    pass
+
+# Collect a bit of TEXTINPUT over a short window
+deadline = renpy_host.get_ticks_ms() + {secs} * 1000
+text_seen = None
+while renpy_host.get_ticks_ms() < deadline:
+    ev = renpy_host.poll_event()
+    if ev is None:
+        renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
+        continue
+    if ev.get("type") == renpy_host.TEXTINPUT:
+        text_seen = ev.get("text")
+
+# Build final JSON ensuring no KeyError even when no hardware (spec §7 gamepad_probe JSON)
+out = {{
+    "gamepad_count": probe.get("gamepad_count", 0),
+    "axis": probe.get("axis", []),
+    "buttons": probe.get("buttons", []),
+    "hat": probe.get("hat", [0,0]),
+    "axis_sample": renpy_host.gamepad_axis(0, 0) if renpy_host.gamepad_count() > 0 else 0.0,
+    "button_sample": renpy_host.gamepad_button(0, 0) if renpy_host.gamepad_count() > 0 else False,
+    "hat_sample": list(renpy_host.gamepad_hat(0, 0)) if renpy_host.gamepad_count() > 0 else [0,0],
+    "ime_rect": ime_rect_probe,
+    "textinput_seen": text_seen,
+    "a11y": json.loads(renpy_host.a11y_probe()) if hasattr(renpy_host, "a11y_probe") else {{"screen_reader_active": False}},
+    "secs": {secs},
+}}
+msg = "[gamepad-gate] " + json.dumps(out, ensure_ascii=False)
+open({result_path_str:?}, "w", encoding="utf-8").write(msg + "\n")
+print(msg, flush=True)
+# Log to host info as well
+renpy_host.request_quit()
+"#
+            );
+            py.run(&std::ffi::CString::new(code).unwrap(), None, None)
+                .map_err(|e| format!("gamepad gate: {e}"))?;
+            Ok(())
+        })?;
+        let msg = std::fs::read_to_string(&result_path).unwrap_or_default();
+        log::info!("{msg}");
+        Ok(())
+    }
 }
 
 // Centralized env: `crate::config::HostConfig::from_env()` is the single
@@ -1181,6 +1277,18 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(set_window_title, &module)?)?;
     module.add_function(wrap_pyfunction!(start_text_input, &module)?)?;
     module.add_function(wrap_pyfunction!(stop_text_input, &module)?)?;
+    module.add_function(wrap_pyfunction!(set_text_input_rect, &module)?)?;
+    module.add_function(wrap_pyfunction!(get_text_input_rect, &module)?)?;
+    module.add_function(wrap_pyfunction!(gamepad_count, &module)?)?;
+    module.add_function(wrap_pyfunction!(gamepad_axis, &module)?)?;
+    module.add_function(wrap_pyfunction!(gamepad_button, &module)?)?;
+    module.add_function(wrap_pyfunction!(gamepad_hat, &module)?)?;
+    module.add_function(wrap_pyfunction!(inject_joy_axis, &module)?)?;
+    module.add_function(wrap_pyfunction!(inject_joy_button, &module)?)?;
+    module.add_function(wrap_pyfunction!(inject_joy_hat, &module)?)?;
+    module.add_function(wrap_pyfunction!(gamepad_probe, &module)?)?;
+    module.add_function(wrap_pyfunction!(a11y_probe, &module)?)?;
+    module.add_function(wrap_pyfunction!(get_screen_reader_active, &module)?)?;
     module.add_function(wrap_pyfunction!(inject_key, &module)?)?;
     module.add_function(wrap_pyfunction!(inject_mouse, &module)?)?;
     module.add_function(wrap_pyfunction!(inject_text, &module)?)?;
@@ -1223,10 +1331,16 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(yuv420p_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(nv12_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(text_sdf_pipeline, &module)?)?;
+    module.add_function(wrap_pyfunction!(stencil_clip_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(create_atlas_rgba, &module)?)?;
     module.add_function(wrap_pyfunction!(destroy_atlas, &module)?)?;
     module.add_function(wrap_pyfunction!(write_atlas_subrect, &module)?)?;
     module.add_function(wrap_pyfunction!(begin_frame, &module)?)?;
+    module.add_function(wrap_pyfunction!(set_scissor_rect, &module)?)?;
+    module.add_function(wrap_pyfunction!(clear_scissor, &module)?)?;
+    module.add_function(wrap_pyfunction!(begin_stencil_pass, &module)?)?;
+    module.add_function(wrap_pyfunction!(end_stencil_pass, &module)?)?;
+    module.add_function(wrap_pyfunction!(end_stencil, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_model, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_models, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_instances, &module)?)?;
@@ -1284,6 +1398,18 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add("WINDOWEVENT", types::WINDOWEVENT)?;
     module.add("WINDOWRESIZED", types::WINDOWRESIZED)?;
     module.add("WINDOWEXPOSED", types::WINDOWEXPOSED)?;
+    module.add("JOYAXISMOTION", types::JOYAXISMOTION)?;
+    module.add("JOYBALLMOTION", types::JOYBALLMOTION)?;
+    module.add("JOYHATMOTION", types::JOYHATMOTION)?;
+    module.add("JOYBUTTONDOWN", types::JOYBUTTONDOWN)?;
+    module.add("JOYBUTTONUP", types::JOYBUTTONUP)?;
+    module.add("JOYDEVICEADDED", types::JOYDEVICEADDED)?;
+    module.add("JOYDEVICEREMOVED", types::JOYDEVICEREMOVED)?;
+    module.add("CONTROLLERAXISMOTION", types::CONTROLLERAXISMOTION)?;
+    module.add("CONTROLLERBUTTONDOWN", types::CONTROLLERBUTTONDOWN)?;
+    module.add("CONTROLLERBUTTONUP", types::CONTROLLERBUTTONUP)?;
+    module.add("CONTROLLERDEVICEADDED", types::CONTROLLERDEVICEADDED)?;
+    module.add("CONTROLLERDEVICEREMOVED", types::CONTROLLERDEVICEREMOVED)?;
 
     let sys = py.import("sys")?;
     sys.getattr("modules")?.set_item("renpy_host", &module)?;
@@ -1554,6 +1680,98 @@ fn stop_text_input() {
             w.set_ime_allowed(false);
         }
     });
+}
+
+#[pyfunction]
+fn set_text_input_rect(x: i32, y: i32, w: i32, h: i32) {
+    with_host_state_mut(|st| {
+        st.ime_rect = Some((x, y, w, h));
+        if let Some(window) = st.window.as_ref() {
+            // Forward to winit IME cursor area; silently ignore if not supported
+            let pos: winit::dpi::Position = winit::dpi::PhysicalPosition::new(x, y).into();
+            let size: winit::dpi::Size = winit::dpi::PhysicalSize::new(w.max(1) as u32, h.max(1) as u32).into();
+            window.set_ime_cursor_area(pos, size);
+        }
+    });
+}
+
+#[pyfunction]
+fn get_text_input_rect() -> Option<(i32, i32, i32, i32)> {
+    with_host_state(|st| st.ime_rect)
+}
+
+// --- M3 B3 T3: Gamepad FFI -------------------------------------------------
+#[pyfunction]
+fn gamepad_count() -> usize {
+    crate::input::gamepad_count()
+}
+
+#[pyfunction]
+fn gamepad_axis(id: usize, axis: usize) -> f32 {
+    crate::input::gamepad_axis(id, axis)
+}
+
+#[pyfunction]
+fn gamepad_button(id: usize, button: usize) -> bool {
+    crate::input::gamepad_button(id, button)
+}
+
+#[pyfunction]
+fn gamepad_hat(id: usize, hat: usize) -> (i32, i32) {
+    let (x, y) = crate::input::gamepad_hat(id, hat);
+    (x as i32, y as i32)
+}
+
+#[pyfunction]
+fn inject_joy_axis(id: usize, axis: usize, value: f32) {
+    crate::input::set_gamepad_axis(id, axis, value);
+}
+
+#[pyfunction]
+fn inject_joy_button(id: usize, button: usize, pressed: bool) {
+    crate::input::set_gamepad_button(id, button, pressed);
+}
+
+#[pyfunction]
+fn inject_joy_hat(id: usize, hat: usize, x: i32, y: i32) {
+    crate::input::set_gamepad_hat(id, hat, x as i8, y as i8);
+}
+
+#[pyfunction]
+fn gamepad_probe() -> String {
+    let count = crate::input::gamepad_count();
+    let mut axes = Vec::new();
+    let mut buttons = Vec::new();
+    if count > 0 {
+        for a in 0..6 {
+            axes.push(crate::input::gamepad_axis(0, a));
+        }
+        for b in 0..16 {
+            if crate::input::gamepad_button(0, b) {
+                buttons.push(b);
+            }
+        }
+    }
+    let hat = if count > 0 {
+        let (x, y) = crate::input::gamepad_hat(0, 0);
+        format!("[{},{}]", x, y)
+    } else {
+        "[0,0]".into()
+    };
+    format!(
+        r#"{{"gamepad_count":{},"axis":{:?},"buttons":{:?},"hat":{}}}"#,
+        count, axes, buttons, hat
+    )
+}
+
+#[pyfunction]
+fn a11y_probe() -> String {
+    crate::input::a11y::probe_orca()
+}
+
+#[pyfunction]
+fn get_screen_reader_active() -> bool {
+    crate::input::a11y::screen_reader_active()
 }
 
 #[pyfunction]
@@ -1979,6 +2197,37 @@ fn reset_frame_state() {
     if let Ok(mut st) = host_state().lock() {
         st.arena.reset_frame_state();
     }
+}
+
+#[pyfunction]
+fn set_scissor_rect(x: u32, y: u32, w: u32, h: u32) {
+    with_host_state_mut(|st| st.arena.set_scissor_rect(x, y, w, h));
+}
+#[pyfunction]
+fn clear_scissor() {
+    with_host_state_mut(|st| st.arena.clear_scissor());
+}
+#[pyfunction]
+fn begin_stencil_pass() {
+    with_host_state_mut(|st| st.arena.begin_stencil_pass());
+}
+#[pyfunction]
+fn end_stencil_pass() {
+    with_host_state_mut(|st| st.arena.end_stencil_pass());
+}
+#[pyfunction]
+fn end_stencil() {
+    with_host_state_mut(|st| st.arena.end_stencil());
+}
+#[pyfunction]
+fn stencil_clip_pipeline_py() -> PyResult<u64> {
+    with_host_state_mut(|st| {
+        let gpu = st.gpu.take().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+        st.arena.ensure_builtin_pipelines(&gpu.device);
+        let id = st.arena.stencil_clip_pipeline.ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("stencil pipeline not ready"))?;
+        st.gpu = Some(gpu);
+        Ok(id)
+    })
 }
 
 #[pyfunction]

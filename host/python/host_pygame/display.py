@@ -154,3 +154,44 @@ class Window:
 
     def __repr__(self):
         return f"Window(title={self.title!r}, size={self.size})"
+
+    # M3 B3 T3: IME cursor area pass-through (winit Window::set_ime_cursor_area)
+    def set_ime_cursor_area(self, x: int, y: int, w: int, h: int) -> None:
+        try:
+            from . import key as _key
+            _key.set_text_input_rect(int(x), int(y), int(w), int(h))
+        except Exception:
+            pass
+        # Also forward directly to host if key shim unavailable
+        try:
+            renpy_host.set_text_input_rect(int(x), int(y), int(w), int(h))
+        except Exception:
+            pass
+
+    # Alias for SDL3 pygame naming
+    def set_ime_rect(self, rect) -> None:
+        try:
+            if rect is None:
+                return
+            if isinstance(rect, (tuple, list)) and len(rect) >= 4:
+                self.set_ime_cursor_area(int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3]))
+            elif hasattr(rect, "x"):
+                self.set_ime_cursor_area(int(rect.x), int(rect.y), int(rect.w), int(rect.h))
+        except Exception:
+            pass
+
+
+def set_ime_cursor_area(x: int, y: int, w: int, h: int) -> None:
+    """Top-level helper for code that does not hold a Window handle."""
+    try:
+        from . import key as _key
+        _key.set_text_input_rect(int(x), int(y), int(w), int(h))
+    except Exception:
+        pass
+    try:
+        renpy_host.set_text_input_rect(int(x), int(y), int(w), int(h))
+    except Exception:
+        pass
+
+# Back-compat alias for older gates
+set_text_input_rect = set_ime_cursor_area

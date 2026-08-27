@@ -41,14 +41,51 @@ def stop_text_input():
     renpy_host.stop_text_input()
 
 
-def set_text_input_rect(x, y, w, h):
-    """Store IME candidate rect; forward to host when available."""
+def set_text_input_rect(x, y=None, w=None, h=None):
+    """Store IME candidate rect; forward to host when available.
+
+    Accepts either ``set_text_input_rect(x,y,w,h)`` or
+    ``set_text_input_rect(rect)`` where rect is (x,y,w,h) or has .x/.y/.w/.h,
+    plus ``None`` to clear (mirrors SDL3 pygame API).
+    """
     global _ime_rect
-    _ime_rect = (int(x), int(y), int(w), int(h))
+    # Normalize flexible args
+    if y is None and w is None and h is None:
+        # Single-arg form: rect or None
+        if x is None:
+            _ime_rect = None
+            return None
+        rect = x
+        try:
+            if isinstance(rect, (tuple, list)):
+                if len(rect) >= 4:
+                    x, y, w, h = rect[0], rect[1], rect[2], rect[3]
+                else:
+                    return None
+            elif hasattr(rect, "x"):
+                x, y, w, h = rect.x, rect.y, rect.w, rect.h
+            else:
+                return None
+        except Exception:
+            return None
+    if x is None or y is None or w is None or h is None:
+        _ime_rect = None
+        return None
     try:
-        renpy_host.set_text_input_rect(int(x), int(y), int(w), int(h))
+        xi, yi, wi, hi = int(x), int(y), int(w), int(h)
+    except Exception:
+        return None
+    _ime_rect = (xi, yi, wi, hi)
+    try:
+        renpy_host.set_text_input_rect(xi, yi, wi, hi)
     except Exception:
         pass
+    return None
+
+
+def get_text_input_rect():
+    """Return last IME rect or None."""
+    return _ime_rect
 
 
 def has_screen_keyboard_support():

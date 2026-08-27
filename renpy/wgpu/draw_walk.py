@@ -43,6 +43,7 @@ class WalkCtx:
     oy: float
     budget: int = 120
     clip_rect: object = None
+    clip_poly: object = None  # Optional[list[tuple[float,float]]] — polygon clip when reverse non-identity; mutual exclusion with clip_rect (poly is not None => poly preferred)
 
 
 class CachedModelPolicy:
@@ -84,7 +85,6 @@ class DissolveStrategy:
                 return total
         return total
 
-
 class ReverseScaler:
     @staticmethod
     def apply(node, w, h, reverse) -> tuple:
@@ -100,6 +100,106 @@ class ReverseScaler:
             return (w, h)
         except:
             return (w, h)
+
+    @staticmethod
+    def inverse_matrix(reverse):
+        """Return forward (inverse) matrix for a reverse Matrix, or None if identity/unsupported.
+
+        Reused by draw_surftree._transform_quad to avoid duplicating inversion logic.
+        """
+        if reverse is None:
+            return None
+        # Matrix-like with .inverse() (renpy.display.matrix.Matrix)
+        try:
+            inv = getattr(reverse, "inverse", None)
+            if callable(inv):
+                try:
+                    fwd = inv()
+                    return fwd
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Fallback: manual 2D affine inverse for Matrix2D-like (xdx, xdy, ydx, ydy, xdw, ydw)
+        try:
+            a = float(getattr(reverse, "xdx", 1.0))
+            b = float(getattr(reverse, "xdy", 0.0))
+            c = float(getattr(reverse, "ydx", 0.0))
+            d = float(getattr(reverse, "ydy", 1.0))
+            tx = float(getattr(reverse, "xdw", 0.0) or 0.0)
+            ty = float(getattr(reverse, "ydw", 0.0) or 0.0)
+            det = a * d - b * c
+            if abs(det) < 1e-9:
+                return None
+            inv_det = 1.0 / det
+            # Inverse linear part
+            ia = d * inv_det
+            ib = -b * inv_det
+            ic = -c * inv_det
+            id = a * inv_det
+            # Inverse translation: -I * t
+            itx = -(ia * tx + ib * ty)
+            ity = -(ic * tx + id * ty)
+            # Build light object with transform method
+            class _Inv:
+                def __init__(self, ia, ib, ic, id, itx, ity):
+                    self.xdx = ia
+                    self.xdy = ib
+                    self.ydx = ic
+                    self.ydy = id
+                    self.xdw = itx
+                    self.ydw = ity
+                def transform(self, x, y):
+                    return (self.xdx * float(x) + self.xdy * float(y) + self.xdw,
+                            self.ydx * float(x) + self.ydy * float(y) + self.ydw)
+            return _Inv(ia, ib, ic, id, itx, ity)
+        except Exception:
+            return None
+
+    @staticmethod
+    def is_identity(reverse, eps: float = 1e-6) -> bool:
+        """Tolerance-based identity check shared with draw_surftree._is_identity."""
+        if reverse is None:
+            return True
+        try:
+            # Handle tuple/list simple representation
+            if isinstance(reverse, (list, tuple)):
+                if len(reverse) == 4:
+                    a, b, c, d = [float(v) for v in reverse[:4]]
+                    return abs(a - 1.0) < eps and abs(d - 1.0) < eps and abs(b) < eps and abs(c) < eps
+                if len(reverse) == 16:
+                    # 4x4 matrix list
+                    vals = [float(v) for v in reverse]
+                    # check diagonal 1, off-diagonal 0 (except zdz/wdw)
+                    for i, v in enumerate(vals):
+                        expected = 1.0 if i in (0, 5, 10, 15) else 0.0
+                        if abs(v - expected) >= eps:
+                            return False
+                    return True
+                return False
+            a = float(getattr(reverse, "xdx", 1.0) or 1.0)
+            b = float(getattr(reverse, "xdy", 0.0) or 0.0)
+            c = float(getattr(reverse, "ydx", 0.0) or 0.0)
+            d = float(getattr(reverse, "ydy", 1.0) or 1.0)
+            tx = float(getattr(reverse, "xdw", 0.0) or 0.0)
+            ty = float(getattr(reverse, "ydw", 0.0) or 0.0)
+            # Check extra fields for 3D matrices: zd* / wd* should be identity
+            for attr, exp in (("xdz", 0.0), ("ydz", 0.0), ("zdx", 0.0), ("zdy", 0.0), ("zdz", 1.0),
+                              ("xdw", 0.0), ("ydw", 0.0), ("zdw", 0.0), ("wdx", 0.0), ("wdy", 0.0), ("wdz", 0.0), ("wdw", 1.0)):
+                try:
+                    v = float(getattr(reverse, attr, exp) if getattr(reverse, attr, None) is not None else exp)
+                except Exception:
+                    v = exp
+                if abs(v - exp) >= eps:
+                    # For 2D checks, only xdx/ydy/xdy/ydx/xdw/ydw matter; but be strict
+                    if attr in ("xdx", "xdy", "ydx", "ydy", "xdw", "ydw", "wdw"):
+                        return False
+                    # ignore z-related for 2D
+                    if attr in ("xdx", "xdy", "ydx", "ydy", "xdw", "ydw"):
+                        return False
+            return abs(a - 1.0) < eps and abs(d - 1.0) < eps and abs(b) < eps and abs(c) < eps and abs(tx) < eps and abs(ty) < eps
+        except Exception:
+            return False
 
 def _safe_clear_cached(node) -> None:
     try:
@@ -118,6 +218,7 @@ def _safe_assign_origin(leaf, node) -> None:
 class WalkMixin:
     virtual_size: tuple[int, int]  # type: ignore
     _clip_rect: object  # type: ignore
+    _clip_poly: object  # type: ignore  # polygon path when reverse non-identity
     _mesh_cache: dict  # type: ignore
     _mesh_cache_cap: int  # type: ignore
     _mesh_deferred_destroy: list[int]  # type: ignore
@@ -268,7 +369,7 @@ class WalkMixin:
     def _draw_node_inner_body(self, node, ox=0.0, oy=0.0, ctx: WalkCtx | None = None):
         # T5: WalkCtx explicit — callers should pass ctx; ox/oy kept for compat 1 version.
         if ctx is None:
-            ctx = WalkCtx(ox=float(ox), oy=float(oy), budget=120, clip_rect=getattr(self, "_clip_rect", None))
+            ctx = WalkCtx(ox=float(ox), oy=float(oy), budget=120, clip_rect=getattr(self, "_clip_rect", None), clip_poly=getattr(self, "_clip_poly", None))
         if isinstance(node, int) and not isinstance(node, bool):
             if node > 0:
                 class _TexLeaf:

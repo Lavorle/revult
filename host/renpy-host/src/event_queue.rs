@@ -80,6 +80,7 @@ pub static EVENT_QUEUE: EventQueue = EventQueue::new();
 
 // --- Well-known event type ids (must match renpy.pygame.locals / host shims) ---
 // pygame SDL event numbers used by Ren'Py; host shims register the same integers.
+#[allow(dead_code)]
 pub mod types {
     pub const NOEVENT: u32 = 0;
     pub const QUIT: u32 = 256;
@@ -98,6 +99,27 @@ pub mod types {
     pub const WINDOWRESIZED: u32 = 0x206;
     /// SDL3 WINDOWEXPOSED = 0x204 (SWDraw full_redraw path).
     pub const WINDOWEXPOSED: u32 = 0x204;
+    // Joystick / Gamepad (SDL3 values, must match host_pygame/locals.py)
+    pub const JOYAXISMOTION: u32 = 0x600;
+    pub const JOYBALLMOTION: u32 = 0x601;
+    pub const JOYHATMOTION: u32 = 0x602;
+    pub const JOYBUTTONDOWN: u32 = 0x603;
+    pub const JOYBUTTONUP: u32 = 0x604;
+    pub const JOYDEVICEADDED: u32 = 0x605;
+    pub const JOYDEVICEREMOVED: u32 = 0x606;
+    pub const JOYSTICKBATTERYUPDATED: u32 = 0x608;
+    pub const JOYSTICKUPDATECOMPLETE: u32 = 0x609;
+    pub const CONTROLLERAXISMOTION: u32 = 0x650;
+    pub const CONTROLLERBUTTONDOWN: u32 = 0x651;
+    pub const CONTROLLERBUTTONUP: u32 = 0x652;
+    pub const CONTROLLERDEVICEADDED: u32 = 0x653;
+    pub const CONTROLLERDEVICEREMOVED: u32 = 0x654;
+    pub const GAMEPADTOUCHPADDOWN: u32 = 0x656;
+    pub const GAMEPADTOUCHPADMOTION: u32 = 0x657;
+    pub const GAMEPADTOUCHPADUP: u32 = 0x658;
+    pub const GAMEPADSENSORUPDATE: u32 = 0x659;
+    pub const GAMEPADUPDATECOMPLETE: u32 = 0x65A;
+    pub const GAMEPADSTEAMHANDLEUPDATED: u32 = 0x65B;
     // Custom Ren'Py types start after user events; host registers via Python.
     // Placeholders filled at runtime once Python registers names.
 }

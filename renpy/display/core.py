@@ -3507,6 +3507,19 @@ class Interface:
 
                 # Ignore KEY-events while text is being edited (usually with an IME).
                 if ev.type == pygame.TEXTEDITING:
+                    # host_build: composition length guard (M3 B3 T3) — clamp to 64 chars
+                    # so Wayland long preedit does not overflow core.text_editing.
+                    if getattr(renpy, "host_build", False):
+                        try:
+                            t = getattr(ev, "text", "")
+                            if isinstance(t, str) and len(t) > 64:
+                                ev.text = t[:64]
+                                try:
+                                    ev.length = len(ev.text)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                     if ev.text:
                         self.text_editing = ev
                     else:
@@ -3662,10 +3675,30 @@ class Interface:
                 if ev.type in input_events:
                     self.input_event_time = self.event_time
 
-                # This can set the event to None, to ignore it.
-                ev = renpy.display.controller.event(ev)
-                if not ev:
-                    continue
+                # M3 B3 T3: host_build JOY免过滤 — keep JOY/CONTROLLER events even
+                # when controller.py would drop them via pass_joystick_events=False.
+                # The host event queue already normalised winit evdev → SDL types.
+                _joy_types = (
+                    pygame.JOYAXISMOTION,
+                    pygame.JOYHATMOTION,
+                    pygame.JOYBALLMOTION,
+                    pygame.JOYBUTTONDOWN,
+                    pygame.JOYBUTTONUP,
+                    pygame.JOYDEVICEADDED,
+                    pygame.JOYDEVICEREMOVED,
+                    pygame.CONTROLLERAXISMOTION,
+                    pygame.CONTROLLERBUTTONDOWN,
+                    pygame.CONTROLLERBUTTONUP,
+                    pygame.CONTROLLERDEVICEADDED,
+                    pygame.CONTROLLERDEVICEREMOVED,
+                )
+                if getattr(renpy, "host_build", False) and ev.type in _joy_types:
+                    pass
+                else:
+                    # This can set the event to None, to ignore it.
+                    ev = renpy.display.controller.event(ev)
+                    if not ev:
+                        continue
 
                 # Handle skipping.
                 renpy.display.behavior.skipping(ev)

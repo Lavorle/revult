@@ -29,6 +29,19 @@ pub fn timeout_until(deadline_ms: u64) -> Option<Duration> {
     }
 }
 
+/// M3 B3 T3: winit GamepadEvent bridge (Wayland/X11 compatible).
+///
+/// Wayland/X11 deliver axis motion via `WindowEvent::AxisMotion` and
+/// `DeviceEvent::Motion/Button`; this helper is kept for pump.rs contract
+/// parity (spec lists pump.rs as bridge owner) and forwards to
+/// `crate::input::handle_device_event` when called from the nested pump path.
+/// Preferred path is `winit GamepadEvent → input.rs GamepadState → event_queue`
+/// with gilrs/evdev fallback behind `features = ["gilrs"]` (deferred).
+#[allow(dead_code)]
+pub fn handle_gamepad_bridge(event: &winit::event::DeviceEvent) {
+    crate::input::handle_device_event(event);
+}
+
 /// Placeholder for GIL-released OS wait accounting (Phase 1 metrics).
 pub fn log_wait(deadline_ms: u64, waited: Duration) {
     debug!(

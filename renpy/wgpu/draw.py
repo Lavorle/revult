@@ -350,12 +350,11 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                 self._instance_group = None
         except Exception:
             self._instance_group = None
-        # GL2-parity axis-aligned clip stack (virtual-pixel absolute coords).
+        # GL2-parity clip stack (virtual-pixel absolute coords).
         # None = no clip. Pushed when Render.xclipping/yclipping is set; intersected
-        # with parent; empty intersect skips the subtree. Mesh crop (not GPU scissor).
-        # v1: axis-aligned only — reverse-transformed clips are residual (see
-        # _clip_push_from_node docstring).
+        # with parent; empty intersect skips the subtree. Mesh crop (GPU scissor fast path, stencil polygon for rotated).
         self._clip_rect = None  # type: Optional[tuple[float, float, float, float]]
+        self._clip_poly = None  # type: Optional[list[tuple[float, float]]]  # polygon clip when reverse non-identity (mutual exclusion with _clip_rect)
     def _ensure_pipes(self):
         import renpy_host  # type: ignore
 

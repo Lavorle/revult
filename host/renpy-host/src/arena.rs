@@ -280,12 +280,16 @@ pub struct GpuArena {
     pub nv12_pipeline: Option<u64>,
     /// SDF text atlas pipeline (M3 B1 T1) — single tex + params16 (threshold, aa).
     pub text_sdf_pipeline: Option<u64>,
+    /// M3 B2 T2: stencil clip pipeline (depth_stencil Stencil front{compare:Always,fail_op:Replace} no color write, or mask_pipeline fallback)
+    pub stencil_clip_pipeline: Option<u64>,
+    /// Scissor rect for AABB fast path (set_scissor_rect), None = no scissor
+    pub scissor_rect: Option<(u32, u32, u32, u32)>,
+    pub stencil_active: bool,
     /// Dynamic glyph atlas (2048) — shelf packing + LRU, isolated from thrash caps.
     /// Held by arena; GPU texture lives in `textures` LruSlotMap, this owns packing.
     pub atlas: Option<crate::atlas::AtlasTexture>,
     pub clear_color: wgpu::Color,
     /// Mesh ids that would have been destroyed while still referenced by the
-    /// open product frame. Flushed after end_frame_present drains frame_cmds.
     mesh_deferred_destroy: Vec<u64>,
     /// Sample texture ids deferred while still referenced by open frame_cmds
     /// (or last-presented product cmds). Flushed after present drains pins.
@@ -383,6 +387,9 @@ impl GpuArena {
             yuv420p_pipeline: None,
             nv12_pipeline: None,
             text_sdf_pipeline: None,
+            stencil_clip_pipeline: None,
+            scissor_rect: None,
+            stencil_active: false,
             atlas: None,
             clear_color: wgpu::Color {
                 r: 0.05,
@@ -1900,8 +1907,14 @@ impl GpuArena {
                 .expect("text_sdf pipeline");
             self.text_sdf_pipeline = Some(id);
         }
+        if self.stencil_clip_pipeline.is_none() {
+            let id = self
+                .create_pipeline(device, "stencil_clip", CLIP_STENCIL_WGSL, 0, false)
+                .or_else(|_| self.create_pipeline(device, "stencil_clip", SOLID_WGSL, 0, false))
+                .expect("stencil_clip pipeline");
+            self.stencil_clip_pipeline = Some(id);
+        }
     }
-
     /// Public thin wrap around [`Self::create_pipeline`] for composed WGSL from Python.
     /// Rejects `tex_count > 3` (solid/1/2/3-tex layouts only). Reuses pipeline_by_key cache.
     pub fn create_pipeline_from_wgsl(
@@ -2134,6 +2147,26 @@ impl GpuArena {
         // the surftree across a recover between presents.
         self.flush_deferred_meshes();
         self.flush_deferred_textures();
+    }
+
+    // ── M3 B2 T2: scissor fast path + stencil clip helpers ───────────────────────
+    pub fn set_scissor_rect(&mut self, x: u32, y: u32, w: u32, h: u32) {
+        self.scissor_rect = Some((x, y, w, h));
+    }
+    pub fn clear_scissor(&mut self) {
+        self.scissor_rect = None;
+    }
+    pub fn begin_stencil_pass(&mut self) {
+        self.stencil_active = true;
+    }
+    pub fn end_stencil_pass(&mut self) {
+        self.stencil_active = false;
+    }
+    pub fn end_stencil(&mut self) {
+        self.stencil_active = false;
+    }
+    pub fn stencil_clip_pipeline_handle(&self) -> Option<u64> {
+        self.stencil_clip_pipeline
     }
 
     pub fn draw_model(
@@ -3386,6 +3419,30 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(c.rgb * ca, ca);
 }
 "#;
+/// M3 B2 T2: stencil clip pipeline WGSL (mask write, no color output via pipeline write_mask=0)
+const CLIP_STENCIL_WGSL: &str = r#"
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+@vertex
+fn vs_main(v: VsIn) -> VsOut {
+    var o: VsOut;
+    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
+    o.color = v.color;
+    return o;
+}
+@fragment
+fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+}
+"#;
+
 
 const YUV420P_WGSL: &str = r#"
 struct VsIn {

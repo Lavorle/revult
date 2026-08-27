@@ -121,6 +121,10 @@ pub struct HostState {
     /// Idle clears that ran while last_product_present was true (should stay 0
     /// when the present-ownership skip is working; used by capture-cycle gates).
     pub idle_clears_after_present: u64,
+    /// IME candidate rectangle (x,y,w,h) in window physical pixels.
+    /// Set by `renpy_host.set_text_input_rect`, consumed by winit
+    /// `Window::set_ime_cursor_area` on next frame.
+    pub ime_rect: Option<(i32, i32, i32, i32)>,
     /// Programmatic drawable size when the WM ignores `request_inner_size`
     /// (common on some Wayland compositors). `window_size()` returns this until a
     /// real live size change (maximize / user drag, or WM accepting the request).
@@ -161,6 +165,7 @@ impl HostState {
             last_product_present_at: None,
             inter_present_gaps_ms: Vec::new(),
             idle_clears_after_present: 0,
+            ime_rect: None,
             forced_drawable: None,
             forced_from_chrome: None,
         }

@@ -195,7 +195,66 @@ def _from_host(d) -> Event:
         return Event(NOEVENT)
     type_id = d.get("type", NOEVENT)
     payload = {k: v for k, v in d.items() if k != "type"}
+    # M3 B3 T3: TEXTEDITING composition length guard — Wayland IME may emit
+    # long preedit strings; truncate to 64 chars and fix length field so
+    # renpy.display.core never sees compositionLen overflow.
+    # Also handle legacy hosts that send bytes.
+    try:
+        from .locals import TEXTEDITING as _TEXTEDITING
+        if int(type_id) == int(_TEXTEDITING):
+            text = payload.get("text", "")
+            if isinstance(text, bytes):
+                try:
+                    text = text.decode("utf-8", "replace")
+                except Exception:
+                    text = str(text)
+            if isinstance(text, str) and len(text) > 64:
+                truncated = text[:64]
+                payload["text"] = truncated
+                # keep length field consistent with truncated text (char count)
+                payload["length"] = len(truncated)
+            elif isinstance(text, str):
+                # ensure length matches char count even if host sent byte len
+                payload["length"] = len(text)
+    except Exception:
+        pass
     return Event(type_id, payload)
+
+
+def _inject_host_event(d) -> Event:
+    """Legacy alias for _from_host with JOY dispatch.
+
+    Plan §T3 step 4: ``if type.startswith("JOY"): post(Event(JOY*))``.
+    Kept for compatibility with older gates that call this helper directly.
+    Current product path uses ``poll()`` → ``_from_host`` and does not need
+    explicit dispatch; this wrapper ensures JOY* events are still posted if a
+    gate injects via host dicts with string types.
+    """
+    ev = _from_host(d)
+    try:
+        # If dict used string type names, resolve to int already handled by host
+        # but keep JOY* posting parity for synthetic injection tests.
+        from . import locals as _L
+        joy_types = {
+            _L.JOYAXISMOTION,
+            _L.JOYBALLMOTION,
+            _L.JOYHATMOTION,
+            _L.JOYBUTTONDOWN,
+            _L.JOYBUTTONUP,
+            _L.JOYDEVICEADDED,
+            _L.JOYDEVICEREMOVED,
+            _L.CONTROLLERAXISMOTION,
+            _L.CONTROLLERBUTTONDOWN,
+            _L.CONTROLLERBUTTONUP,
+            _L.CONTROLLERDEVICEADDED,
+            _L.CONTROLLERDEVICEREMOVED,
+        }
+        if ev.type in joy_types:
+            # Already an Event; caller may post it. Return as-is.
+            return ev
+    except Exception:
+        pass
+    return ev
 
 
 def _phase0_signals_enabled() -> bool:

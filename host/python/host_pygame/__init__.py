@@ -12,6 +12,7 @@ from . import image as image
 from . import iostream as iostream
 from . import joystick as joystick
 from . import key as key
+from . import a11y as a11y
 
 # pygame.constants is an alias of locals in real renpy.pygame
 # (see renpy/pygame/__init__.py: locals as constants).
@@ -86,6 +87,7 @@ def import_as_pygame():
         "controller",
         "scrap",
         "power",
+        "a11y",
         "iostream",
         "transform",
         "draw",

@@ -38,6 +38,7 @@ class SurftreeMixin:
     # Expected attributes on the concrete WgpuDraw (type hints only)
     virtual_size: tuple[int, int]  # type: ignore
     _clip_rect: object  # type: ignore
+    _clip_poly: object  # type: ignore  # Optional[list[tuple[float,float]]] polygon when reverse non-identity
     _mesh_cache: dict  # type: ignore
     _mesh_cache_cap: int  # type: ignore
     _mesh_deferred_destroy: list[int]  # type: ignore
@@ -69,6 +70,136 @@ class SurftreeMixin:
             return None
         return (x0, y0, x1, y1)
 
+    def _is_identity(self, rev, eps: float = 1e-6) -> bool:
+        """Tolerance-based identity check (1e-6). Delegates to ReverseScaler for single source."""
+        try:
+            from .draw_walk import ReverseScaler
+            return ReverseScaler.is_identity(rev, eps=eps)
+        except Exception:
+            if rev is None:
+                return True
+            try:
+                a = float(getattr(rev, "xdx", 1.0) or 1.0)
+                b = float(getattr(rev, "xdy", 0.0) or 0.0)
+                c = float(getattr(rev, "ydx", 0.0) or 0.0)
+                d = float(getattr(rev, "ydy", 1.0) or 1.0)
+                tx = float(getattr(rev, "xdw", 0.0) or 0.0)
+                ty = float(getattr(rev, "ydw", 0.0) or 0.0)
+                return abs(a - 1.0) < eps and abs(d - 1.0) < eps and abs(b) < eps and abs(c) < eps and abs(tx) < eps and abs(ty) < eps
+            except Exception:
+                return False
+
+    def _transform_quad(self, quad: list[tuple[float, float]], rev, ox: float = 0.0, oy: float = 0.0) -> list[tuple[float, float]]:
+        """Transform a quad (4 points) by the inverse of rev (forward matrix).
+
+        Reuses draw_walk.ReverseScaler.inverse_matrix for single source of truth.
+        If rev is identity or inversion fails, returns quad unchanged.
+        """
+        if quad is None or rev is None or self._is_identity(rev):
+            return list(quad) if quad is not None else []
+        try:
+            from .draw_walk import ReverseScaler
+            fwd = ReverseScaler.inverse_matrix(rev)
+            if fwd is None:
+                return list(quad)
+            out: list[tuple[float, float]] = []
+            for (x, y) in quad:
+                try:
+                    # fwd may be Matrix with transform(x,y) or our light _Inv
+                    if hasattr(fwd, "transform"):
+                        nx, ny = fwd.transform(float(x), float(y))
+                    else:
+                        # fallback manual
+                        nx = float(x) * float(getattr(fwd, "xdx", 1.0)) + float(y) * float(getattr(fwd, "xdy", 0.0)) + float(getattr(fwd, "xdw", 0.0))
+                        ny = float(x) * float(getattr(fwd, "ydx", 0.0)) + float(y) * float(getattr(fwd, "ydy", 1.0)) + float(getattr(fwd, "ydw", 0.0))
+                    out.append((float(nx), float(ny)))
+                except Exception:
+                    out.append((float(x), float(y)))
+            return out
+        except Exception:
+            return list(quad)
+
+    def _aabb_to_poly(self, aabb) -> list[tuple[float, float]] | None:
+        if aabb is None:
+            return None
+        try:
+            x0, y0, x1, y1 = aabb
+            return [(float(x0), float(y0)), (float(x1), float(y0)), (float(x1), float(y1)), (float(x0), float(y1))]
+        except Exception:
+            return None
+
+    def _poly_area(self, poly: list[tuple[float, float]]) -> float:
+        if poly is None or len(poly) < 3:
+            return 0.0
+        area = 0.0
+        n = len(poly)
+        for i in range(n):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % n]
+            area += float(x1) * float(y2) - float(x2) * float(y1)
+        return abs(area) * 0.5
+
+    def _intersect_poly(self, a: list[tuple[float, float]] | None, b: list[tuple[float, float]] | None) -> list[tuple[float, float]] | None:
+        """Convex polygon intersection (Sutherland–Hodgman). None with anything -> other. Empty -> None."""
+        if a is None:
+            return list(b) if b is not None else None
+        if b is None:
+            return list(a) if a is not None else None
+        if not a or not b:
+            return None
+        # Ensure copy
+        subject = [ (float(x), float(y)) for x, y in a ]
+        clip = [ (float(x), float(y)) for x, y in b ]
+        if len(subject) < 3 or len(clip) < 3:
+            return None
+        # Sutherland–Hodgman: clip subject against each edge of clip (assume clip is convex CCW)
+        def _inside(px, py, ax, ay, bx, by) -> bool:
+            # cross (b-a) x (p-a) >= -eps  -> inside for CCW
+            return (float(bx) - float(ax)) * (float(py) - float(ay)) - (float(by) - float(ay)) * (float(px) - float(ax)) >= -1e-6
+        def _intersection(ax, ay, bx, by, cx, cy, dx, dy):
+            # Line AB intersect CD
+            denom = (float(ax) - float(bx)) * (float(cy) - float(dy)) - (float(ay) - float(by)) * (float(cx) - float(dx))
+            if abs(denom) < 1e-9:
+                return ((float(ax) + float(bx)) * 0.5, (float(ay) + float(by)) * 0.5)
+            px = ((float(ax) * float(by) - float(ay) * float(bx)) * (float(cx) - float(dx)) - (float(ax) - float(bx)) * (float(cx) * float(dy) - float(cy) * float(dx))) / denom
+            py = ((float(ax) * float(by) - float(ay) * float(bx)) * (float(cy) - float(dy)) - (float(ay) - float(by)) * (float(cx) * float(dy) - float(cy) * float(dx))) / denom
+            # round to 0.01 grid like GL2 polygon
+            px = round(px + 0.005, 2) - ( (round(px + 0.005, 2) % 0.01) if False else 0)
+            # Simplified: just return px,py without grid snap for stability
+            return (float(px), float(py))
+        output = subject
+        for i in range(len(clip)):
+            if not output:
+                return None
+            input_list = output
+            output = []
+            ax, ay = clip[i - 1] if i > 0 else clip[-1]
+            bx, by = clip[i]
+            if not input_list:
+                break
+            # Sutherland edge loop
+            prev = input_list[-1]
+            prev_inside = _inside(prev[0], prev[1], ax, ay, bx, by)
+            for cur in input_list:
+                cur_inside = _inside(cur[0], cur[1], ax, ay, bx, by)
+                if cur_inside:
+                    if not prev_inside:
+                        # entering: add intersection
+                        ix, iy = _intersection(prev[0], prev[1], cur[0], cur[1], ax, ay, bx, by)
+                        output.append((ix, iy))
+                    output.append(cur)
+                elif prev_inside:
+                    # exiting: add intersection
+                    ix, iy = _intersection(prev[0], prev[1], cur[0], cur[1], ax, ay, bx, by)
+                    output.append((ix, iy))
+                prev = cur
+                prev_inside = cur_inside
+        if not output or len(output) < 3:
+            return None
+        if self._poly_area(output) < 1e-6:
+            return None
+        return output
+
     def _clip_push_from_node(self, node, ox, oy):
         """
         If node has xclipping/yclipping, return (new_clip, empty).
@@ -81,21 +212,26 @@ class SurftreeMixin:
           x: [0, width] if xclipping else [-BIG, +BIG]
           y: [0, height] if yclipping else [-BIG, +BIG]
         then shifted by (ox, oy) into absolute virtual coords and intersected
-        with ``self._clip_rect``.
+        with existing clip (rect or poly).
 
-        v1 residual: when node.reverse is non-identity, GL2 forward-maps the
-        clip polygon; we do **not**. Documented residual — no half-implement.
+        When node.reverse is non-identity, returns a clipped polygon
+        list[tuple[float,float]] of 4 points (rotated) rather than an AABB,
+        preserving the AABB fast path for identity (zero overhead).
         """
         xclip = bool(getattr(node, "xclipping", False))
         yclip = bool(getattr(node, "yclipping", False))
         if not xclip and not yclip:
+            # No new clip; keep current (poly preferred if present)
+            cur_poly = getattr(self, "_clip_poly", None)
+            if cur_poly is not None:
+                return cur_poly, False
             return self._clip_rect, False
 
         big = self._CLIP_BIG
         try:
             nw = float(getattr(node, "width", 0) or getattr(node, "w", 0) or 0)
             nh = float(getattr(node, "height", 0) or getattr(node, "h", 0) or 0)
-        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame
             nw = nh = 0.0
         if nw <= 0 or nh <= 0:
             try:
@@ -105,7 +241,7 @@ class SurftreeMixin:
                         nw = float(gw or 0)
                     if nh <= 0:
                         nh = float(gh or 0)
-            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame
                 pass
         if nw <= 0:
             nw = big if not xclip else 0.0
@@ -116,18 +252,59 @@ class SurftreeMixin:
         ly0 = 0.0 if yclip else -big
         lx1 = float(nw) if xclip else big
         ly1 = float(nh) if yclip else big
-        # Absolute virtual-pixel box at the node's draw offset.
-        local = (
-            float(ox) + lx0,
-            float(oy) + ly0,
-            float(ox) + lx1,
-            float(oy) + ly1,
-        )
-        inter = self._clip_intersect(self._clip_rect, local)
-        if inter is None:
-            return None, True
-        return inter, False
-
+        rev = getattr(node, "reverse", None)
+        is_id = self._is_identity(rev)
+        # Current clips
+        cur_rect = getattr(self, "_clip_rect", None)
+        cur_poly = getattr(self, "_clip_poly", None)
+        if is_id:
+            # AABB fast path — zero overhead
+            local = (
+                float(ox) + lx0,
+                float(oy) + ly0,
+                float(ox) + lx1,
+                float(oy) + ly1,
+            )
+            # If current is poly, intersect poly with AABB (convert AABB to poly)
+            if cur_poly is not None:
+                local_poly = [(local[0], local[1]), (local[2], local[1]), (local[2], local[3]), (local[0], local[3])]
+                inter = self._intersect_poly(cur_poly, local_poly)
+                if inter is None:
+                    return None, True
+                return inter, False
+            inter = self._clip_intersect(cur_rect, local)
+            if inter is None:
+                return None, True
+            return inter, False
+        else:
+            # Polygon path: local quad absolute
+            local_quad: list[tuple[float, float]] = [
+                (float(ox) + lx0, float(oy) + ly0),
+                (float(ox) + lx1, float(oy) + ly0),
+                (float(ox) + lx1, float(oy) + ly1),
+                (float(ox) + lx0, float(oy) + ly1),
+            ]
+            # Intersect in parent space before applying forward transform
+            # Build parent polygon(s)
+            if cur_poly is not None:
+                parent_poly = cur_poly
+            elif cur_rect is not None:
+                parent_poly = self._aabb_to_poly(cur_rect)
+            else:
+                parent_poly = None
+            if parent_poly is not None:
+                # Intersect local quad with parent poly in parent space
+                inter_parent = self._intersect_poly(parent_poly, local_quad)
+                if inter_parent is None:
+                    return None, True
+                # Transform the intersected polygon to child space via forward
+                poly = self._transform_quad(inter_parent, rev)
+            else:
+                # No parent clip: just transform local quad to child space
+                poly = self._transform_quad(local_quad, rev)
+            if poly is None or len(poly) < 3 or self._poly_area(poly) < 1e-6:
+                return None, True
+            return poly, False
     def _crop_virt_quad_uv(self, ox, oy, w, h, u0, v_bottom, u1, v_top):
         """
         Crop a virtual-pixel dest rect against ``self._clip_rect`` and remap UVs.
@@ -1006,14 +1183,17 @@ class SurftreeMixin:
             renpy_host.begin_frame()
             old_vs = self.virtual_size
             old_clip = self._clip_rect
+            old_poly = getattr(self, "_clip_poly", None)
             try:
                 self.virtual_size = (w, h)
                 self._clip_rect = None
+                self._clip_poly = None
                 for child, cx, cy in children:
                     self._draw_node(child, float(cx), float(cy))
             finally:
                 self.virtual_size = old_vs
                 self._clip_rect = old_clip
+                self._clip_poly = old_poly
                 try:
                     self._end_frame_present()
                     renpy_host.end_target()

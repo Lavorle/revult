@@ -159,8 +159,9 @@ class ScreenMixin:
             self._recover_frame_state()
             renpy_host.begin_frame()
             self._draw_batch = []
-            # Fresh clip stack each product present (axis-aligned mesh crop).
+            # Fresh clip stack each product present (axis-aligned mesh crop / polygon stencil).
             self._clip_rect = None
+            self._clip_poly = None
             walk_ok = True
             try:
                 if surftree is not None:
@@ -173,7 +174,7 @@ class ScreenMixin:
                 _host_draw_fail("draw_node", e)
             finally:
                 self._clip_rect = None
-                # Always close the host frame. Prefer NOT presenting a partial
+                self._clip_poly = None
                 # cmd list after a walk exception: encode_pass Clears then draws
                 # only what was queued → prefs chrome holes / hover flicker.
                 # reset_frame_state drops cmds without encoding so the last good
@@ -448,14 +449,17 @@ class ScreenMixin:
 
             def _draw_tree():
                 old_clip = self._clip_rect
+                old_poly = getattr(self, "_clip_poly", None)
                 try:
                     self.virtual_size = (w, h)
-                    # RTT-local coords: do not inherit product absolute clip AABB.
+                    # RTT-local coords: do not inherit product absolute clip AABB or polygon.
                     self._clip_rect = None
+                    self._clip_poly = None
                     self._draw_node(what, 0.0, 0.0)
                 finally:
                     self.virtual_size = old_vs
                     self._clip_rect = old_clip
+                    self._clip_poly = old_poly
 
             return _rtt_pass(w, h, _draw_tree)
         except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed

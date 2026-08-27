@@ -31,14 +31,38 @@ class ModelMixin:
     # Expected attributes on the concrete WgpuDraw (type hints only)
     virtual_size: tuple[int, int]  # type: ignore
     _clip_rect: object  # type: ignore
+    _clip_poly: object  # type: ignore
     _mesh_cache: dict  # type: ignore
     _mesh_cache_cap: int  # type: ignore
     _mesh_deferred_destroy: list[int]  # type: ignore
-
     def _draw_model_like(self, node, ox=0.0, oy=0.0):
         """Emit one draw_model for a Model-like / textured leaf."""
 
         self._ensure_pipes()
+
+        # Stencil polygon takes priority over AABB scissor (mutual exclusion)
+        clip_poly = getattr(self, "_clip_poly", None)
+        if isinstance(node, HostTexture) and clip_poly is not None:
+            node = self._ensure_host_texture_alive(node)
+            if node is None or node.handle <= 0:
+                return
+            w, h = float(node.w), float(node.h)
+            if w <= 0 or h <= 0:
+                return
+            if self._host_tex_is_full(node):
+                u0, v_bottom, u1, v_top = 0.0, 1.0, 1.0, 0.0
+            else:
+                u0, v_bottom, u1, v_top = self._host_tex_uv(node)
+            x0, y0, x1, y1 = self._virt_rect_to_ndc(ox, oy, w, h)
+            mesh = self._mesh_quad_ndc(
+                x0, y0, x1, y1, (1.0, 1.0, 1.0, 1.0), u0, v_bottom, u1, v_top
+            )
+            try:
+                self._draw_with_stencil(clip_poly, mesh, node.handle, None, None)
+            except Exception as e:  # noqa: BLE001
+                from renpy.wgpu.composer import ComposerError
+                raise ComposerError(f"stencil clip failed: {e}") from e
+            return
 
         # HostTexture leaf: size is the sub-rect (w,h); UVs sample parent atlas.
         if isinstance(node, HostTexture):
@@ -54,6 +78,7 @@ class ModelMixin:
             else:
                 u0, v_bottom, u1, v_top = self._host_tex_uv(node)
             # Axis-aligned mesh crop against current clip stack (GL2 parity).
+            # Stencil poly path already handled above; here only AABB.
             cropped = self._crop_virt_quad_uv(ox, oy, w, h, u0, v_bottom, u1, v_top)
             if cropped is None:
                 return
@@ -94,13 +119,17 @@ class ModelMixin:
         # NDC rect: explicit node.ndc wins; else virtual size at offset; else full NDC.
         # When clip stack is active and dest is virtual-sized, crop dest (and later UV
         # via the same fractions) so reverse-scaled Frame/Solid and model leaves honor
-        # ancestor xclipping/yclipping (C1 + C3 crop+zoom preview).
         ndc = getattr(node, "ndc", None)
         _clip_uv_frac = None  # (fx0, fy0, fx1, fy1) when mesh dest was cropped
+        # clip poly takes priority over AABB (mutual exclusion)
+        _clip_poly_local = getattr(self, "_clip_poly", None)
         if ndc is not None and len(ndc) >= 4:
             x0, y0, x1, y1 = (float(ndc[0]), float(ndc[1]), float(ndc[2]), float(ndc[3]))
         elif w > 0 and h > 0:
-            if self._clip_rect is not None:
+            if _clip_poly_local is not None:
+                # Stencil polygon path: no UV crop, full dest will be masked by stencil
+                x0, y0, x1, y1 = self._virt_rect_to_ndc(ox, oy, w, h)
+            elif self._clip_rect is not None:
                 # Full UV first; crop remaps after we know source UV below — use
                 # unit UV here only to get dest crop; UV fractions retained.
                 cropped = self._crop_virt_quad_uv(
@@ -417,11 +446,125 @@ class ModelMixin:
         if mesh is None:
             return
 
+        # Stencil polygon takes priority over AABB scissor
+        clip_poly = getattr(self, "_clip_poly", None)
+        if clip_poly is not None:
+            try:
+                self._draw_with_stencil(clip_poly, mesh, tex, tex1, u, pipe=pipe)
+            except Exception as e:  # noqa: BLE001
+                from renpy.wgpu.composer import ComposerError
+                raise ComposerError(f"stencil clip failed: {e}") from e
+            return
+
+        # AABB scissor fast path is already handled via UV crop (_crop_virt_quad_uv / _clip_uv_frac) with zero overhead;
+        # GPU scissor (set_scissor_rect) is available as an alternative but not needed for correctness — keep UV crop path.
         self._dm(pipe, int(mesh), tex, tex1, u)
+    def _draw_with_stencil(self, clip_poly, mesh, texture, texture1=None, uniforms=None, pipe=None):
+        """Stencil path: begin_stencil_pass → draw_clip_polygon(mask) → draw_content(stencil_test=Equal) → end_stencil.
+        Host stencil_clip_pipeline: depth_stencil Stencil front{compare:Always,fail_op:Replace} no color write,
+        or reuse mask_pipeline dual-RTT as fallback. AABB fast path uses set_scissor_rect directly.
+        """
+        from renpy.wgpu.composer import ComposerError
+        if clip_poly is None or not clip_poly:
+            raise ComposerError("clip_poly is None or empty for stencil path")
+        if not isinstance(clip_poly, (list, tuple)) or len(clip_poly) < 3:
+            raise ComposerError(f"clip_poly invalid for stencil: {clip_poly!r}")
+        import renpy_host  # type: ignore
+        # Try host stencil API; fallback to scissor AABB approximation if unavailable
+        try:
+            # Convert virtual-pixel poly to NDC polygon mesh for mask
+            # Build mask mesh vertices (triangle fan) in NDC
+            # Use _virt_rect_to_ndc helper per point: we need direct virtual->NDC conversion
+            # For arbitrary point (x,y) treated as 1x1 rect at that point, use same formula as _virt_rect_to_ndc but per point
+            vw = float(self.virtual_size[0]) or 1.0
+            vh = float(self.virtual_size[1]) or 1.0
+            def _v_to_ndc(x, y):
+                nx = 2.0 * float(x) / vw - 1.0
+                ny = 1.0 - 2.0 * float(y) / vh
+                return nx, ny
+            # If host exposes begin_stencil_pass, use it
+            if hasattr(renpy_host, "begin_stencil_pass"):
+                renpy_host.begin_stencil_pass()
+                # Build polygon mask mesh: triangulate via fan from poly[0]
+                verts: list[float] = []
+                # NDC quad color white, UV zero
+                for (px, py) in clip_poly:
+                    nx, ny = _v_to_ndc(px, py)
+                    verts.extend([float(nx), float(ny), 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+                # fan indices
+                indices: list[int] = []
+                for i in range(1, len(clip_poly) - 1):
+                    indices.extend([0, i, i + 1])
+                mask_mesh = renpy_host.create_mesh(verts, indices)
+                # Draw mask with stencil replace (no color write handled by pipeline)
+                try:
+                    stencil_pipe = None
+                    if hasattr(renpy_host, "stencil_clip_pipeline"):
+                        stencil_pipe = renpy_host.stencil_clip_pipeline()
+                    if stencil_pipe is None and hasattr(self, "_stencil_pipe"):
+                        stencil_pipe = getattr(self, "_stencil_pipe", None)
+                    if stencil_pipe is None:
+                        # fallback to mask pipeline if stencil pipeline not available (dual RTT alternative)
+                        if hasattr(renpy_host, "mask_pipeline"):
+                            stencil_pipe = renpy_host.mask_pipeline()
+                    if stencil_pipe is not None and stencil_pipe > 0:
+                        renpy_host.draw_model(int(stencil_pipe), int(mask_mesh), None, None, None)
+                    else:
+                        # No stencil pipeline: reuse textured but with stencil emulation (no-op mask)
+                        pass
+                except Exception:
+                    pass
+                # Draw content with stencil test Equal (host should have set stencil reference)
+                # Use requested pipe for content
+                content_pipe = pipe if pipe is not None else getattr(self, "_tex_pipe", None)
+                tex = int(texture) if isinstance(texture, int) else (int(texture) if texture is not None else None)
+                # draw_model will be executed with stencil test if host is in stencil mode
+                # Fallback: if host supports draw_model_stencil, use it else normal draw
+                if hasattr(renpy_host, "draw_model_stencil"):
+                    renpy_host.draw_model_stencil(int(content_pipe), int(mesh), texture, texture1, uniforms)
+                else:
+                    # Normal draw after mask; host's stencil state remains
+                    renpy_host.draw_model(int(content_pipe) if content_pipe else 0, int(mesh), texture, texture1, uniforms)
+                if hasattr(renpy_host, "end_stencil_pass"):
+                    renpy_host.end_stencil_pass()
+                else:
+                    if hasattr(renpy_host, "end_stencil"):
+                        renpy_host.end_stencil()
+                # cleanup mask mesh
+                try:
+                    if hasattr(renpy_host, "destroy_mesh"):
+                        renpy_host.destroy_mesh(int(mask_mesh))
+                except Exception:
+                    pass
+                return
+        except ComposerError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise ComposerError(str(e)) from e
+        # Fallback: no host stencil support → approximate with AABB scissor via _dm after scissor rect
+        try:
+            import renpy_host  # type: ignore
+            if hasattr(renpy_host, "set_scissor_rect"):
+                xs = [float(p[0]) for p in clip_poly]
+                ys = [float(p[1]) for p in clip_poly]
+                x0, x1 = min(xs), max(xs)
+                y0, y1 = min(ys), max(ys)
+                # clamp to virtual size and convert to physical scissor
+                try:
+                    renpy_host.set_scissor_rect(int(x0), int(y0), int(max(1, x1 - x0)), int(max(1, y1 - y0)))
+                except Exception:
+                    pass
+            self._dm(pipe if pipe is not None else getattr(self, "_tex_pipe", 0), int(mesh), texture, texture1, uniforms)
+            if hasattr(renpy_host, "clear_scissor"):
+                try:
+                    renpy_host.clear_scissor()
+                except Exception:
+                    pass
+        except Exception as e:  # noqa: BLE001
+            raise ComposerError(str(e)) from e
     def _iter_children(self, node):
         """Shim: canonical in SurftreeMixin (T5)."""
         yield from SurftreeMixin._iter_children(self, node)  # type: ignore[attr-defined]
-
     def _draw_node(self, node, ox=0.0, oy=0.0):
         """Recursive duck-typed tree walk (mirrors GL2DrawingContext.draw_one altitude).
 
@@ -437,11 +580,12 @@ class ModelMixin:
 
     def _draw_node_inner(self, node, ox=0.0, oy=0.0):
         # GL2 clip push (gl2draw.pyx:1661–1673): when xclipping/yclipping is set
-        # on this Render, install the intersected absolute AABB for the subtree.
+        # on this Render, install the intersected absolute clip (AABB or polygon) for the subtree.
         # Empty intersect → skip (same as GL2 returning early). Leaf HostTexture /
-        # bare handles do not carry clip flags; they inherit self._clip_rect from
-        # ancestors and crop at mesh emit time.
+        # bare handles do not carry clip flags; they inherit self._clip_rect / _clip_poly from
+        # ancestors and crop at mesh emit time (AABB via UV crop, polygon via stencil).
         prev_clip = self._clip_rect
+        prev_poly = getattr(self, "_clip_poly", None)
         pushed = False
         if not isinstance(node, HostTexture) and not (
             isinstance(node, int) and not isinstance(node, bool)
@@ -449,14 +593,23 @@ class ModelMixin:
             new_clip, empty = self._clip_push_from_node(node, ox, oy)
             if empty:
                 return
-            if new_clip is not prev_clip:
-                self._clip_rect = new_clip
-                pushed = True
+            is_poly = isinstance(new_clip, list)
+            # Mutual exclusion: clip_poly is not None preferred over clip_rect
+            if is_poly:
+                if new_clip is not prev_poly or prev_clip is not None:
+                    self._clip_poly = new_clip
+                    self._clip_rect = None
+                    pushed = True
+            else:
+                if new_clip is not prev_clip or prev_poly is not None:
+                    self._clip_rect = new_clip
+                    self._clip_poly = None
+                    pushed = True
         try:
             # T5: explicit WalkCtx — ox,oy converted once here, downstream uses ctx.
             if WalkCtx is not None:
                 try:
-                    ctx = WalkCtx(ox=float(ox), oy=float(oy), budget=120, clip_rect=self._clip_rect)
+                    ctx = WalkCtx(ox=float(ox), oy=float(oy), budget=120, clip_rect=self._clip_rect, clip_poly=getattr(self, "_clip_poly", None))
                     self._draw_node_inner_body(node, ctx=ctx)
                 except Exception:
                     # Fallback to legacy ox,oy if WalkCtx construction fails
@@ -466,10 +619,9 @@ class ModelMixin:
         finally:
             if pushed:
                 self._clip_rect = prev_clip
+                self._clip_poly = prev_poly
     def _draw_texture_at(self, tex, ox, oy, size):
         """Draw a texture-like value as a virtual-pixel quad at (ox,oy) with size.
-
-        Layout size (NDC) and source UV are independent:
         - ``size`` / (ox,oy) → destination rect in virtual pixels
         - ``ht.x/y/w/h`` + parent ``ht.width/height`` → UV sub-rect
 
@@ -501,6 +653,20 @@ class ModelMixin:
         self._ensure_pipes()
         # Source UV from original sub-rect (full or subsurface) — NOT dest size.
         u0, v_bottom, u1, v_top = self._host_tex_uv(ht)
+        clip_poly = getattr(self, "_clip_poly", None)
+        if clip_poly is not None:
+            # Stencil polygon path: full dest masked by stencil
+            x0, y0, x1, y1 = self._virt_rect_to_ndc(ox, oy, w, h)
+            # Instancing not used under stencil (single masked quad)
+            mesh = self._mesh_quad_ndc(
+                x0, y0, x1, y1, (1.0, 1.0, 1.0, 1.0), u0, v_bottom, u1, v_top
+            )
+            try:
+                self._draw_with_stencil(clip_poly, mesh, ht.handle, None, None)
+            except Exception as e:  # noqa: BLE001
+                from renpy.wgpu.composer import ComposerError
+                raise ComposerError(f"stencil clip failed: {e}") from e
+            return
         # GL2 mesh crop: when an ancestor set xclipping/yclipping, crop dest + UV.
         cropped = self._crop_virt_quad_uv(ox, oy, w, h, u0, v_bottom, u1, v_top)
         if cropped is None:
@@ -521,7 +687,6 @@ class ModelMixin:
     def _node_size(self, node, default=None):
         """Shim: canonical in SurftreeMixin (T5)."""
         return SurftreeMixin._node_size(self, node, default)  # type: ignore[attr-defined]
-
 
 
 __all__ = ["ModelMixin"]

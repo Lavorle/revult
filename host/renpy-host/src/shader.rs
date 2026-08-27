@@ -66,7 +66,30 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
-/// Specific error type for WGSL shader composition failures.
+/// M3 B2 T2: stencil clip pipeline WGSL (mask write, no color output)
+pub const CLIP_STENCIL_WGSL: &str = r#"
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+@vertex
+fn vs_main(v: VsIn) -> VsOut {
+    var o: VsOut;
+    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
+    o.color = v.color;
+    return o;
+}
+@fragment
+fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+}
+"#;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ShaderError {
     UnknownPart(String),

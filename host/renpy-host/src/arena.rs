@@ -113,6 +113,30 @@ pub struct DrawCmd {
     pub texture2: Option<u64>,
     /// 16 f32 blob: blur_log2 / mask mult+offset / mat4 columns / imagedissolve.
     pub uniforms: [f32; 16],
+    /// Instanced grouping (M1 T3): how many quads this cmd represents.
+    /// 1 = single draw (compat with old draw_model), >1 = grouped instanced.
+    pub instance_count: u32,
+    /// Byte offset into instance_ring for this group's instance data (0 for single).
+    pub instance_offset: u64,
+    /// Clone-friendly per-cmd instance data (12 floats per instance). Empty for single.
+    /// Kept alongside offset for encode that writes via queue; either may be used.
+    pub instance_data: Vec<f32>,
+}
+
+impl Default for DrawCmd {
+    fn default() -> Self {
+        Self {
+            pipeline: 0,
+            mesh: 0,
+            texture: None,
+            texture1: None,
+            texture2: None,
+            uniforms: [0.0; 16],
+            instance_count: 1,
+            instance_offset: 0,
+            instance_data: Vec::new(),
+        }
+    }
 }
 
 /// Bind-group cache key for draws (pipeline + textures [+ uniform ring slot]).
@@ -305,6 +329,12 @@ pub struct GpuArena {
     instance_ring: Vec<wgpu::Buffer>,
     instance_ring_next: usize,
     instance_scratch: Vec<f32>,
+    /// Unit quad mesh for instanced draws (0..1 pos). Created lazily.
+    unit_quad: Option<u64>,
+    /// Next free byte offset in instance ring for grouped allocation (starts after identity).
+    instance_next_byte: u64,
+    /// Stack for nested begin_frame instance allocation.
+    instance_next_byte_stack: Vec<u64>,
     /// Last frame stats for perf gate (M1 Wave32).
     pub last_stats: FrameStats,
     /// Per-frame overdraw accumulator (Σ 1.0 per draw_model; future mesh area/fb).
@@ -376,6 +406,9 @@ impl GpuArena {
             instance_ring: Vec::new(),
             instance_ring_next: 0,
             instance_scratch: Vec::new(),
+            unit_quad: None,
+            instance_next_byte: INSTANCE_BYTES,
+            instance_next_byte_stack: Vec::new(),
             last_stats: FrameStats::default(),
             frame_overdraw_acc: 0.0,
             frame_overdraw_stack: Vec::new(),
@@ -1252,7 +1285,7 @@ impl GpuArena {
             push_constant_ranges: &[],
         });
 
-        let is_instance = tex_count <= 1 && !has_uniforms;
+        let is_instance = (key == "solid" || key == "textured") && tex_count <= 1 && !has_uniforms;
         let vertex_buffers: Vec<wgpu::VertexBufferLayout> = if is_instance {
             vec![
                 wgpu::VertexBufferLayout {
@@ -1396,10 +1429,12 @@ impl GpuArena {
             let parent = std::mem::take(&mut self.frame_cmds);
             self.frame_cmd_stack.push(parent);
             self.frame_overdraw_stack.push(self.frame_overdraw_acc);
+            self.instance_next_byte_stack.push(self.instance_next_byte);
         } else {
             self.frame_cmds.clear();
         }
         self.frame_overdraw_acc = 0.0;
+        self.instance_next_byte = INSTANCE_BYTES;
         self.in_frame = true;
     }
 
@@ -1424,6 +1459,8 @@ impl GpuArena {
         self.active_target_stack.clear();
         self.frame_overdraw_acc = 0.0;
         self.frame_overdraw_stack.clear();
+        self.instance_next_byte = INSTANCE_BYTES;
+        self.instance_next_byte_stack.clear();
         // Pins are gone with the cleared cmds; free anything deferred while
         // those cmds were open so recovery cannot leak MeshSlots forever.
         // Keep last_frame_sample_textures — product chrome may still be live on
@@ -1469,7 +1506,127 @@ impl GpuArena {
             texture1,
             texture2,
             uniforms: uniforms.unwrap_or([0.0; 16]),
+            instance_count: 1,
+            instance_offset: 0,
+            instance_data: Vec::new(),
         });
+    }
+
+    /// Ensure unit quad mesh exists for instanced draws; always allocates dedicated 0..1 quad.
+    fn ensure_unit_quad(&mut self, device: &wgpu::Device) -> u64 {
+        if let Some(id) = self.unit_quad {
+            if self.meshes.contains_key(&id) {
+                self.touch_mesh(id);
+                return id;
+            }
+        }
+        // Never fallback to arbitrary first mesh — NDC meshes have -1..1 pos, unit quad needs 0..1.
+        // Always allocate a dedicated 0..1 unit quad.
+        // Create fresh unit quad 0..1 (pos.xy, uv.xy, color.rgba white)
+        let verts: [f32; 32] = [
+            0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        let vertex = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("unit-quad-vbo"),
+            contents: cast_f32(&verts),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let indices: [u32; 6] = [0, 1, 2, 0, 2, 3];
+        let index = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("unit-quad-ibo"),
+            contents: cast_u32(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let id = next_handle();
+        self.meshes.insert(
+            id,
+            MeshSlot {
+                vertex,
+                index: Some(index),
+                vertex_count: 4,
+                index_count: 6,
+            },
+        );
+        self.epoch_pin_mesh(id);
+        self.unit_quad = Some(id);
+        self.evict_meshes_if_needed();
+        id
+    }
+
+    fn unit_quad_handle(&mut self, device: Option<&wgpu::Device>) -> u64 {
+        if let Some(id) = self.unit_quad {
+            if self.meshes.contains_key(&id) {
+                return id;
+            }
+        }
+        if let Some(dev) = device {
+            return self.ensure_unit_quad(dev);
+        }
+        // fallback 0 signals missing — encode will lazily create
+        0
+    }
+
+    /// Grouped instanced draw (M1 T3): batches N quads sharing pipeline/texture into one DrawCmd.
+    /// instances is flat 12*f32 per quad: [rect_off.x,y, rect_size.x,y, uv_off.x,y, uv_size.x,y, color.rgba]
+    pub fn draw_instances(
+        &mut self,
+        pipeline: u64,
+        texture: Option<u64>,
+        texture1: Option<u64>,
+        texture2: Option<u64>,
+        instances: &[f32],
+    ) -> Result<(), String> {
+        if !self.in_frame {
+            warn!("draw_instances outside begin_frame");
+            return Ok(());
+        }
+        if instances.is_empty() {
+            return Ok(());
+        }
+        if instances.len() % INSTANCE_FLOATS != 0 {
+            return Err(format!(
+                "draw_instances: len {} not multiple of {}",
+                instances.len(),
+                INSTANCE_FLOATS
+            ));
+        }
+        let count = (instances.len() / INSTANCE_FLOATS) as u32;
+        if count == 0 {
+            return Ok(());
+        }
+        // Touch resources analogous to draw_model
+        if let Some(t) = texture {
+            self.touch_texture(t);
+        }
+        if let Some(t) = texture1 {
+            self.touch_texture(t);
+        }
+        if let Some(t) = texture2 {
+            self.touch_texture(t);
+        }
+        // Overdraw scales with quad count
+        self.frame_overdraw_acc += count as f32;
+        // Allocate instance ring offset for this group (after identity slot)
+        let alloc_off = self.instance_next_byte;
+        let need_bytes = (count as u64) * INSTANCE_BYTES;
+        self.instance_next_byte = self.instance_next_byte.saturating_add(need_bytes);
+        // Resolve unit quad handle (may be 0 if no device/mesh yet; encode will lazily create)
+        let mesh = self.unit_quad_handle(None);
+        self.frame_cmds.push(DrawCmd {
+            pipeline,
+            mesh,
+            texture,
+            texture1,
+            texture2,
+            uniforms: [0.0; 16],
+            instance_count: count,
+            instance_offset: alloc_off,
+            instance_data: instances.to_vec(),
+        });
+        Ok(())
     }
 
     pub fn last_frame_stats(&self) -> FrameStats {
@@ -1511,9 +1668,10 @@ impl GpuArena {
 
         let cmds: Vec<DrawCmd> = self.frame_cmds.drain(..).collect();
         let nested = !self.frame_cmd_stack.is_empty();
-        let frame_quads = cmds.len() as u32;
+        // T3: draw_calls = groups (cmds.len), quads = sum(instance_count), instances same
+        let draw_calls = cmds.len() as u32;
+        let total_quads: u32 = cmds.iter().map(|c| c.instance_count.max(1)).sum();
         let frame_overdraw = self.frame_overdraw_acc;
-
         if let Some(tid) = self.active_target {
             let view = self
                 .textures
@@ -1527,9 +1685,11 @@ impl GpuArena {
                 self.frame_cmds = self.frame_cmd_stack.pop().unwrap_or_default();
                 self.in_frame = true;
                 self.frame_overdraw_acc = self.frame_overdraw_stack.pop().unwrap_or(0.0);
+                self.instance_next_byte = self.instance_next_byte_stack.pop().unwrap_or(INSTANCE_BYTES);
             } else {
                 self.in_frame = false;
                 self.frame_overdraw_acc = 0.0;
+                self.instance_next_byte = INSTANCE_BYTES;
             }
             // Unpinned meshes/textures from this RTT bake can die; parent-pinned stay.
             self.flush_deferred_meshes();
@@ -1545,6 +1705,7 @@ impl GpuArena {
             self.frame_cmds = self.frame_cmd_stack.pop().unwrap_or_default();
             self.in_frame = true;
             self.frame_overdraw_acc = self.frame_overdraw_stack.pop().unwrap_or(0.0);
+            self.instance_next_byte = self.instance_next_byte_stack.pop().unwrap_or(INSTANCE_BYTES);
             self.flush_deferred_meshes();
             self.flush_deferred_textures();
             return Ok(false);
@@ -1601,7 +1762,12 @@ impl GpuArena {
         {
             let mut missing = 0usize;
             for c in &cmds {
-                if !self.meshes.contains_key(&c.mesh) {
+                // Grouped instanced cmds use mesh==0 placeholder until encode lazily creates unit quad.
+                // Do not count that as missing — encode will allocate.
+                if c.instance_count > 1 && c.mesh == 0 {
+                    // Check textures only; mesh will be provided by ensure_unit_quad in encode
+                    // Fall through to texture checks below without mesh guard
+                } else if !self.meshes.contains_key(&c.mesh) {
                     missing = missing.saturating_add(1);
                     continue;
                 }
@@ -1681,18 +1847,17 @@ impl GpuArena {
         }
         frame.present();
         // Wave32 FrameStats: record per-frame counters for perf gate.
-        // draw_calls counts set_pipeline; quads = cmds len; instances same for now;
-        // overdraw_est = Σ1.0 per draw_model; ms = elapsed since end_frame_present entry.
+        // T3 grouped: draw_calls = groups (cmds.len), quads = sum(instance_count)
         let elapsed_ms = t0.elapsed().as_secs_f32() * 1000.0;
-        let draw_calls = frame_quads;
         self.last_stats = FrameStats {
             draw_calls,
-            quads: frame_quads,
-            instances: frame_quads,
+            quads: total_quads,
+            instances: total_quads,
             overdraw_est: frame_overdraw,
             ms: elapsed_ms,
         };
         self.frame_overdraw_acc = 0.0;
+        self.instance_next_byte = INSTANCE_BYTES;
         // Remember sample textures used by this product frame so the next
         // prepare walk cannot FIFO-kill them before draw_model re-touches
         // (dense dialog_config after image_config thrash residual).
@@ -1996,26 +2161,66 @@ impl GpuArena {
         // Instance ring: solid/textured (tex_count 0/1 no uniforms) need per-draw identity
         // instance so old draw_model path stays pixel-equivalent while pipeline expects
         // rect_off/size and uv_off/size + inst_color. One identity record reused.
-        let need_instance = cmds
-            .iter()
-            .filter(|c| {
-                self.pipelines
-                    .get(&c.pipeline)
-                    .map(|p| p.tex_count <= 1 && !p.has_uniforms)
-                    .unwrap_or(false)
-            })
-            .count();
-        if need_instance > 0 {
-            self.ensure_instance_ring(&gpu.device, INSTANCE_RING_INIT.max(need_instance));
+        // T3 grouped path: total slots = 1 (identity) + sum(instance_count for grouped)
+        let has_instance_pipe = cmds.iter().any(|c| {
+            self.pipelines
+                .get(&c.pipeline)
+                .map(|p| p.tex_count <= 1 && !p.has_uniforms && (p.parts_key == "solid" || p.parts_key == "textured"))
+                .unwrap_or(false)
+        });
+        if has_instance_pipe {
+            // compute total bytes needed for grouped instances
+            let mut grouped_instances: usize = 0;
+            for c in cmds {
+                if c.instance_count > 1 {
+                    if self
+                        .pipelines
+                        .get(&c.pipeline)
+                        .map(|p| p.tex_count <= 1 && !p.has_uniforms && (p.parts_key == "solid" || p.parts_key == "textured"))
+                        .unwrap_or(false)
+                    {
+                        grouped_instances = grouped_instances.saturating_add(c.instance_count as usize);
+                    }
+                }
+            }
+            // need slots = 1 identity + grouped
+            let need_slots = 1usize.saturating_add(grouped_instances).max(INSTANCE_RING_INIT);
+            // also consider byte high-water mark from draw_instances allocation
+            let need_from_alloc = ((self.instance_next_byte + INSTANCE_BYTES - 1) / INSTANCE_BYTES) as usize;
+            let need = need_slots.max(need_from_alloc).max(INSTANCE_RING_INIT);
+            self.ensure_instance_ring(&gpu.device, need);
             let identity: [f32; 12] = [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
             if let Some(buf) = self.instance_ring.first() {
                 gpu.queue.write_buffer(buf, 0, cast_f32(&identity));
+                // upload grouped instance data at recorded offsets
+                for c in cmds {
+                    if c.instance_count > 1 && !c.instance_data.is_empty() {
+                        let is_inst = self
+                            .pipelines
+                            .get(&c.pipeline)
+                            .map(|p| p.tex_count <= 1 && !p.has_uniforms && (p.parts_key == "solid" || p.parts_key == "textured"))
+                            .unwrap_or(false);
+                        if is_inst {
+                            let off = c.instance_offset;
+                            // saturating arithmetic to avoid overflow
+                            let count_bytes = (c.instance_count as u64).saturating_mul(INSTANCE_BYTES);
+                            let needed = off.saturating_add(count_bytes);
+                            if needed <= buf.size() {
+                                gpu.queue.write_buffer(buf, off, cast_f32(&c.instance_data));
+                            } else if off < buf.size() {
+                                // fallback: only write what fits to avoid panic
+                                let avail = (buf.size() - off) as usize;
+                                let write_len = avail.min(c.instance_data.len() * 4) / 4;
+                                gpu.queue.write_buffer(buf, off, cast_f32(&c.instance_data[..write_len]));
+                            }
+                        }
+                    }
+                }
             }
-            self.instance_ring_next = 1;
+            self.instance_ring_next = need;
         } else {
             self.instance_ring_next = 0;
         }
-
         // Cap cache growth: dense thrash can create many unique (pipe,tex) pairs.
         // Keep a soft ceiling; overflow clears (safe: rebuild next draws).
         if self.bg_cache.len() > BG_CACHE_SOFT_CAP {
@@ -2047,14 +2252,23 @@ impl GpuArena {
             });
 
             for cmd in cmds {
-                let Some(pipe) = self.pipelines.get(&cmd.pipeline) else {
-                    continue;
+                let (tex_count, has_uniforms, parts_key) = match self.pipelines.get(&cmd.pipeline) {
+                    Some(p) => (p.tex_count, p.has_uniforms, p.parts_key.clone()),
+                    None => continue,
                 };
-                let Some(_mesh) = self.meshes.get(&cmd.mesh) else {
-                    continue;
-                };
+                let is_instance = tex_count <= 1 && !has_uniforms && (parts_key == "solid" || parts_key == "textured");
+                let is_grouped = is_instance && cmd.instance_count > 1;
+                if !is_grouped {
+                    let Some(_mesh_check) = self.meshes.get(&cmd.mesh) else {
+                        continue;
+                    };
+                } else {
+                    if cmd.mesh != 0 && !self.meshes.contains_key(&cmd.mesh) {
+                        // stale handle, will fallback to unit_quad creation below
+                    }
+                }
 
-                let tex0_id = if pipe.tex_count >= 1 {
+                let tex0_id = if tex_count >= 1 {
                     let Some(tex_id) = cmd.texture else { continue };
                     if !self.textures.contains_key(&tex_id) {
                         continue;
@@ -2063,7 +2277,7 @@ impl GpuArena {
                 } else {
                     None
                 };
-                let tex1_id = if pipe.tex_count >= 2 {
+                let tex1_id = if tex_count >= 2 {
                     let Some(tex1_id) = cmd.texture1 else {
                         continue;
                     };
@@ -2074,7 +2288,7 @@ impl GpuArena {
                 } else {
                     None
                 };
-                let tex2_id = if pipe.tex_count >= 3 {
+                let tex2_id = if tex_count >= 3 {
                     let Some(tex2_id) = cmd.texture2 else {
                         continue;
                     };
@@ -2085,14 +2299,14 @@ impl GpuArena {
                 } else {
                     None
                 };
-                if pipe.tex_count >= 1 && self.sampler.is_none() {
+                if tex_count >= 1 && self.sampler.is_none() {
                     continue;
                 }
 
                 // Uniform slot: write into ring buffer; key includes slot so
                 // distinct uniform values do not incorrectly share a bind group.
                 // For non-uniform pipes, ubuf_slot = MAX and BG is fully reusable.
-                let ubuf_slot: u32 = if pipe.has_uniforms {
+                let ubuf_slot: u32 = if has_uniforms {
                     let slot = self.uniform_ring_next;
                     if slot >= self.uniform_ring.len() {
                         continue;
@@ -2115,10 +2329,10 @@ impl GpuArena {
 
                 if !self.bg_cache.contains_key(&key) {
                     let mut entries: Vec<wgpu::BindGroupEntry<'_>> = Vec::new();
-                    if pipe.tex_count >= 1 {
+                    if tex_count >= 1 {
                         let t0 = &self.textures.get(&tex0_id.unwrap()).unwrap().view;
-                        let use_nearest = pipe.parts_key.contains("live2d_mask")
-                            || pipe.parts_key.contains("live2d_inverted");
+                        let use_nearest = parts_key.contains("live2d_mask")
+                            || parts_key.contains("live2d_inverted");
                         let samp = if use_nearest {
                             self.nearest_sampler
                                 .as_ref()
@@ -2149,8 +2363,8 @@ impl GpuArena {
                             resource: wgpu::BindingResource::TextureView(t2),
                         });
                     }
-                    if pipe.has_uniforms {
-                        let binding = match pipe.tex_count {
+                    if has_uniforms {
+                        let binding = match tex_count {
                             0 => 0u32,
                             1 => 2u32,
                             2 => 3u32,
@@ -2170,24 +2384,67 @@ impl GpuArena {
                     self.bg_cache.insert(key, bg);
                 }
 
-                let pipe = self.pipelines.get(&cmd.pipeline).unwrap();
-                let mesh = self.meshes.get(&cmd.mesh).unwrap();
-                let bg = self.bg_cache.get(&key).unwrap();
-                pass.set_pipeline(&pipe.pipeline);
-                pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                let is_instance = pipe.tex_count <= 1 && !pipe.has_uniforms;
-                if is_instance {
+                if is_grouped {
+                    // Grouped instanced path: unit quad + instance slice
+                    let unit_id = if cmd.mesh != 0 && self.meshes.contains_key(&cmd.mesh) {
+                        cmd.mesh
+                    } else {
+                        self.ensure_unit_quad(&gpu.device)
+                    };
+                    let unit_mesh = match self.meshes.get(&unit_id) {
+                        Some(m) => m,
+                        None => continue,
+                    };
+                    let pipe_slot = match self.pipelines.get(&cmd.pipeline) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    let bg = self.bg_cache.get(&key).unwrap();
+                    pass.set_pipeline(&pipe_slot.pipeline);
+                    pass.set_vertex_buffer(0, unit_mesh.vertex.slice(..));
                     if let Some(buf) = self.instance_ring.first() {
-                        pass.set_vertex_buffer(1, buf.slice(..));
+                        let off = cmd.instance_offset;
+                        let need = (cmd.instance_count as u64).saturating_mul(INSTANCE_BYTES);
+                        let end = off.saturating_add(need).min(buf.size());
+                        if off < buf.size() && end > off {
+                            pass.set_vertex_buffer(1, buf.slice(off..end));
+                        } else {
+                            pass.set_vertex_buffer(1, buf.slice(0..INSTANCE_BYTES.min(buf.size())));
+                        }
                     }
-                }
-                pass.set_bind_group(0, bg, &[]);
-
-                if let Some(ref ibo) = mesh.index {
-                    pass.set_index_buffer(ibo.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                    pass.set_bind_group(0, bg, &[]);
+                    if let Some(ibo) = &unit_mesh.index {
+                        pass.set_index_buffer(ibo.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..6, 0, 0..cmd.instance_count);
+                    } else {
+                        pass.draw(0..unit_mesh.vertex_count, 0..cmd.instance_count);
+                    }
                 } else {
-                    pass.draw(0..mesh.vertex_count, 0..1);
+                    let mesh = match self.meshes.get(&cmd.mesh) {
+                        Some(m) => m,
+                        None => continue,
+                    };
+                    let pipe_slot = match self.pipelines.get(&cmd.pipeline) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    let bg = self.bg_cache.get(&key).unwrap();
+                    pass.set_pipeline(&pipe_slot.pipeline);
+                    pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+                    let is_inst_single = tex_count <= 1 && !has_uniforms && (parts_key == "solid" || parts_key == "textured");
+                    if is_inst_single {
+                        if let Some(buf) = self.instance_ring.first() {
+                            let end = INSTANCE_BYTES.min(buf.size());
+                            pass.set_vertex_buffer(1, buf.slice(0..end));
+                        }
+                    }
+                    pass.set_bind_group(0, bg, &[]);
+                    if let Some(ibo) = &mesh.index {
+                        pass.set_index_buffer(ibo.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                    } else {
+                        pass.draw(0..mesh.vertex_count, 0..1);
+                    }
                 }
             }
         }

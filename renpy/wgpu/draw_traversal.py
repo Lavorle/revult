@@ -25,6 +25,12 @@ from .draw_debug import (  # noqa: F401
 )
 from .host_texture import HostTexture
 
+# M1 T3: instance grouping helper available via host_bridge (private _InstanceGroup)
+try:
+    from .host_bridge import _InstanceGroup  # noqa: F401
+except Exception:
+    _InstanceGroup = None  # type: ignore
+
 
 class TraversalMixin:
     # Expected attributes on the concrete WgpuDraw (type hints only)

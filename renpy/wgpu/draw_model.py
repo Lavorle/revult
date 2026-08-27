@@ -58,6 +58,13 @@ class ModelMixin:
                 return
             cox, coy, cw, ch, u0, v_bottom, u1, v_top = cropped
             x0, y0, x1, y1 = self._virt_rect_to_ndc(cox, coy, cw, ch)
+            # M1 T3 grouping: plain textured solid without uniforms can be instanced
+            try:
+                if self._can_instance(self._tex_pipe, None, None, None):
+                    if self._instance_add(self._tex_pipe, node.handle, x0, y0, x1, y1, u0, v_bottom, u1, v_top, (1.0, 1.0, 1.0, 1.0)):
+                        return
+            except Exception:
+                pass
             mesh = self._mesh_quad_ndc(
                 x0, y0, x1, y1, (1.0, 1.0, 1.0, 1.0), u0, v_bottom, u1, v_top
             )
@@ -363,19 +370,12 @@ class ModelMixin:
         if _clip_uv_frac is not None:
             uv = self._remap_uv_frac(*uv, _clip_uv_frac)
 
-        mesh = self._resolve_mesh(
-            node, x0, y0, x1, y1, color=color or (1, 1, 1, 1), uv=uv
-        )
-        if mesh is None:
-            return
-
         # Pipeline: explicit → shader-name map → solid/textured fallback.
         pipe = getattr(node, "pipeline", None)
         if not isinstance(pipe, int) or pipe <= 0:
             pipe = self._pipeline_for_shaders(shaders, tex is not None)
 
         # renpy.alpha composition: fold u_renpy_alpha / u_renpy_over into vertex color.
-        # GL2: gl_FragColor *= vec4(a, a, a, a*over). Host textured does tex*v.color then premul.
         draw_color = color or (1.0, 1.0, 1.0, 1.0)
         if isinstance(uniforms, dict) and shaders and any(
             s in ("renpy.alpha", "alpha") for s in shaders
@@ -391,14 +391,7 @@ class ModelMixin:
             a = max(0.0, min(1.0, a))
             over = max(0.0, min(1.0, over))
             cr, cg, cb, ca = draw_color
-            # Premul-friendly: scale RGB by alpha, A by alpha*over (GL2 shape).
             draw_color = (cr * a, cg * a, cb * a, ca * a * over)
-            # Rebuild mesh with adjusted vertex color when we already built one.
-            mesh = self._resolve_mesh(
-                node, x0, y0, x1, y1, color=draw_color, uv=uv
-            )
-            if mesh is None:
-                return
 
         u = self._pack_uniforms(uniforms, shaders)
 
@@ -406,8 +399,24 @@ class ModelMixin:
         if tex1 is None and len(tex_slots) > 1:
             tex1 = tex_slots[1].handle
 
-        self._dm(pipe, int(mesh), tex, tex1, u)
+        # M1 T3 grouping: plain solid/textured without uniforms can be instanced
+        # Skip custom vertex meshes (Model render with explicit vertices) — instancing only for quads
+        try:
+            has_custom_verts = getattr(node, "vertices", None) is not None
+            if not has_custom_verts and self._can_instance(pipe, tex1, None, u):
+                u0, v0, u1, v1 = uv  # type: ignore
+                if self._instance_add(pipe, tex, x0, y0, x1, y1, u0, v0, u1, v1, draw_color):
+                    return
+        except Exception:
+            pass
 
+        mesh = self._resolve_mesh(
+            node, x0, y0, x1, y1, color=draw_color, uv=uv
+        )
+        if mesh is None:
+            return
+
+        self._dm(pipe, int(mesh), tex, tex1, u)
     def _iter_children(self, node):
         """Yield (child, xo, yo) from Render-like children / blits."""
         children = getattr(node, "children", None)
@@ -513,11 +522,17 @@ class ModelMixin:
             return
         cox, coy, cw, ch, u0, v_bottom, u1, v_top = cropped
         x0, y0, x1, y1 = self._virt_rect_to_ndc(cox, coy, cw, ch)
+        # M1 T3 grouping for plain textured quads
+        try:
+            if self._can_instance(self._tex_pipe, None, None, None):
+                if self._instance_add(self._tex_pipe, ht.handle, x0, y0, x1, y1, u0, v_bottom, u1, v_top, (1.0, 1.0, 1.0, 1.0)):
+                    return
+        except Exception:
+            pass
         mesh = self._mesh_quad_ndc(
             x0, y0, x1, y1, (1.0, 1.0, 1.0, 1.0), u0, v_bottom, u1, v_top
         )
         self._dm(self._tex_pipe, int(mesh), ht.handle, None, None)
-
     def _node_size(self, node, default=None):
         """Best-effort (w, h) from a Render/Model/Surface-like node.
 

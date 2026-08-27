@@ -40,3 +40,7 @@ ISO_BASIS_Y = 0.5  # src: draw_walk.py:11 — isometric tile projection Y basis 
 # ── Instance ring / perf gate (M1 Wave32 Phase 1a) ──
 INSTANCE_RING_INIT = 4096  # src: arena.rs:16 — instance ring initial capacity (M1 Wave32)
 PERF_GATE_THRESH = 10  # src: arena.rs:22 / host_bridge.get_frame_stats — draw_calls/quads perf gate threshold
+
+# ── Grouped instancing (M1 T3) ──
+INSTANCE_GROUP_MIN = 2  # src: host_bridge._InstanceGroup — minimum quads to emit grouped draw_instances (else single instance path)
+INSTANCE_GROUP_MAX_BATCH = 8192  # src: arena.draw_instances — cap per draw_instances call to bound ring growth

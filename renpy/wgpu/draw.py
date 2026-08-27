@@ -58,12 +58,16 @@ from .draw_traversal import TraversalMixin
 from .draw_walk import WalkMixin
 from .host_texture import HostTexture, _surf_fingerprint  # noqa: F401
 from .rtt_pool import RttPoolMixin
-
 # host_bridge single-point import (optional; fallback to direct import)
 try:
     from .host_bridge import renpy_host as _host_bridge
 except Exception:  # pragma: no cover  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
     _host_bridge = None  # type: ignore
+# Instance grouping (M1 T3) — private helper imported here to avoid circular deps
+try:
+    from .host_bridge import _InstanceGroup
+except Exception:  # noqa: BLE001
+    _InstanceGroup = None  # type: ignore
 
 
 class GpuHandleCache:
@@ -338,13 +342,20 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — unit quad fallback to legacy path
             self._unit_quad = None
             self._unit_quad_is_instance_source = False
+        # M1 T3 instance grouping for solid/textured quads
+        try:
+            if _InstanceGroup is not None:
+                self._instance_group = _InstanceGroup()
+            else:
+                self._instance_group = None
+        except Exception:
+            self._instance_group = None
         # GL2-parity axis-aligned clip stack (virtual-pixel absolute coords).
         # None = no clip. Pushed when Render.xclipping/yclipping is set; intersected
         # with parent; empty intersect skips the subtree. Mesh crop (not GPU scissor).
         # v1: axis-aligned only — reverse-transformed clips are residual (see
         # _clip_push_from_node docstring).
         self._clip_rect = None  # type: Optional[tuple[float, float, float, float]]
-
     def _ensure_pipes(self):
         import renpy_host  # type: ignore
 
@@ -428,6 +439,83 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
                     touch(int(self._quad_mesh))
             except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
+
+    # --- M1 T3 instance grouping helpers ------------------------------------
+    def _can_instance(self, pipeline, texture1, texture2, uniforms) -> bool:
+        """True when this draw can be grouped into instance batch."""
+        try:
+            if uniforms is not None:
+                return False
+            if texture1 is not None or texture2 is not None:
+                return False
+            if self._unit_quad is None:
+                return False
+            if getattr(self, "_instance_group", None) is None:
+                return False
+            # Only plain solid/textured (tex_count 0/1, no uniforms) may instance
+            # composition_only alpha/geometry handled elsewhere via color fold
+            if pipeline is None:
+                return False
+            # Pipelines may still be None before _ensure_pipes; allow tentative true then fallback
+            if self._solid_pipe is None or self._tex_pipe is None:
+                try:
+                    self._ensure_pipes()
+                except Exception:
+                    pass
+            if pipeline == self._solid_pipe or pipeline == self._tex_pipe:
+                return True
+            return False
+        except Exception:
+            return False
+
+    def _instance_add(self, pipeline, texture, x0, y0, x1, y1, u0, v0, u1, v1, color):
+        """Add one instance to the pending group; returns True if grouped."""
+        try:
+            grp = getattr(self, "_instance_group", None)
+            if grp is None or self._unit_quad is None:
+                return False
+            # solid vs textured texture handling
+            tex = texture if texture is not None else None
+            grp.add(pipeline, tex, None, None, x0, y0, x1, y1, u0, v0, u1, v1, color)
+            return True
+        except Exception:
+            return False
+
+    def _flush_instance_group(self):
+        """Flush pending instance groups via host draw_instances."""
+        try:
+            grp = getattr(self, "_instance_group", None)
+            if grp is None or grp.empty():
+                return
+            grp.flush(self)
+        except Exception:
+            pass
+
+    def _flush_instance_fallback(self, pipeline, texture, _t1, _t2, datas):
+        """Fallback for hermetic/lint when host lacks draw_instances: emit per-quad via _dm."""
+        try:
+            # datas is flat 12 floats per instance; need to recreate meshes
+            n = len(datas) // 12
+            for i in range(n):
+                base = i * 12
+                rox, roy, rsx, rsy, uox, voy, usx, vsy, cr, cg, cb, ca = datas[base:base+12]
+                x0 = float(rox)
+                y0 = float(roy)
+                x1 = x0 + float(rsx)
+                y1 = y0 + float(rsy)
+                u0 = float(uox)
+                v0 = float(voy)
+                u1 = u0 + float(usx)
+                v1 = v0 + float(vsy)
+                color = (cr, cg, cb, ca)
+                # Recreate mesh via _mesh_quad_ndc then _dm (fallback 1:1)
+                try:
+                    mesh = self._mesh_quad_ndc(x0, y0, x1, y1, color, u0, v0, u1, v1)
+                    self._dm(pipeline, int(mesh), texture, None, None)
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
 
     def _refresh_scale(self):

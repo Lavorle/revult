@@ -1215,6 +1215,7 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(begin_frame, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_model, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_models, &module)?)?;
+    module.add_function(wrap_pyfunction!(draw_instances, &module)?)?;
     module.add_function(wrap_pyfunction!(end_frame_present, &module)?)?;
     module.add_function(wrap_pyfunction!(re_present_last_product, &module)?)?;
     module.add_function(wrap_pyfunction!(has_last_product_cmds, &module)?)?;
@@ -1899,6 +1900,22 @@ fn draw_models(
     Ok(())
 
 })}
+
+#[pyfunction]
+#[pyo3(signature = (pipeline, texture=None, texture1=None, texture2=None, *, instances))]
+fn draw_instances(
+    pipeline: u64,
+    texture: Option<u64>,
+    texture1: Option<u64>,
+    texture2: Option<u64>,
+    instances: Vec<f32>,
+) -> PyResult<()> {
+    with_host_state_mut(|st| {
+        st.arena
+            .draw_instances(pipeline, texture, texture1, texture2, &instances)
+            .map_err(pyo3::exceptions::PyRuntimeError::new_err)
+    })
+}
 
 #[pyfunction]
 fn end_frame_present() -> PyResult<()> {

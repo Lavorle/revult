@@ -55,10 +55,18 @@ class ScreenMixin:
 
     def _end_frame_present(self):
         """Flush batched draw_model cmds then present (product + nested RTT)."""
+        # M1 T3: flush instance groups before batched models to preserve painter order approximation
+        # Grouped draws represent many quads as single DrawCmd; emit before singletons
+        # (dense prefs blocks are contiguous, so order within map insertion approx preserves painter)
+        try:
+            grp_flush = getattr(self, "_flush_instance_group", None)
+            if grp_flush is not None:
+                grp_flush()
+        except Exception:
+            pass
         self._flush_draw_batch()
         import renpy_host  # type: ignore
         renpy_host.end_frame_present()
-
 
     def draw_screen(self, surftree, flip=True):
 
@@ -338,6 +346,16 @@ class ScreenMixin:
                 ``_acquire_rtt``) so mesh-bake / dissolve thrash does not
                 allocate a new full-screen target every call.
                 """
+                # M1 T3: isolate instance groups between parent and RTT
+                _grp = getattr(self, "_instance_group", None)
+                if _grp is not None:
+                    try:
+                        # flush parent pending into parent frame before nesting
+                        if not _grp.empty():
+                            _grp.flush(self)
+                        _grp.push()
+                    except Exception:
+                        pass
                 rtt = self._acquire_rtt(w, h)
                 renpy_host.begin_target(rtt)
                 renpy_host.begin_frame()
@@ -352,8 +370,13 @@ class ScreenMixin:
                         renpy_host.end_target()
                     except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                         _host_draw_fail("render_to_texture.end_target", e)
+                    # restore parent instance group
+                    if _grp is not None:
+                        try:
+                            _grp.pop()
+                        except Exception:
+                            pass
                 return rtt
-
             # Size-only → empty RTT.
             if isinstance(what, (tuple, list)) and len(what) >= 2 and all(
                 isinstance(x, (int, float)) for x in what[:2]

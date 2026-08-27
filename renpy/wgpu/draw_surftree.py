@@ -25,6 +25,12 @@ from .draw_debug import (  # noqa: F401
 )
 from .host_texture import HostTexture
 
+# M1 T3 grouping import (private helper; used via WgpuDraw._instance_add path)
+try:
+    from .host_bridge import _InstanceGroup  # noqa: F401
+except Exception:
+    _InstanceGroup = None  # type: ignore
+
 if TYPE_CHECKING:
     from .host_texture import HostTexture
 

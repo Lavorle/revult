@@ -54,6 +54,13 @@ run_gate g06 25
 run_gate g07 20
 run_gate g08 20
 
+# M3 T4增量 — 增量金库：G02 CJK竖排 / Arabic 连写 / G03 旋转裁剪 / 雾遮罩 (fail-closed, pre-present RT, MAE≤2/255 max≤16)
+echo "== goldens M3 T4 incremental (G02/G03 inc) =="
+run_gate g02_cjk_vertical 20
+run_gate g02_arabic 20
+run_gate g03_rot_clip 20
+run_gate g03_fog_mask 20
+
 echo "== perf gate: instances≈quads (AC1 companion, fail-closed) =="
 set +e
 RENPY_HOST_PERF=1 python3 - <<'PYGATE'

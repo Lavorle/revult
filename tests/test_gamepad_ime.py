@@ -121,24 +121,39 @@ def _ensure_host():
     try:
         import renpy_host as rh  # type: ignore
 
-        # Check that expected FFI exists; if not, augment with fake helpers
-        if not hasattr(rh, "inject_joy_axis"):
+        # Check that expected FFI exists; if not, augment with fake helpers.
+        # Must ensure gamepad_count/axis/button/hat share same backing store
+        # as inject_joy_*, so copy all from a single fake instance.
+        needed = [
+            "gamepad_count",
+            "gamepad_axis",
+            "gamepad_button",
+            "gamepad_hat",
+            "inject_joy_axis",
+            "inject_joy_button",
+            "inject_joy_hat",
+            "gamepad_probe",
+            "a11y_probe",
+            "get_screen_reader_active",
+            "set_text_input_rect",
+            "get_text_input_rect",
+        ]
+        missing = [n for n in needed if not hasattr(rh, n)]
+        if missing:
             fake = _FakeHost()
-            # keep original count/axis etc if present, delegate missing to fake
-            for name in [
-                "inject_joy_axis",
-                "inject_joy_button",
-                "inject_joy_hat",
-                "gamepad_probe",
-                "a11y_probe",
-                "get_screen_reader_active",
-            ]:
-                if not hasattr(rh, name):
+            for name in missing:
+                setattr(rh, name, getattr(fake, name))
+            # Ensure all gamepad-related methods share the same fake._pads
+            # if we mixed real + fake; re-bind the already-present ones to
+            # the fake's storage when gamepad_count came from fake.
+            if "gamepad_count" in missing:
+                for name in ["gamepad_axis", "gamepad_button", "gamepad_hat",
+                             "inject_joy_axis", "inject_joy_button", "inject_joy_hat",
+                             "gamepad_probe"]:
                     setattr(rh, name, getattr(fake, name))
         return rh
     except Exception:
         return _install_fake()
-
 
 class TestGamepadAxis(unittest.TestCase):
     def setUp(self):

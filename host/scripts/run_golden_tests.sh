@@ -33,6 +33,10 @@ gate_case_dir() {
     g06) echo "G06_live2d" ;;
     g07) echo "G07_model" ;;
     g08) echo "G08_mask" ;;
+    g02_cjk_vertical) echo "G02_cjk_vertical" ;;
+    g02_arabic) echo "G02_arabic" ;;
+    g03_rot_clip) echo "G03_rot_clip" ;;
+    g03_fog_mask) echo "G03_fog_mask" ;;
     composer_combo_matrixcolor) echo "composer_texture_matrixcolor" ;;
     composer_combo_alpha) echo "composer_texture_alpha" ;;
     *) echo "" ;;
@@ -148,6 +152,13 @@ for gate in "${GATES_MANDATORY[@]}"; do
   run_gate_via_parent "$gate" 1
 done
 
+# M3 T4增量 — 增量金库：多脚本/CJK竖排/旋转裁剪/雾遮罩 G02/G03 (fail-closed, pre-present RT, MAE≤2/255 max≤16)
+echo "=== M3 T4 Incremental Goldens (CJK vertical / Arabic / rot-clip / fog-mask) ==="
+GATES_INCREMENTAL=(g02_cjk_vertical g02_arabic g03_rot_clip g03_fog_mask)
+for gate in "${GATES_INCREMENTAL[@]}"; do
+  run_gate_via_parent "$gate" 1
+done
+
 echo "=== Optional Composer Combo Gates (parent_runner; non-blocking) ==="
 GATES_OPTIONAL=(composer_combo_matrixcolor composer_combo_alpha)
 for gate in "${GATES_OPTIONAL[@]}"; do
@@ -181,7 +192,8 @@ else:
 "
 
 echo "=== Tier 2 Golden Suite Summary ==="
-echo "Mandatory passed: $PASSED / ${#GATES_MANDATORY[@]}"
+TOTAL_MANDATORY=$((${#GATES_MANDATORY[@]} + ${#GATES_INCREMENTAL[@]}))
+echo "Mandatory passed: $PASSED / $TOTAL_MANDATORY (G01-G08 + 4 incremental)"
 echo "Mandatory failed: $FAILED"
 echo "Optional passed:  $OPTIONAL_PASSED / ${#GATES_OPTIONAL[@]}"
 echo "Optional failed:  $OPTIONAL_FAILED"

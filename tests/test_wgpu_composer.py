@@ -1,4 +1,11 @@
-"""Unit tests for renpy.wgpu.composer and native bridge integration contracts."""
+"""Unit tests for renpy.wgpu.composer and native bridge integration contracts.
+
+Thresholds (MAE gate, ADR §4.3.1 — docs/aegis/baseline/wgpu-golden-baseline.md):
+  mean MAE ≤ 2/255 (≈0.007843), max channel delta ≤ 16, fail-closed.
+  Baseline policy: first baselines from wgpu after visual QA; lavapipe CI
+  may use separate tolerance tier if documented (do not silent-resign).
+  Capture is pre-present game RT (Rgba8Unorm+PMA, One/OneMinusSrcAlpha).
+"""
 
 import unittest
 from renpy.wgpu.composer import (

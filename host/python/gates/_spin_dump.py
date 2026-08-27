@@ -3,13 +3,7 @@ import os
 import threading
 import time
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 log=open("/tmp/spin_main.log","w",buffering=1)  # noqa: SIM115
 faulthandler.enable(file=log, all_threads=True)
 def d():

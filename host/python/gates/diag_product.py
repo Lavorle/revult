@@ -3,13 +3,7 @@ import sys
 import traceback
 from pathlib import Path
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 outp = Path("/tmp/diag_product.txt")
 out = outp.open("w")
 def log(m):

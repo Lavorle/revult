@@ -5,13 +5,7 @@ import threading
 import time
 from pathlib import Path
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 # Poison like the old run_the_question.sh
 os.environ["RENPY_SKIP_MAIN_MENU"] = "0"

@@ -2,13 +2,7 @@ import renpy_host
 
 from renpy.wgpu.draw import WgpuDraw
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 draw = WgpuDraw()
 draw.init((1280,720))

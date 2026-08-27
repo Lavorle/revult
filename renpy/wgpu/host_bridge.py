@@ -34,11 +34,33 @@ def host_env_bool(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
 
 
+def log_host(where: str, exc: BaseException) -> None:
+    """Single-point host-draw failure logger (converges scattered except blocks).
+
+    Delegates to ``draw_debug._host_draw_fail`` when available so all
+    ``except Exception`` paths that must not abort the frame share one
+    throttle/one-print site. Falls back to stderr when draw_debug is not yet
+    importable (early lint).
+    """
+    try:
+        from .draw_debug import _host_draw_fail
+
+        _host_draw_fail(where, exc)
+    except Exception:
+        try:
+            import sys
+
+            sys.__stdout__.write(f"WgpuDraw.{where}: {type(exc).__name__}: {exc}\n")
+            sys.__stdout__.flush()
+        except Exception:
+            pass
+
+
 def get_host():
     """Single-point factory for the optional ``renpy_host`` extension.
 
-    Returns the imported ``renpy_host`` module or ``None`` when unavailable
-    (lint / hermetic gate). Call-sites should do ``if get_host() is None: ...``.
+    Returns ``renpy_host`` when the extension is importable (product run),
+    or ``None`` when linting without the native host (hermetic gates).
     """
     return renpy_host
 
@@ -168,4 +190,4 @@ def get_frame_stats():
         "overdraw_est": 0.0,
         "ms": 0.0,
     }
-__all__ = ["get_host", "host_env_bool", "renpy_host", "get_frame_stats", "_InstanceGroup"]
+__all__ = ["get_host", "host_env_bool", "log_host", "renpy_host", "get_frame_stats", "_InstanceGroup"]

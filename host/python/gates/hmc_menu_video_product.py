@@ -33,15 +33,7 @@ import renpy_host  # type: ignore
 from renpy.audio import renpysound_host as rps
 
 # --- harness (thin wrapper, original logic preserved) ---
-try:
-    from _harness import gate_harness, parametrized_gate  # type: ignore
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
-    except ImportError:
-        gate_harness = None  # type: ignore
-        parametrized_gate = None  # type: ignore
-# fallback
+from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 _base = Path(os.environ.get("RENPY_HOST_BASE") or str(Path.cwd()))
 out = _base / "host" / "target" / "gate-hmc_menu_video_product.txt"

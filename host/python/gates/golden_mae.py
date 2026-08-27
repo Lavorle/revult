@@ -21,14 +21,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
-
 MAE_MEAN_LIMIT = 2.0 / 255.0
 MAE_MAX_DELTA = 16
 

@@ -23,15 +23,7 @@ from host_pygame.locals import WINDOWRESIZED  # type: ignore
 from renpy.wgpu.draw import WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
-try:
-    from _harness import gate_harness, parametrized_gate  # type: ignore
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
-    except ImportError:
-        gate_harness = None  # type: ignore
-        parametrized_gate = None  # type: ignore
-# fallback
+from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 # Legacy SDL2 umbrella type (host event_queue keeps 512; not in SDL3 locals).
 WINDOWEVENT_LEGACY = 512

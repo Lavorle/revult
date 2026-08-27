@@ -9,13 +9,7 @@ Note: run_file prepends imports — no __future__ here.
 import os
 import traceback
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 import host_pygame.event as pev  # type: ignore
 import renpy_host  # type: ignore

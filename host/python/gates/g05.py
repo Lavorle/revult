@@ -13,13 +13,7 @@ from golden_mae import compare_or_bootstrap, gate_result_path
 
 from renpy.wgpu.video import _gradient_frame
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 # Fixed t=0.5 gradient frame → textured full-window-ish quad.
 W, H = 64, 64

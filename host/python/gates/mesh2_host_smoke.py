@@ -2,13 +2,7 @@ import os
 import sys
 from pathlib import Path
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 base = Path(os.environ.get("RENPY_HOST_BASE") or "/mnt/nvme1n1p2/revult")
 sys.path.insert(0, str(base/"host/python/gates"))
 import bootstrap as boot

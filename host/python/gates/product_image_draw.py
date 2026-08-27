@@ -19,15 +19,7 @@ import renpy_host  # type: ignore
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
-try:
-    from _harness import gate_harness, parametrized_gate  # type: ignore
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
-    except ImportError:
-        gate_harness = None  # type: ignore
-        parametrized_gate = None  # type: ignore
-# fallback
+from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 
 def _png_rgba(path):

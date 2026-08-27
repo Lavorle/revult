@@ -30,15 +30,7 @@ from renpy.pygame.surface import Surface
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
-try:
-    from _harness import gate_harness, parametrized_gate  # type: ignore
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
-    except ImportError:
-        gate_harness = None  # type: ignore
-        parametrized_gate = None  # type: ignore
-# fallback
+from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
 out = Path(_base) / "host" / "target" / "gate-chrome_transparent_frame.txt"

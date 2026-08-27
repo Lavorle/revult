@@ -1,7 +1,6 @@
 """draw_texture — texture/cache mixin extracted from draw.py."""
 from __future__ import annotations
 
-import os
 import time as _time
 from enum import Enum
 
@@ -13,6 +12,7 @@ from .draw_debug import (
     _phase0_signals_enabled,
     _ui_trace_once,
 )
+from .host_bridge import host_env_bool
 from .host_texture import HostTexture, _surf_fingerprint
 
 try:
@@ -256,7 +256,7 @@ class TextureMixin:
             self._load_empty_pad_input = empty_pad_input and (not transient)
             fp = _surf_fingerprint(pixels, w, h)
             if (
-                os.environ.get("RENPY_HOST_UI_TRACE") == "1"
+                host_env_bool("RENPY_HOST_UI_TRACE")
                 and "empty_upload" not in _UI_TRACE_LOGGED
                 and (w * h) > 4
             ):
@@ -308,18 +308,19 @@ class TextureMixin:
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             if transient:
-                if os.environ.get("RENPY_HOST_MOVIE_ASSERT", "").strip() in (
-                    "1",
-                    "true",
-                    "yes",
-                ):
+                if host_env_bool("RENPY_HOST_MOVIE_ASSERT"):
                     logged = getattr(self, "_ac2_tex_sizes_logged", None)
                     if logged is None:
                         logged = set()
                         self._ac2_tex_sizes_logged = logged
-                    present_1b = os.environ.get(
-                        "RENPY_HOST_MOVIE_PRESENT", "1b"
-                    ).strip().lower() not in ("1a", "layout", "s1")
+                    present_1b = True
+                    try:
+                        import os as _os
+                        present_1b = _os.environ.get(
+                            "RENPY_HOST_MOVIE_PRESENT", "1b"
+                        ).strip().lower() not in ("1a", "layout", "s1")
+                    except Exception:
+                        pass
                     half_bleed = (w, h) in ((960, 540), (1280, 720))
                     layout_ok = (w, h) == (1920, 1080)
                     if (layout_ok or half_bleed) and (w, h) not in logged:
@@ -493,11 +494,9 @@ class TextureMixin:
         return self.load_texture(s)
 
     def kill_textures(self):
-        try:
-            from renpy.display import im
-            im.cache.clear()
-        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            pass
+        # T5: im.cache coupling removed — host_texture stash (GpuHandleCache) is now single owner.
+        # Legacy ``im.cache.clear()`` is no longer driven from wgpu; present-path dead-handle
+        # recovery via _handle_pixels handles surftree-held HostTextures after FIFO eviction.
         try:
             import renpy_host  # type: ignore
             for _fp, handle, _tw, _th in list(self.texture_cache.values()):

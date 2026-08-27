@@ -8,13 +8,7 @@ import sys
 import traceback
 from pathlib import Path
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 # Bind renpy.config BEFORE any print: host bootstrap partially imports renpy and
 # renpy.log redirects stdout to StdoutRedirector which reads renpy.config.

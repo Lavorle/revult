@@ -23,17 +23,14 @@ from golden_mae import compare_or_bootstrap, gate_result_path
 # --- Harness sample migration -----------------------------------------------
 # This gate keeps its explicit flow as the reference template, but proves
 # the new parametrized harness is importable without migrating all 134 files.
-# Required import per spec: `from _harness import gate_harness` (gates/ on
+# Required import per spec: `from host.python.gates._harness import gate_harness` (gates/ on
 # sys.path when run via renpy_host). The try-wrapper also supports
 # `python -m host.python.gates.composer_combo_alpha` / namespace import.
-try:
-    from _harness import gate_harness
-except ImportError:  # pragma: no cover — fallback for namespace import
-    from host.python.gates._harness import gate_harness  # type: ignore[no-redef]  # noqa: F401
+from host.python.gates._harness import gate_harness
 
 # How to rewrite with harness (not yet switched — example only):
 # ------------------------------------------------------------------
-# from _harness import gate_harness
+# from host.python.gates._harness import gate_harness
 # from golden_mae import compare_or_bootstrap
 #
 # def run_one(case: dict):

@@ -1,8 +1,9 @@
 """draw_walk - recursive surftree walk (mixin)."""
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
+
+from .host_bridge import host_env_bool
 
 try:
     from .constants import ISO_BASIS_X, ISO_BASIS_Y  # noqa: F401
@@ -32,6 +33,7 @@ from .draw_debug import (  # noqa: F401
     _safe_print,
     _ui_trace_once,
 )
+from .draw_surftree import SurftreeMixin  # T5 shim
 from .host_texture import HostTexture
 
 
@@ -142,11 +144,11 @@ class WalkMixin:
         if special and multi_child and (self._is_dissolve_node(node) or self._is_dissolve_node(cached)) and not (self._is_imagedissolve_node(node) or self._is_imagedissolve_node(cached)):
             _safe_clear_cached(node)
         elif CachedModelPolicy.should_drop_bake(node, multi_tex, bool_mesh, multi_child, special):
-            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "drop_bake_residual" not in _UI_TRACE_LOGGED:
+            if host_env_bool("RENPY_HOST_UI_TRACE") and "drop_bake_residual" not in _UI_TRACE_LOGGED:
                 _ui_trace_once("drop_bake_residual", f"drop_bake=1 multi_child={int(bool(multi_child))} multi_tex={int(bool(multi_tex))} bool_mesh={int(bool(bool_mesh))} special={int(bool(special))} children_n={len(children_preview) if children_preview is not None else -1}")
             _safe_clear_cached(node)
         elif getattr(node, "cached_model", None) is not None:
-            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "drop_bake_residual" not in _UI_TRACE_LOGGED and multi_child and not special:
+            if host_env_bool("RENPY_HOST_UI_TRACE") and "drop_bake_residual" not in _UI_TRACE_LOGGED and multi_child and not special:
                 _ui_trace_once("drop_bake_residual", f"drop_bake=0 residual_single_slot_bake multi_child=1 multi_tex={int(bool(multi_tex))} bool_mesh={int(bool(bool_mesh))} special=0 children_n={len(children_preview) if children_preview is not None else -1}")
             self._draw_model_like(cached, ctx.ox, ctx.oy)
             return True
@@ -263,8 +265,10 @@ class WalkMixin:
             self._draw_node(child, ctx.ox + cx, ctx.oy + cy)
         return True
 
-    def _draw_node_inner_body(self, node, ox=0.0, oy=0.0):
-        ctx = WalkCtx(ox=float(ox), oy=float(oy), budget=120, clip_rect=getattr(self, "_clip_rect", None))
+    def _draw_node_inner_body(self, node, ox=0.0, oy=0.0, ctx: WalkCtx | None = None):
+        # T5: WalkCtx explicit — callers should pass ctx; ox/oy kept for compat 1 version.
+        if ctx is None:
+            ctx = WalkCtx(ox=float(ox), oy=float(oy), budget=120, clip_rect=getattr(self, "_clip_rect", None))
         if isinstance(node, int) and not isinstance(node, bool):
             if node > 0:
                 class _TexLeaf:
@@ -441,52 +445,8 @@ class WalkMixin:
         return False
 
     def _bake_mesh_children(self, node, children):
-        try:
-            import renpy_host  # type: ignore
-            self._ensure_pipes()
-            w, h = self._node_size(node)
-            if w <= 0 or h <= 0:
-                w, h = self.virtual_size
-            rtt = self._acquire_rtt(w, h)
-            renpy_host.begin_target(rtt)
-            renpy_host.begin_frame()
-            old_vs = self.virtual_size
-            old_clip = self._clip_rect
-            try:
-                self.virtual_size = (w, h)
-                self._clip_rect = None
-                for child, cx, cy in children:
-                    self._draw_node(child, float(cx), float(cy))
-            finally:
-                self.virtual_size = old_vs
-                self._clip_rect = old_clip
-                try:
-                    self._end_frame_present()
-                    renpy_host.end_target()
-                except Exception as e:
-                    _host_draw_fail("mesh_bake.end_frame", e)
-            class _BakedLeaf:
-                pass
-            leaf = _BakedLeaf()
-            leaf.width = w
-            leaf.height = h
-            leaf.texture = int(rtt)
-            leaf.mesh = True
-            leaf.shaders = ("renpy.texture",)
-            leaf.color = None
-            leaf.textures = None
-            leaf.vertices = None
-            leaf.indices = None
-            leaf.pipeline = None
-            leaf.uniforms = None
-            leaf.ndc = None
-            leaf.children = None
-            leaf.cached_model = None
-            leaf.blits = None
-            return leaf
-        except Exception as e:
-            _host_draw_fail("mesh_bake", e)
-            return None
+        """Shim: canonical in SurftreeMixin (T5)."""
+        return SurftreeMixin._bake_mesh_children(self, node, children)  # type: ignore[attr-defined]
 
 
 __all__ = ["WalkMixin", "WalkCtx", "CachedModelPolicy", "DissolveStrategy", "ReverseScaler"]

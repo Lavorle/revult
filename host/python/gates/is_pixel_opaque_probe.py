@@ -14,13 +14,7 @@ Writes host/target/gate-is_pixel_opaque_probe.txt with ok=True/False.
 import os
 from pathlib import Path
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy_host
 

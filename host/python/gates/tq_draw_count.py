@@ -16,15 +16,7 @@ import renpy_host
 import renpy.wgpu.draw as wdraw
 
 # --- harness (thin wrapper, original logic preserved) ---
-try:
-    from _harness import gate_harness, parametrized_gate  # type: ignore
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
-    except ImportError:
-        gate_harness = None  # type: ignore
-        parametrized_gate = None  # type: ignore
-# fallback
+from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 counts = {"draw_model": 0, "begin": 0, "end": 0, "ht": 0, "create_mesh": 0, "ds": 0}
 samples = []

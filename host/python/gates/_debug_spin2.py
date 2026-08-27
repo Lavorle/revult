@@ -4,13 +4,7 @@ import runpy
 import threading
 import time
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 f=open("/tmp/fault2.log","w")  # noqa: SIM115
 faulthandler.enable(file=f, all_threads=False)
 def dump_loop():

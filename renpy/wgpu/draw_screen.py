@@ -1,7 +1,6 @@
 """draw_screen — screen/present mixin extracted from draw.py."""
 from __future__ import annotations
 
-import os
 import time as _time
 
 from .draw_debug import (
@@ -13,6 +12,7 @@ from .draw_debug import (
     _phase0_signals_enabled,
     _ui_trace_once,
 )
+from .host_bridge import host_env_bool
 from .host_texture import HostTexture
 
 
@@ -241,7 +241,7 @@ class ScreenMixin:
                         f"host_frames={fc}"
                     )
             # Phase 1: arena thrash probe (once). Prefer existing Rust counters.
-            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "arena_count" not in _UI_TRACE_LOGGED:
+            if host_env_bool("RENPY_HOST_UI_TRACE") and "arena_count" not in _UI_TRACE_LOGGED:
                 try:
                     sc = (
                         int(renpy_host.sample_texture_count())

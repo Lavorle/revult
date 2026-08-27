@@ -10,7 +10,6 @@ Phase 8: create_mesh upload + draw_model_mesh for assimp/procedural models.
 
 from __future__ import annotations
 
-import os
 from .constants import (
     AUTO_MIPMAP_THRESH,
     GOLDEN_FALLBACK_H,
@@ -22,6 +21,7 @@ from .constants import (
     RTT_FREELIST_CAP,
     RTT_POOL_MAX_PER_SIZE,
 )
+from .host_bridge import host_env_bool
 from typing import Any
 
 # --- P0 decomposition: re-exports keep pickle/import compat ---
@@ -621,11 +621,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         # product full-HD after init (constructor default is 1280×720 only).
         # Do NOT hardcode constructor default for all games.
         try:
-            if os.environ.get("RENPY_HOST_ASSERT_VIRTUAL", "").strip() in (
-                "1",
-                "true",
-                "yes",
-            ):
+            if host_env_bool("RENPY_HOST_ASSERT_VIRTUAL"):
                 import sys
 
                 vw = int(virtual_size[0]) if virtual_size else 0

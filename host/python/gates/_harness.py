@@ -9,7 +9,7 @@ Replaces duplicated boilerplate across ~134 gate files:
 
 Usage — imperative:
 
-    from _harness import gate_harness
+    from host.python.gates._harness import gate_harness
     from golden_mae import compare_or_bootstrap
 
     def run_one(case):
@@ -24,7 +24,7 @@ Usage — imperative:
 
 Usage — pytest parametrize:
 
-    from _harness import parametrized_gate
+    from host.python.gates._harness import parametrized_gate
 
     @parametrized_gate("dissolve", [{"amount": 0.0}, {"amount": 0.5}, {"amount": 1.0}])
     def run_case(case):

@@ -11,13 +11,7 @@ from pathlib import Path
 
 import renpy_host
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 # 2x1: left red, right blue (opaque).
 pix = bytes([255, 0, 0, 255, 0, 0, 255, 255])

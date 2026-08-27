@@ -1,13 +1,7 @@
 import sys
 import traceback
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 out = open("/tmp/diag_renpy.txt", "w")  # noqa: SIM115
 try:
     out.write(f"path0={sys.path[:6]!r}\n")

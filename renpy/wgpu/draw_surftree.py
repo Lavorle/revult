@@ -1,10 +1,10 @@
 """
-draw_surftree — geometry / UV / clip helpers extracted from draw.py.
+draw_surftree — geometry / UV / clip + full traversal ownership (T5).
 
-This P0 iteration extracts the low-risk geometry/UV/clip helpers as a
-mixin (no surftree tree-walk logic yet). Full surftree traversal
-(_is_render_like, _extract_host_texture, _child_to_texture, etc.)
-remains in draw.py with a TODO for the next iteration.
+SurftreeMixin is now the single owner for all surftree traversal helpers:
+geometry/UV/clip, texture/mesh resolution, render/surface predicates,
+dissolve/reverse, child iteration, node sizing and mesh baking.
+Other mixins (Traversal/Model/Walk) retain thin re-export shims for 1 version.
 
 Usage:
     from .draw_surftree import SurftreeMixin
@@ -12,17 +12,16 @@ Usage:
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Sequence  # noqa: F401
 from typing import TYPE_CHECKING
 
 from .draw_debug import (  # noqa: F401
-    _UI_TRACE_LOGGED,
     _host_draw_fail,
     _phase0_due_dissolve,
     _phase0_log,
     _ui_trace_once,
 )
+from .host_bridge import host_env_bool
 from .host_texture import HostTexture
 
 # M1 T3 grouping import (private helper; used via WgpuDraw._instance_add path)
@@ -677,7 +676,7 @@ class SurftreeMixin:
         pw, ph = int(parent_size[0]), int(parent_size[1])
         # Prefer parent layout box for scale-up / unknown.
         if not (abs(xdx) < 1.0 - 1e-6 and abs(ydy) < 1.0 - 1e-6):
-            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
+            if host_env_bool("RENPY_HOST_UI_TRACE") and "reverse_branch" not in _UI_TRACE_LOGGED:
                 _ui_trace_once(
                     "reverse_branch",
                     f"branch=scale_up_or_fill pw={pw} ph={ph} xdx={xdx} ydy={ydy} dw={max(1, pw)} dh={max(1, ph)}",
@@ -692,7 +691,7 @@ class SurftreeMixin:
             ht = None
         if ht is not None and self._host_tex_is_full(ht):
             # Full image/text line texture → fill reverse node's virtual box.
-            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
+            if host_env_bool("RENPY_HOST_UI_TRACE") and "reverse_branch" not in _UI_TRACE_LOGGED:
                 _ui_trace_once(
                     "reverse_branch",
                     f"branch=full_oversample pw={pw} ph={ph} xdx={xdx} ydy={ydy} "
@@ -702,7 +701,7 @@ class SurftreeMixin:
 
         cw, ch = self._node_size(child, default=(0, 0))
         if cw <= 0 or ch <= 0:
-            if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
+            if host_env_bool("RENPY_HOST_UI_TRACE") and "reverse_branch" not in _UI_TRACE_LOGGED:
                 _ui_trace_once(
                     "reverse_branch",
                     f"branch=unknown_child_fallback pw={pw} ph={ph} xdx={xdx} ydy={ydy} cw={cw} ch={ch}",
@@ -711,7 +710,7 @@ class SurftreeMixin:
         # Partial UV (typewriter): map drawable partial → virtual partial.
         dw = max(1, round(abs(float(cw) * float(xdx))))
         dh = max(1, round(abs(float(ch) * float(ydy))))
-        if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "reverse_branch" not in _UI_TRACE_LOGGED:
+        if host_env_bool("RENPY_HOST_UI_TRACE") and "reverse_branch" not in _UI_TRACE_LOGGED:
             _ui_trace_once(
                 "reverse_branch",
                 f"branch=subsurface_partial pw={pw} ph={ph} xdx={xdx} ydy={ydy} "
@@ -719,13 +718,329 @@ class SurftreeMixin:
             )
         return dw, dh
 
+    # --- Full traversal ownership (T5): consolidated from Traversal/Model/Walk ---
+    # These were previously scattered across draw_traversal/draw_model/draw_walk;
+    # SurftreeMixin is now the single owner. Other mixins retain thin shims for
+    # 1 version to keep WgpuDraw MRO stable and hermetic gates importable.
 
-# TODO(P0-next): move remaining surftree traversal helpers:
-#   _is_render_like, _is_surface_like, _is_dissolve_node,
-#   _is_imagedissolve_node, _dissolve_complete, _reverse_axis_scale,
-#   _node_needs_axis_scale, _reverse_dest_size, _extract_host_texture,
-#   _solid_reverse_slot_texture, _child_to_texture, _make_model_leaf,
-#   _resolve_texture, _resolve_texture_full, _resolve_mesh, _iter_children,
-#   _node_size, _bake_mesh_children, etc.  Kept in draw.py this iteration.
+    def _extract_host_texture(self, child, depth=0):
+        """Pull a pure HostTexture leaf from a subsurface/image Render without RTT."""
+        if child is None or depth > 8:
+            return None
+        if isinstance(child, HostTexture):
+            return child if child.handle > 0 else None
+        if isinstance(child, int) and not isinstance(child, bool):
+            return HostTexture(child, 1, 1) if child > 0 else None
+        ct = getattr(child, "cached_texture", None)
+        if isinstance(ct, HostTexture) and ct.handle > 0:
+            return ct
+        if isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
+            w, h = self._node_size(child, default=(1, 1))
+            return HostTexture(ct, max(1, w), max(1, h))
+        if not self._is_render_like(child):
+            return None
+        if getattr(child, "mesh", None):
+            return None
+        if getattr(child, "reverse", None) is not None:
+            return None
+        if bool(getattr(child, "xclipping", False)) or bool(getattr(child, "yclipping", False)):
+            return None
+        shaders = getattr(child, "shaders", None) or ()
+        if shaders:
+            try:
+                from renpy.wgpu.shaders import composition_mode
+                if any(composition_mode(s) is None for s in shaders):
+                    return None
+            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                return None
+        uniforms = getattr(child, "uniforms", None)
+        if isinstance(uniforms, dict) and (
+            "u_renpy_matrixcolor" in uniforms
+            or "u_renpy_blur_log2" in uniforms
+            or "u_renpy_mask_multiplier" in uniforms
+            or "u_renpy_mask_offset" in uniforms
+            or "u_transition" in uniforms
+            or "u_animation" in uniforms
+        ):
+            return None
+        kids = list(self._iter_children(child))
+        if len(kids) != 1:
+            return None
+        only, _xo, _yo = kids[0]
+        return self._extract_host_texture(only, depth + 1)
+
+    def _solid_reverse_slot_texture(self, child):
+        """Solid reverse (10×10 + axis scale) → dissolve-slot HostTexture without RTT."""
+        if child is None or not self._is_render_like(child):
+            return None
+        memo = getattr(child, "_wgpu_solid_slot", None)
+        if isinstance(memo, HostTexture) and memo.handle > 0:
+            return memo
+        solid_node = child
+        kids = list(self._iter_children(solid_node))
+        if not self._node_needs_axis_scale(solid_node, kids):
+            if (
+                len(kids) == 1
+                and not getattr(solid_node, "mesh", None)
+                and getattr(solid_node, "reverse", None) is None
+            ):
+                only, xo, yo = kids[0]
+                try:
+                    if abs(float(xo)) > 1e-3 or abs(float(yo)) > 1e-3:
+                        return None
+                except (TypeError, ValueError):
+                    return None
+                if not self._is_render_like(only):
+                    return None
+                solid_node = only
+                kids = list(self._iter_children(solid_node))
+            else:
+                return None
+            if not self._node_needs_axis_scale(solid_node, kids):
+                return None
+        if len(kids) != 1:
+            return None
+        only, xo, yo = kids[0]
+        try:
+            if abs(float(xo)) > 1e-3 or abs(float(yo)) > 1e-3:
+                return None
+        except (TypeError, ValueError):
+            return None
+        if isinstance(only, HostTexture):
+            leaf = only if only.handle > 0 else None
+        else:
+            if self._is_render_like(only) and getattr(only, "reverse", None) is not None:
+                return None
+            leaf = self._extract_host_texture(only)
+        if leaf is None or leaf.handle <= 0:
+            return None
+        if not self._host_tex_is_full(leaf):
+            return None
+        nw, nh = self._node_size(child, default=(0, 0))
+        if nw <= 0 or nh <= 0:
+            return None
+        try:
+            child._wgpu_solid_slot = leaf  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            pass
+        return leaf
+
+    def _child_to_texture(self, child):
+        """Convert a mesh-child to HostTexture for model texture slots."""
+        if child is None:
+            return None
+        if isinstance(child, HostTexture):
+            return child if child.handle > 0 else None
+        if isinstance(child, int) and not isinstance(child, bool):
+            return HostTexture(child, 1, 1) if child > 0 else None
+        if self._is_render_like(child):
+            ct = getattr(child, "cached_texture", None)
+            if isinstance(ct, HostTexture) and ct.handle > 0:
+                return ct
+            if isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
+                w, h = self._node_size(child)
+                return HostTexture(ct, w, h)
+            pure = self._extract_host_texture(child)
+            if pure is not None:
+                return pure
+            solid_slot = self._solid_reverse_slot_texture(child)
+            if solid_slot is not None:
+                return solid_slot
+            if not getattr(child, "loaded", False):
+                try:
+                    self.load_all_textures(child)
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                    _host_draw_fail("child_to_texture.load_all_textures", e)
+                pure = self._extract_host_texture(child)
+                if pure is not None:
+                    return pure
+                solid_slot = self._solid_reverse_slot_texture(child)
+                if solid_slot is not None:
+                    return solid_slot
+                ct = getattr(child, "cached_texture", None)
+                if isinstance(ct, HostTexture) and ct.handle > 0:
+                    return ct
+            handle = self.render_to_texture(child)
+            ht = None
+            if isinstance(handle, HostTexture):
+                ht = handle if handle.handle > 0 else None
+            elif isinstance(handle, int) and not isinstance(handle, bool) and handle > 0:
+                w, h = self._node_size(child)
+                ht = HostTexture(handle, w, h)
+            if ht is not None:
+                try:
+                    child.cached_texture = ht
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                    pass
+            return ht
+        if self._is_surface_like(child):
+            tex = self.load_texture(child)
+            if isinstance(tex, HostTexture):
+                return tex if tex.handle > 0 else None
+            if isinstance(tex, int) and not isinstance(tex, bool) and tex > 0:
+                try:
+                    w, h = child.get_size()
+                    return HostTexture(tex, max(1, int(w)), max(1, int(h)))
+                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                    return HostTexture(tex, 1, 1)
+            return None
+        if hasattr(child, "get_size") or hasattr(child, "_pixels"):
+            try:
+                tex = self.load_texture(child)
+                if isinstance(tex, HostTexture):
+                    return tex if tex.handle > 0 else None
+                if isinstance(tex, int) and not isinstance(tex, bool) and tex > 0:
+                    try:
+                        w, h = child.get_size()
+                        return HostTexture(tex, max(1, int(w)), max(1, int(h)))
+                    except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                        return HostTexture(tex, 1, 1)
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                pass
+        try:
+            handle = self.render_to_texture(child)
+            ht = None
+            if isinstance(handle, HostTexture):
+                ht = handle if handle.handle > 0 else None
+            elif isinstance(handle, int) and not isinstance(handle, bool) and handle > 0:
+                w, h = self._node_size(child)
+                ht = HostTexture(handle, w, h)
+            if ht is not None and self._is_render_like(child):
+                try:
+                    child.cached_texture = ht
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                    pass
+            return ht
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            pass
+        return None
+
+    def _make_model_leaf(self, w, h, textures, mesh_obj=None, shaders=None, uniforms=None):
+        """Lightweight model leaf for prepared ``cached_model`` (GL2Model stand-in)."""
+        class _ModelLeaf:
+            pass
+        leaf = _ModelLeaf()
+        leaf.width = int(w)
+        leaf.height = int(h)
+        leaf.texture = textures[0] if textures else None
+        leaf.textures = list(textures) if textures else None
+        leaf.mesh = True if mesh_obj is None else mesh_obj
+        if shaders:
+            leaf.shaders = tuple(shaders)
+        else:
+            leaf.shaders = ("renpy.texture",) if textures else ("renpy.solid",)
+        leaf.color = None
+        leaf.vertices = None
+        leaf.indices = None
+        leaf.pipeline = None
+        leaf.uniforms = uniforms
+        leaf.ndc = None
+        leaf.children = None
+        leaf.cached_model = None
+        leaf.blits = None
+        return leaf
+
+    def _iter_children(self, node):
+        """Yield (child, xo, yo) from Render-like children / blits."""
+        children = getattr(node, "children", None)
+        if children:
+            for entry in children:
+                if entry is None:
+                    continue
+                if isinstance(entry, (tuple, list)):
+                    child = entry[0]
+                    xo = float(entry[1]) if len(entry) > 1 else 0.0
+                    yo = float(entry[2]) if len(entry) > 2 else 0.0
+                    yield child, xo, yo
+                else:
+                    yield entry, 0.0, 0.0
+        blits = getattr(node, "blits", None)
+        if blits:
+            for entry in blits:
+                if entry is None:
+                    continue
+                if isinstance(entry, (tuple, list)):
+                    child = entry[0]
+                    xo = float(entry[1]) if len(entry) > 1 else 0.0
+                    yo = float(entry[2]) if len(entry) > 2 else 0.0
+                    yield child, xo, yo
+                else:
+                    yield entry, 0.0, 0.0
+
+    def _node_size(self, node, default=None):
+        """Best-effort (w, h) from a Render/Model/Surface-like node."""
+        if default is None:
+            default = self.virtual_size
+        if isinstance(node, HostTexture):
+            try:
+                return max(1, int(node.w)), max(1, int(node.h))
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                pass
+        w = float(getattr(node, "width", 0) or getattr(node, "w", 0) or 0)
+        h = float(getattr(node, "height", 0) or getattr(node, "h", 0) or 0)
+        if w > 0 and h > 0:
+            return max(1, int(w)), max(1, int(h))
+        try:
+            if hasattr(node, "get_size"):
+                gw, gh = node.get_size()
+                if gw and gh:
+                    return max(1, int(gw)), max(1, int(gh))
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            pass
+        dw = int(default[0]) if default and len(default) > 0 else 0
+        dh = int(default[1]) if default and len(default) > 1 else 0
+        if dw <= 0 or dh <= 0:
+            return 0, 0
+        return max(1, dw), max(1, dh)
+
+    def _bake_mesh_children(self, node, children):
+        """Bake mesh children into an RTT leaf (surftree-owned)."""
+        try:
+            import renpy_host  # type: ignore
+            self._ensure_pipes()
+            w, h = self._node_size(node)
+            if w <= 0 or h <= 0:
+                w, h = self.virtual_size
+            rtt = self._acquire_rtt(w, h)
+            renpy_host.begin_target(rtt)
+            renpy_host.begin_frame()
+            old_vs = self.virtual_size
+            old_clip = self._clip_rect
+            try:
+                self.virtual_size = (w, h)
+                self._clip_rect = None
+                for child, cx, cy in children:
+                    self._draw_node(child, float(cx), float(cy))
+            finally:
+                self.virtual_size = old_vs
+                self._clip_rect = old_clip
+                try:
+                    self._end_frame_present()
+                    renpy_host.end_target()
+                except Exception as e:
+                    _host_draw_fail("mesh_bake.end_frame", e)
+            class _BakedLeaf:
+                pass
+            leaf = _BakedLeaf()
+            leaf.width = w
+            leaf.height = h
+            leaf.texture = int(rtt)
+            leaf.mesh = True
+            leaf.shaders = ("renpy.texture",)
+            leaf.color = None
+            leaf.textures = None
+            leaf.vertices = None
+            leaf.indices = None
+            leaf.pipeline = None
+            leaf.uniforms = None
+            leaf.ndc = None
+            leaf.children = None
+            leaf.cached_model = None
+            leaf.blits = None
+            return leaf
+        except Exception as e:
+            _host_draw_fail("mesh_bake", e)
+            return None
+
 
 __all__ = ["SurftreeMixin"]

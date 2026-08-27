@@ -16,13 +16,7 @@ Note: no `from __future__` — host run_file prepends imports before this source
 import os
 from pathlib import Path
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy_host
 from renpy.pygame.surface import Surface

@@ -14,13 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-try:
-    from _harness import gate_harness, parametrized_gate
-except ImportError:
-    try:
-        from host.python.gates._harness import gate_harness, parametrized_gate
-    except ImportError:
-        gate_harness=parametrized_gate=None  # fallback
+from host.python.gates._harness import gate_harness, parametrized_gate
 
 # Allow `python3 host/python/gates/text_descender.py` from repo root.
 _HERE = Path(__file__).resolve().parent

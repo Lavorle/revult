@@ -2,10 +2,6 @@
 from __future__ import annotations
 
 from .draw_debug import (  # noqa: F401
-    _DRAW_SCREEN_LOCK,
-    _HOST_DRAW_FAIL_LOGGED,
-    _PHASE0_DISSOLVE_INTERVAL,
-    _PHASE0_FRAME_INTERVAL,
     _PHASE0_LAST_DISSOLVE_T,
     _PHASE0_LAST_FRAME_T,
     _PHASE0_LAST_GENERIC,
@@ -23,8 +19,13 @@ from .draw_debug import (  # noqa: F401
     _safe_print,
     _ui_trace_once,
 )
+from .draw_surftree import SurftreeMixin  # T5 shim
 from .host_texture import HostTexture
 
+try:
+    from .draw_walk import WalkCtx
+except Exception:  # noqa: BLE001
+    WalkCtx = None  # type: ignore
 
 class ModelMixin:
     # Expected attributes on the concrete WgpuDraw (type hints only)
@@ -418,32 +419,8 @@ class ModelMixin:
 
         self._dm(pipe, int(mesh), tex, tex1, u)
     def _iter_children(self, node):
-        """Yield (child, xo, yo) from Render-like children / blits."""
-        children = getattr(node, "children", None)
-        if children:
-            for entry in children:
-                if entry is None:
-                    continue
-                if isinstance(entry, (tuple, list)):
-                    child = entry[0]
-                    xo = float(entry[1]) if len(entry) > 1 else 0.0
-                    yo = float(entry[2]) if len(entry) > 2 else 0.0
-                    yield child, xo, yo
-                else:
-                    yield entry, 0.0, 0.0
-
-        blits = getattr(node, "blits", None)
-        if blits:
-            for entry in blits:
-                if entry is None:
-                    continue
-                if isinstance(entry, (tuple, list)):
-                    child = entry[0]
-                    xo = float(entry[1]) if len(entry) > 1 else 0.0
-                    yo = float(entry[2]) if len(entry) > 2 else 0.0
-                    yield child, xo, yo
-                else:
-                    yield entry, 0.0, 0.0
+        """Shim: canonical in SurftreeMixin (T5)."""
+        yield from SurftreeMixin._iter_children(self, node)  # type: ignore[attr-defined]
 
     def _draw_node(self, node, ox=0.0, oy=0.0):
         """Recursive duck-typed tree walk (mirrors GL2DrawingContext.draw_one altitude).
@@ -476,11 +453,19 @@ class ModelMixin:
                 self._clip_rect = new_clip
                 pushed = True
         try:
-            self._draw_node_inner_body(node, ox, oy)
+            # T5: explicit WalkCtx — ox,oy converted once here, downstream uses ctx.
+            if WalkCtx is not None:
+                try:
+                    ctx = WalkCtx(ox=float(ox), oy=float(oy), budget=120, clip_rect=self._clip_rect)
+                    self._draw_node_inner_body(node, ctx=ctx)
+                except Exception:
+                    # Fallback to legacy ox,oy if WalkCtx construction fails
+                    self._draw_node_inner_body(node, ox, oy)
+            else:
+                self._draw_node_inner_body(node, ox, oy)
         finally:
             if pushed:
                 self._clip_rect = prev_clip
-
     def _draw_texture_at(self, tex, ox, oy, size):
         """Draw a texture-like value as a virtual-pixel quad at (ox,oy) with size.
 
@@ -534,38 +519,8 @@ class ModelMixin:
         )
         self._dm(self._tex_pipe, int(mesh), ht.handle, None, None)
     def _node_size(self, node, default=None):
-        """Best-effort (w, h) from a Render/Model/Surface-like node.
-
-        When ``default`` is ``(0, 0)`` (or any non-positive), returns ``(0, 0)``
-        rather than inventing a 1×1 fallback — callers use that to mean "unknown".
-
-        HostTexture: ``.width/.height`` are the full atlas size; the drawable UV
-        rect is ``.w/.h`` (also ``get_size()``). Prefer the UV rect so reverse
-        dest sizing for typewriter partials / Frame subsurfaces is correct.
-        """
-        if default is None:
-            default = self.virtual_size
-        if isinstance(node, HostTexture):
-            try:
-                return max(1, int(node.w)), max(1, int(node.h))
-            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                pass
-        w = float(getattr(node, "width", 0) or getattr(node, "w", 0) or 0)
-        h = float(getattr(node, "height", 0) or getattr(node, "h", 0) or 0)
-        if w > 0 and h > 0:
-            return max(1, int(w)), max(1, int(h))
-        try:
-            if hasattr(node, "get_size"):
-                gw, gh = node.get_size()
-                if gw and gh:
-                    return max(1, int(gw)), max(1, int(gh))
-        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            pass
-        dw = int(default[0]) if default and len(default) > 0 else 0
-        dh = int(default[1]) if default and len(default) > 1 else 0
-        if dw <= 0 or dh <= 0:
-            return 0, 0
-        return max(1, dw), max(1, dh)
+        """Shim: canonical in SurftreeMixin (T5)."""
+        return SurftreeMixin._node_size(self, node, default)  # type: ignore[attr-defined]
 
 
 

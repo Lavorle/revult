@@ -328,6 +328,16 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         self._live2d_colors_pipe = None
         self._live2d_flip_pipe = None
         self._quad_mesh = None
+        self._unit_quad = None
+        self._unit_quad_is_instance_source = False
+        try:
+            import renpy_host as _rh  # type: ignore
+            verts = [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1]
+            self._unit_quad = _rh.create_mesh(verts, [0, 1, 2, 0, 2, 3])
+            self._unit_quad_is_instance_source = True
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — unit quad fallback to legacy path
+            self._unit_quad = None
+            self._unit_quad_is_instance_source = False
         # GL2-parity axis-aligned clip stack (virtual-pixel absolute coords).
         # None = no clip. Pushed when Render.xclipping/yclipping is set; intersected
         # with parent; empty intersect skips the subtree. Mesh crop (not GPU scissor).

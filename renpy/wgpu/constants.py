@@ -36,3 +36,7 @@ AUTO_MIPMAP_THRESH = 0.75  # src: draw.py:250 — draw_per_virt below which auto
 PIL_PADDING = 4  # src: text.py:40 — glyph bitmap padding (px) each side
 ISO_BASIS_X = 0.866  # src: draw_walk.py:10 — isometric tile projection X basis (cos30)
 ISO_BASIS_Y = 0.5  # src: draw_walk.py:11 — isometric tile projection Y basis (sin30/2)
+
+# ── Instance ring / perf gate (M1 Wave32 Phase 1a) ──
+INSTANCE_RING_INIT = 4096  # src: arena.rs:16 — instance ring initial capacity (M1 Wave32)
+PERF_GATE_THRESH = 10  # src: arena.rs:22 / host_bridge.get_frame_stats — draw_calls/quads perf gate threshold

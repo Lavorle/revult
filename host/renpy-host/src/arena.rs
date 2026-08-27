@@ -11,6 +11,9 @@ use crate::gpu::{GpuState, SWAPCHAIN_FORMAT};
 
 pub const BG_CACHE_SOFT_CAP: usize = 4096;
 pub const RING_INIT: usize = 256;
+pub const INSTANCE_FLOATS: usize = 12;
+pub const INSTANCE_BYTES: u64 = (12 * 4) as u64;
+pub const INSTANCE_RING_INIT: usize = 4096;
 pub const MAX_RTTS_PER_SIZE: usize = 16;
 pub const QUERY_RESOLVE_SIZE: usize = 16;
 
@@ -297,6 +300,11 @@ pub struct GpuArena {
     uniform_ring: Vec<wgpu::Buffer>,
     /// Next free slot in uniform_ring for the current encode_pass.
     uniform_ring_next: usize,
+    /// Instance ring for grouped textured/solid quads (M1 Wave32 Phase 1a).
+    /// Grow-only ring of 48-byte instance records (rect_off, rect_size, uv_off, uv_size, color).
+    instance_ring: Vec<wgpu::Buffer>,
+    instance_ring_next: usize,
+    instance_scratch: Vec<f32>,
     /// Last frame stats for perf gate (M1 Wave32).
     pub last_stats: FrameStats,
     /// Per-frame overdraw accumulator (Σ 1.0 per draw_model; future mesh area/fb).
@@ -365,6 +373,9 @@ impl GpuArena {
             bg_cache: HashMap::new(),
             uniform_ring: Vec::new(),
             uniform_ring_next: 0,
+            instance_ring: Vec::new(),
+            instance_ring_next: 0,
+            instance_scratch: Vec::new(),
             last_stats: FrameStats::default(),
             frame_overdraw_acc: 0.0,
             frame_overdraw_stack: Vec::new(),
@@ -1241,13 +1252,10 @@ impl GpuArena {
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(key),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+        let is_instance = tex_count <= 1 && !has_uniforms;
+        let vertex_buffers: Vec<wgpu::VertexBufferLayout> = if is_instance {
+            vec![
+                wgpu::VertexBufferLayout {
                     array_stride: 32,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -1267,7 +1275,70 @@ impl GpuArena {
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                }],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: INSTANCE_BYTES,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 4,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 8,
+                            shader_location: 5,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 6,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 24,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 8,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                },
+            ]
+        } else {
+            vec![wgpu::VertexBufferLayout {
+                array_stride: 32,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &[
+                    wgpu::VertexAttribute {
+                        offset: 0,
+                        shader_location: 0,
+                        format: wgpu::VertexFormat::Float32x2,
+                    },
+                    wgpu::VertexAttribute {
+                        offset: 8,
+                        shader_location: 1,
+                        format: wgpu::VertexFormat::Float32x2,
+                    },
+                    wgpu::VertexAttribute {
+                        offset: 16,
+                        shader_location: 2,
+                        format: wgpu::VertexFormat::Float32x4,
+                    },
+                ],
+            }]
+        };
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(key),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &vertex_buffers,
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -1834,6 +1905,30 @@ impl GpuArena {
         }
     }
 
+    fn ensure_instance_ring(&mut self, device: &wgpu::Device, need: usize) {
+        let required = ((need as u64) * INSTANCE_BYTES).max((INSTANCE_RING_INIT as u64) * INSTANCE_BYTES).max(INSTANCE_BYTES);
+        if self.instance_ring.is_empty() {
+            let buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("instance-ring"),
+                size: required,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.instance_ring.push(buf);
+        } else {
+            let cur = self.instance_ring[0].size();
+            if cur < required {
+                let buf = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("instance-ring"),
+                    size: required,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                self.instance_ring[0] = buf;
+            }
+        }
+    }
+
     fn encode_pass(
         &mut self,
         gpu: &GpuState,
@@ -1897,6 +1992,29 @@ impl GpuArena {
             .count();
         self.ensure_uniform_ring(&gpu.device, uniform_need.max(UNIFORM_RING_INITIAL));
         self.uniform_ring_next = 0;
+
+        // Instance ring: solid/textured (tex_count 0/1 no uniforms) need per-draw identity
+        // instance so old draw_model path stays pixel-equivalent while pipeline expects
+        // rect_off/size and uv_off/size + inst_color. One identity record reused.
+        let need_instance = cmds
+            .iter()
+            .filter(|c| {
+                self.pipelines
+                    .get(&c.pipeline)
+                    .map(|p| p.tex_count <= 1 && !p.has_uniforms)
+                    .unwrap_or(false)
+            })
+            .count();
+        if need_instance > 0 {
+            self.ensure_instance_ring(&gpu.device, INSTANCE_RING_INIT.max(need_instance));
+            let identity: [f32; 12] = [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+            if let Some(buf) = self.instance_ring.first() {
+                gpu.queue.write_buffer(buf, 0, cast_f32(&identity));
+            }
+            self.instance_ring_next = 1;
+        } else {
+            self.instance_ring_next = 0;
+        }
 
         // Cap cache growth: dense thrash can create many unique (pipe,tex) pairs.
         // Keep a soft ceiling; overflow clears (safe: rebuild next draws).
@@ -2057,6 +2175,12 @@ impl GpuArena {
                 let bg = self.bg_cache.get(&key).unwrap();
                 pass.set_pipeline(&pipe.pipeline);
                 pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+                let is_instance = pipe.tex_count <= 1 && !pipe.has_uniforms;
+                if is_instance {
+                    if let Some(buf) = self.instance_ring.first() {
+                        pass.set_vertex_buffer(1, buf.slice(..));
+                    }
+                }
                 pass.set_bind_group(0, bg, &[]);
 
                 if let Some(ref ibo) = mesh.index {
@@ -2238,6 +2362,11 @@ struct VsIn {
     @location(0) pos: vec2<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) color: vec4<f32>,
+    @location(4) rect_off: vec2<f32>,
+    @location(5) rect_size: vec2<f32>,
+    @location(6) uv_off: vec2<f32>,
+    @location(7) uv_size: vec2<f32>,
+    @location(8) inst_color: vec4<f32>,
 };
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -2246,8 +2375,8 @@ struct VsOut {
 @vertex
 fn vs_main(v: VsIn) -> VsOut {
     var o: VsOut;
-    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
-    o.color = v.color;
+    o.clip = vec4<f32>(v.pos * v.rect_size + v.rect_off, 0.0, 1.0);
+    o.color = v.color * v.inst_color;
     return o;
 }
 @fragment
@@ -2262,6 +2391,11 @@ struct VsIn {
     @location(0) pos: vec2<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) color: vec4<f32>,
+    @location(4) rect_off: vec2<f32>,
+    @location(5) rect_size: vec2<f32>,
+    @location(6) uv_off: vec2<f32>,
+    @location(7) uv_size: vec2<f32>,
+    @location(8) inst_color: vec4<f32>,
 };
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -2274,9 +2408,9 @@ struct VsOut {
 @vertex
 fn vs_main(v: VsIn) -> VsOut {
     var o: VsOut;
-    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
-    o.uv = v.uv;
-    o.color = v.color;
+    o.clip = vec4<f32>(v.pos * v.rect_size + v.rect_off, 0.0, 1.0);
+    o.uv = v.uv * v.uv_size + v.uv_off;
+    o.color = v.color * v.inst_color;
     return o;
 }
 @fragment

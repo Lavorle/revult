@@ -94,6 +94,7 @@ define_pipeline_accessor!(live2d_colors_pipeline, live2d_colors_pipeline);
 define_pipeline_accessor!(live2d_flip_pipeline, live2d_flip_pipeline);
 define_pipeline_accessor!(yuv420p_pipeline, yuv420p_pipeline);
 define_pipeline_accessor!(nv12_pipeline, nv12_pipeline);
+define_pipeline_accessor!(text_sdf_pipeline, text_sdf_pipeline);
 
 /// Embedded interpreter handle.
 pub struct PythonRuntime {
@@ -1221,6 +1222,10 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(live2d_flip_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(yuv420p_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(nv12_pipeline, &module)?)?;
+    module.add_function(wrap_pyfunction!(text_sdf_pipeline, &module)?)?;
+    module.add_function(wrap_pyfunction!(create_atlas_rgba, &module)?)?;
+    module.add_function(wrap_pyfunction!(destroy_atlas, &module)?)?;
+    module.add_function(wrap_pyfunction!(write_atlas_subrect, &module)?)?;
     module.add_function(wrap_pyfunction!(begin_frame, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_model, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_models, &module)?)?;
@@ -1771,6 +1776,40 @@ fn write_texture_rgba(id: u64, rgba: Vec<u8>) -> PyResult<()> {
         .take()
         .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
     let result = st.arena.write_texture_rgba(&gpu.queue, id, &rgba);
+    st.gpu = Some(gpu);
+    result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
+
+})}
+
+// ── M3 B1 T1: atlas subrect FFI (dynamic glyph atlas) ───────────────────────
+#[pyfunction]
+fn create_atlas_rgba(width: u32, height: u32) -> PyResult<u64> {
+    with_host_state_mut(|st| {
+    let gpu = st
+        .gpu
+        .take()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+    st.arena.set_color_format(gpu.surface_format);
+    let result = st.arena.create_atlas_rgba(&gpu.device, &gpu.queue, width, height);
+    st.gpu = Some(gpu);
+    result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
+
+})}
+
+#[pyfunction]
+fn destroy_atlas(id: u64) {
+    with_host_state_mut(|st| st.arena.destroy_atlas(id));
+}
+
+#[pyfunction]
+#[pyo3(signature = (id, x, y, w, h, rgba))]
+fn write_atlas_subrect(id: u64, x: u32, y: u32, w: u32, h: u32, rgba: Vec<u8>) -> PyResult<()> {
+    with_host_state_mut(|st| {
+    let gpu = st
+        .gpu
+        .take()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+    let result = st.arena.write_atlas_subrect(&gpu.queue, id, x, y, w, h, &rgba);
     st.gpu = Some(gpu);
     result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
 

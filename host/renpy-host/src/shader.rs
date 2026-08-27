@@ -21,6 +21,51 @@ pub const UNIFORM_MATRIXCOLOR16: &str = "matrixcolor16";
 pub const DEFAULT_TEXTURE: &str = "renpy.texture";
 pub const DEFAULT_SOLID: &str = "renpy.solid";
 
+/// SDF text pipeline WGSL — single atlas texture with SDF threshold + AA smoothing.
+/// Bindings: t_atlas@b0 + s_atlas@b1 + u@b2 Params (data0.x=threshold data0.y=aa).
+/// Fragment: textureSample(t_atlas,s_atlas,uv).r + smoothstep(thr-aa,thr+aa,d) + premul.
+/// Validated via validate_wgsl_syntax + validate_wgsl_with_naga (test_text_sdf_wgsl_validates).
+pub const TEXT_SDF_WGSL: &str = r#"
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+struct Params {
+    data0: vec4<f32>,
+    data1: vec4<f32>,
+    data2: vec4<f32>,
+    data3: vec4<f32>,
+};
+@group(0) @binding(0) var t_atlas: texture_2d<f32>;
+@group(0) @binding(1) var s_atlas: sampler;
+@group(0) @binding(2) var<uniform> u: Params;
+
+@vertex
+fn vs_main(v: VsIn) -> VsOut {
+    var o: VsOut;
+    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
+    o.uv = v.uv;
+    o.color = v.color;
+    return o;
+}
+@fragment
+fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    let d = textureSample(t_atlas, s_atlas, v.uv).r;
+    let thr = clamp(u.data0.x, 0.0, 1.0);
+    let aa = max(u.data0.y, 0.002);
+    let a = smoothstep(thr - aa, thr + aa, d);
+    let c = vec4<f32>(v.color.rgb * a, a * v.color.a);
+    let ca = clamp(c.a, 0.0, 1.0);
+    return vec4<f32>(c.rgb * ca, ca);
+}
+"#;
+
 /// Specific error type for WGSL shader composition failures.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ShaderError {
@@ -340,6 +385,20 @@ impl ShaderPartRegistry {
                 body: "let c0 = textureSample(t_color, s_color, v.uv);\nlet c1 = textureSample(t_tex1, s_color, v.uv);\nlet c2 = textureSample(t_tex2, s_color, v.uv);\nlet dissolve_t = clamp(u.data0.x, 0.0, 1.0);\nlet ramp = clamp((c2.r - dissolve_t) * 10.0, 0.0, 1.0);\ncolor = mix(c1, c0, ramp);".into(),
             }],
             true,
+            false,
+        ));
+
+        // renpy.text_sdf — SDF atlas text (single tex + params16 threshold/aa)
+        self.register_part(ShaderPart::new(
+            "renpy.text_sdf",
+            1,
+            UNIFORM_PARAMS16,
+            vec![],
+            vec![ShaderHook {
+                priority: 500,
+                body: "// SDF handled by pipeline\nlet d = textureSample(t_color, s_color, v.uv).r;\nlet thr = clamp(u.data0.x, 0.0, 1.0);\nlet aa = max(u.data0.y, 0.002);\nlet sdf_a = smoothstep(thr - aa, thr + aa, d);\ncolor = vec4<f32>(v.color.rgb * sdf_a, sdf_a * v.color.a);".into(),
+            }],
+            false,
             false,
         ));
     }
@@ -1015,5 +1074,30 @@ mod tests {
         let k3 = composer.compute_cache_key(&["renpy.texture".into(), "renpy.matrixcolor".into()]);
         assert_eq!(k1, k2);
         assert_ne!(k1, k3); // keys are order-dependent on normalized parts
+    }
+
+    #[test]
+    fn test_text_sdf_wgsl_validates() {
+        // TEXT_SDF_WGSL must pass both syntactic and naga validation.
+        validate_wgsl_syntax(TEXT_SDF_WGSL).expect("TEXT_SDF_WGSL syntax valid");
+        validate_wgsl_with_naga(TEXT_SDF_WGSL).expect("TEXT_SDF_WGSL naga valid");
+        assert!(TEXT_SDF_WGSL.contains("t_atlas"));
+        assert!(TEXT_SDF_WGSL.contains("s_atlas"));
+        assert!(TEXT_SDF_WGSL.contains("textureSample(t_atlas, s_atlas, v.uv).r"));
+        assert!(TEXT_SDF_WGSL.contains("smoothstep"));
+        assert!(TEXT_SDF_WGSL.contains("data0.x"));
+        assert!(TEXT_SDF_WGSL.contains("data0.y"));
+        // Ensure premultiplied convergence is present.
+        assert!(TEXT_SDF_WGSL.contains("c.rgb * ca"));
+        // Also validate composed hook path.
+        let composer = NativeShaderComposer::new();
+        let composed = composer
+            .compose(&["renpy.text_sdf".to_string()], true)
+            .expect("text_sdf compose ok");
+        assert_eq!(composed.tex_count, 1);
+        assert_eq!(composed.uniform_layout_id, UNIFORM_PARAMS16);
+        assert!(composed.wgsl_source.contains("smoothstep"));
+        validate_wgsl_syntax(&composed.wgsl_source).expect("composed text_sdf syntax");
+        validate_wgsl_with_naga(&composed.wgsl_source).expect("composed text_sdf naga");
     }
 }

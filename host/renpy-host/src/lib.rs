@@ -1,4 +1,5 @@
 pub mod arena;
+pub mod atlas;
 pub mod audio;
 pub mod audio_mixer;
 pub mod config;

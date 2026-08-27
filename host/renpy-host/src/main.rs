@@ -1,5 +1,6 @@
 //! renpy-host entry — winit outermost, Python pumped (plan §4.1.1).
 mod app;
+mod atlas;
 mod arena;
 mod audio;
 mod audio_mixer;

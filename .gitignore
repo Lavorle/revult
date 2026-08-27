@@ -218,3 +218,5 @@ renpy/uguu/uguu.pyi
 /.commandcode/
 /omx_wiki/
 /,
+host/renpy-host/src_old/
+host/renpy-host/src_old2/

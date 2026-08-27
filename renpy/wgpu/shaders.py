@@ -34,11 +34,11 @@ _PIPELINE_KEYS: dict[str, str] = {
     "renpy.matrixcolor": "matrixcolor_pipeline",
     "renpy.alpha_mask": "alpha_mask_pipeline",
     "renpy.mask": "mask_pipeline",
-    # Phase 7 Live2D parts (mirrors renpy/gl2/live2d.py register_shader names).
     "live2d.mask": "live2d_mask_pipeline",
     "live2d.inverted_mask": "live2d_inverted_mask_pipeline",
     "live2d.colors": "live2d_colors_pipeline",
     "live2d.flip_texture": "live2d_flip_pipeline",
+    "renpy.text_sdf": "text_sdf_pipeline",
 }
 
 # Parts that are composition / vertex-color effects, not host pipeline factories.
@@ -480,12 +480,17 @@ def register_builtin_core():
     register_wgsl_shader("renpy.alpha_mask", priority=400, kind="alpha_mask")
     # renpy.mask: src * (mask.a * mult + offset). data0.x=mult, data0.y=offset (uniform-level).
     register_wgsl_shader("renpy.mask", priority=400, kind="mask")
-    # Phase 7 Live2D (WGSL-producing registrations; no Cubism Core required for sample).
     register_wgsl_shader("live2d.mask", priority=200, kind="live2d_mask")
     register_wgsl_shader("live2d.inverted_mask", priority=200, kind="live2d_inverted_mask")
     register_wgsl_shader("live2d.colors", priority=250, kind="live2d_colors")
     register_wgsl_shader("live2d.flip_texture", priority=250, kind="live2d_flip")
-
+    register_wgsl_shader(
+        "renpy.text_sdf",
+        tex_count=1,
+        uniform_layout_id="params16",
+        fragment_hooks=[(500, "// SDF handled by pipeline")],
+        pipeline="text_sdf_pipeline",
+    )
 
 # Install on renpy module for call sites.
 def _install():

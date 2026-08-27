@@ -278,6 +278,11 @@ pub struct GpuArena {
     /// YUV420p / NV12 video pipelines (Phase 6/9 — reuse tex_count 3/2 layout).
     pub yuv420p_pipeline: Option<u64>,
     pub nv12_pipeline: Option<u64>,
+    /// SDF text atlas pipeline (M3 B1 T1) — single tex + params16 (threshold, aa).
+    pub text_sdf_pipeline: Option<u64>,
+    /// Dynamic glyph atlas (2048) — shelf packing + LRU, isolated from thrash caps.
+    /// Held by arena; GPU texture lives in `textures` LruSlotMap, this owns packing.
+    pub atlas: Option<crate::atlas::AtlasTexture>,
     pub clear_color: wgpu::Color,
     /// Mesh ids that would have been destroyed while still referenced by the
     /// open product frame. Flushed after end_frame_present drains frame_cmds.
@@ -377,6 +382,8 @@ impl GpuArena {
             live2d_flip_pipeline: None,
             yuv420p_pipeline: None,
             nv12_pipeline: None,
+            text_sdf_pipeline: None,
+            atlas: None,
             clear_color: wgpu::Color {
                 r: 0.05,
                 g: 0.05,
@@ -822,6 +829,115 @@ impl GpuArena {
         // Successful rewrite = still in active use (Movie / dirty image).
         // Bump LRU so thrash eviction does not treat this as oldest.
         self.touch_texture(id);
+        Ok(())
+    }
+
+    // ── M3 B1 T1: atlas subrect helpers (dynamic glyph atlas) ────────────────
+    /// Create an atlas texture (2048x2048 Rgba8Unorm + PMA, zeroed). Single instance
+    /// per arena; repeated calls return existing id. Mirrors Python AtlasManager first alloc.
+    pub fn create_atlas_rgba(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+    ) -> Result<u64, String> {
+        let w = width.max(1);
+        let h = height.max(1);
+        // If atlas already allocated and live, return existing.
+        if let Some(atlas) = &self.atlas {
+            if atlas.id != 0 && self.textures.contains_key(&atlas.id) {
+                return Ok(atlas.id);
+            }
+        }
+        let empty = vec![0u8; (w as usize).saturating_mul(h as usize).saturating_mul(4)];
+        let id = self.create_texture_rgba(device, queue, w, h, &empty)?;
+        // Init or update AtlasTexture packing owner.
+        if self.atlas.is_none() {
+            let mut at = crate::atlas::AtlasTexture::new(w);
+            at.set_id(id);
+            self.atlas = Some(at);
+        } else if let Some(at) = self.atlas.as_mut() {
+            // Reuse existing packing but reassign id (after dead-handle recovery).
+            at.set_id(id);
+        }
+        // Pin atlas texture across prepare epoch so FIFO cannot kill chrome atlas.
+        self.epoch_pin_texture(id);
+        Ok(id)
+    }
+
+    /// Destroy an atlas texture (and clear its packing slots).
+    pub fn destroy_atlas(&mut self, id: u64) {
+        if let Some(at) = self.atlas.as_mut() {
+            if at.id == id {
+                at.invalidate();
+            }
+        }
+        // Remove from LRU map if present; deferred destroy if still pinned.
+        if self.texture_pinned(id) {
+            if !self.texture_deferred_destroy.contains(&id) {
+                self.texture_deferred_destroy.push(id);
+            }
+        } else {
+            self.textures.remove(&id);
+        }
+    }
+
+    /// Subrect update for SDF glyph upload — tight queue.write_texture with origin.
+    /// `rgba` must be w*h*4 tight RGBA matching the subrect.
+    pub fn write_atlas_subrect(
+        &mut self,
+        queue: &wgpu::Queue,
+        id: u64,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        rgba: &[u8],
+    ) -> Result<(), String> {
+        let slot = self
+            .textures
+            .get(&id)
+            .ok_or_else(|| format!("write_atlas_subrect: unknown handle {id}"))?;
+        let expected = (w as usize).saturating_mul(h as usize).saturating_mul(4);
+        if rgba.len() < expected {
+            return Err(format!(
+                "write_atlas_subrect rgba too short: {} < {} ({}x{})",
+                rgba.len(),
+                expected,
+                w,
+                h
+            ));
+        }
+        if x + w > slot.width || y + h > slot.height {
+            return Err(format!(
+                "write_atlas_subrect out of bounds: {x}+{w}>{} or {y}+{h}>{}",
+                slot.width, slot.height
+            ));
+        }
+        let upload = maybe_swizzle_rgba(rgba, expected, self.color_format);
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &slot.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &upload,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.touch_texture(id);
+        // Also touch atlas LRU if this atlas is tracked.
+        self.epoch_pin_texture(id);
         Ok(())
     }
 
@@ -1777,6 +1893,12 @@ impl GpuArena {
                 .create_pipeline(device, "nv12", NV12_WGSL, 2, false)
                 .expect("nv12 pipeline");
             self.nv12_pipeline = Some(id);
+        }
+        if self.text_sdf_pipeline.is_none() {
+            let id = self
+                .create_pipeline(device, "text_sdf", TEXT_SDF_WGSL, 1, true)
+                .expect("text_sdf pipeline");
+            self.text_sdf_pipeline = Some(id);
         }
     }
 
@@ -3220,6 +3342,48 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(t_color, s_color, v.uv);
     let c = tex * v.color;
     return vec4<f32>(c.rgb * c.a, c.a);
+}
+"#;
+
+/// SDF text atlas pipeline — t_atlas@b0 + s_atlas@b1 + u@b2 Params (data0.x=threshold data0.y=aa)
+const TEXT_SDF_WGSL: &str = r#"
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+struct Params {
+    data0: vec4<f32>,
+    data1: vec4<f32>,
+    data2: vec4<f32>,
+    data3: vec4<f32>,
+};
+@group(0) @binding(0) var t_atlas: texture_2d<f32>;
+@group(0) @binding(1) var s_atlas: sampler;
+@group(0) @binding(2) var<uniform> u: Params;
+
+@vertex
+fn vs_main(v: VsIn) -> VsOut {
+    var o: VsOut;
+    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
+    o.uv = v.uv;
+    o.color = v.color;
+    return o;
+}
+@fragment
+fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    let d = textureSample(t_atlas, s_atlas, v.uv).r;
+    let thr = clamp(u.data0.x, 0.0, 1.0);
+    let aa = max(u.data0.y, 0.002);
+    let a = smoothstep(thr - aa, thr + aa, d);
+    let c = vec4<f32>(v.color.rgb * a, a * v.color.a);
+    let ca = clamp(c.a, 0.0, 1.0);
+    return vec4<f32>(c.rgb * ca, ca);
 }
 "#;
 

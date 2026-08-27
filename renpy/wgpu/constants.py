@@ -44,3 +44,13 @@ PERF_GATE_THRESH = 10  # src: arena.rs:22 / host_bridge.get_frame_stats — draw
 # ── Grouped instancing (M1 T3) ──
 INSTANCE_GROUP_MIN = 2  # src: host_bridge._InstanceGroup — minimum quads to emit grouped draw_instances (else single instance path)
 INSTANCE_GROUP_MAX_BATCH = 8192  # src: arena.draw_instances — cap per draw_instances call to bound ring growth
+
+# ── Text atlas / SDF (M3 B1 T1) ──
+ATLAS_SIZE = 2048  # src: atlas.rs:12 — dynamic glyph atlas texture width/height (px)
+ATLAS_MAX_GLYPHS = 4096  # src: text_atlas.py:18 — max glyph slots per atlas
+ATLAS_MAX_ATLASES = 2  # src: atlas.rs:16 — max atlas textures live
+SDF_RADIUS = 8  # src: text_sdf.py:12 — SDF distance field radius (px), separated from PIL_PADDING
+SDF_THRESHOLD = 0.5  # src: text_sdf.py:18 / shader.rs:TEXT_SDF_WGSL — SDF threshold for alpha (data0.x)
+SDF_AA = 0.02  # src: shader.rs:TEXT_SDF_WGSL — SDF anti-alias smoothstep half-width (data0.y)
+CLIP_STENCIL_BITS = 8  # src: arena.rs:18 — stencil bits reserved for clipping
+

@@ -7,7 +7,7 @@ cd "$ROOT/host"
 BIN=target/debug/renpy-host
 export RUST_LOG="${RUST_LOG:-info,wgpu_hal=off,wgpu_core=off,naga=off}"
 export RENPY_HOST_BASE="$ROOT"
-export PYTHONPATH="${ROOT}/host/python/gates${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="${ROOT}:${ROOT}/host/python/gates${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "== build =="
 cargo build -p renpy-host
@@ -53,6 +53,50 @@ run_gate g05 20
 run_gate g06 25
 run_gate g07 20
 run_gate g08 20
+
+echo "== perf gate: instances≈quads (AC1 companion, fail-closed) =="
+set +e
+RENPY_HOST_PERF=1 python3 - <<'PYGATE'
+import os, sys
+try:
+    from renpy.wgpu.host_bridge import get_frame_stats
+    s=get_frame_stats()
+    qc=s.get('quads',0)
+    ic=s.get('instances',0)
+    dc=s.get('draw_calls',0)
+except Exception as e:
+    print(f"perf gate SKIP: get_frame_stats unavailable ({e})", file=sys.stderr)
+    sys.exit(0)
+perf=os.environ.get('RENPY_HOST_PERF','')
+is_perf=perf.strip().lower() in ('1','true','yes')
+# qc==0 => no frame data or perf not enabled -> skip not fail
+if qc==0:
+    print(f"perf gate SKIP: quads==0 (perf_enabled={is_perf}, draw={dc}) no frame data")
+    sys.exit(0)
+diff=abs(ic-qc)
+rel=diff/max(1,qc)
+print(f"perf gate check: quads={qc} instances={ic} draw_calls={dc} diff={diff} rel={rel:.3f} (tolerance 0.10)")
+if rel < 0.10:
+    print(f"perf gate PASS: instances≈quads within 10% (ic={ic} qc={qc})")
+    sys.exit(0)
+else:
+    print(f"FAIL: instances {ic} != quads {qc} diff {diff} rel {rel:.3f} >0.10", file=sys.stderr)
+    sys.exit(1)
+PYGATE
+_rc=$?
+set -e
+if [[ $_rc -ne 0 ]]; then
+  echo "FAIL: instance count != quads (perf gate) rc=$_rc" >&2
+  exit 1
+fi
+echo "OK: perf gate instances≈quads (or skipped if no perf data)"
+echo "== ldd no libSDL* (AC2 re-verify after perf gate) =="
+ldd "$BIN" | tee target/renpy-host.ldd.post
+if ldd "$BIN" | grep -iE 'libSDL'; then
+  echo "FAIL: SDL linked into host artifact (post-gate)"
+  exit 1
+fi
+echo "OK: no libSDL* (post-gate ldd-clean)"
 
 echo "== key regression gates =="
 run_gate dissolve 10

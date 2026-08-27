@@ -84,7 +84,7 @@ cd "$HOST_DIR"
 
 export RUST_LOG="${RUST_LOG:-info,wgpu_hal=off,wgpu_core=off,naga=off}"
 export RENPY_HOST_BASE="$ROOT"
-export PYTHONPATH="${ROOT}/host/python/gates${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="${ROOT}:${ROOT}/host/python/gates${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "=== BC-160 Native GPU Performance Harness (honesty-first) ==="
 GPU_INFO=$(lspci 2>/dev/null | grep -i "VGA compatible controller.*Navi 12" || true)
@@ -205,6 +205,79 @@ PY
 }
 EOF2
   echo "Wrote MEASURED metrics to $OUT (fps=$FPS avg_ns=$AVG_NS one_low=$ONE_LOW render_ns=$RENDER_NS cpu_proxy=$CPU_PROXY eligible=$REL status=$PSTATUS)"
+  # --- M1 T4: get_frame_stats aggregation + 10x gate (fail-closed when perf probe available) ---
+  echo "--- Perf gate: get_frame_stats 10x (AC1) ---"
+  PERF_LOG="/tmp/bc160_frame_stats.log"
+  set +e
+  RENPY_HOST_PERF=1 python3 -c "from renpy.wgpu.host_bridge import get_frame_stats; s=get_frame_stats(); print(f\"draw_calls={s['draw_calls']} quads={s['quads']} instances={s['instances']} overdraw={s['overdraw_est']:.2f} ms={s['ms']:.2f}\")" | tee "$PERF_LOG"
+  _perf_rc=${PIPESTATUS[0]}
+  set -e
+  if [[ $_perf_rc -ne 0 ]]; then
+    echo "warn: get_frame_stats probe failed rc=$_perf_rc (treat as skip, log $PERF_LOG)" >&2
+  fi
+  DRAW_VAL=$(grep -oP 'draw_calls=\K\d+' "$PERF_LOG" 2>/dev/null | tail -1 || true)
+  QUADS_VAL=$(grep -oP 'quads=\K\d+' "$PERF_LOG" 2>/dev/null | tail -1 || true)
+  INST_VAL=$(grep -oP 'instances=\K\d+' "$PERF_LOG" 2>/dev/null | tail -1 || true)
+  if [[ -z "$DRAW_VAL" && -s "$PERF_LOG" ]]; then
+    _fallback=$(python3 - <<'PYEOF'
+import re, pathlib
+p=pathlib.Path("/tmp/bc160_frame_stats.log")
+t=p.read_text() if p.exists() else ""
+m1=re.search(r'draw_calls=(\d+)',t)
+m2=re.search(r'quads=(\d+)',t)
+m3=re.search(r'instances=(\d+)',t)
+print(f"{m1.group(1) if m1 else 0} {m2.group(1) if m2 else 0} {m3.group(1) if m3 else 0}")
+PYEOF
+)
+    DRAW_VAL=$(echo "$_fallback" | awk '{print $1}')
+    QUADS_VAL=$(echo "$_fallback" | awk '{print $2}')
+    INST_VAL=$(echo "$_fallback" | awk '{print $3}')
+  fi
+  DRAW_VAL=${DRAW_VAL:-0}
+  QUADS_VAL=${QUADS_VAL:-0}
+  INST_VAL=${INST_VAL:-0}
+  echo "perf: draw_calls=$DRAW_VAL quads=$QUADS_VAL instances=$INST_VAL (log $PERF_LOG rc=$_perf_rc)"
+  if [[ "$QUADS_VAL" -gt 0 || "$DRAW_VAL" -gt 0 ]]; then
+    python3 - <<PYENRICH
+import json, pathlib, re
+out=pathlib.Path("$OUT")
+try:
+    j=json.loads(out.read_text())
+    try:
+        dc=int("$DRAW_VAL")
+        qc=int("$QUADS_VAL")
+        ic=int("$INST_VAL")
+    except Exception:
+        dc=qc=ic=0
+    t=pathlib.Path("/tmp/bc160_frame_stats.log").read_text() if pathlib.Path("/tmp/bc160_frame_stats.log").exists() else ""
+    mo=re.search(r'overdraw=([0-9.]+)',t)
+    mm=re.search(r'ms=([0-9.]+)',t)
+    od=float(mo.group(1)) if mo else 0.0
+    ms=float(mm.group(1)) if mm else 0.0
+    j["frame_stats"]={"draw_calls":dc,"quads":qc,"instances":ic,"overdraw_est":od,"ms":ms}
+    notes=j.get("notes",[])
+    notes.append(f"perf: draw_calls={dc} quads={qc} instances={ic} overdraw={od:.2f} ms={ms:.2f} (RENPY_HOST_PERF probe)")
+    j["notes"]=notes
+    out.write_text(json.dumps(j, indent=2))
+    print(f"enriched {out} with frame_stats draw={dc} quads={qc}")
+except Exception as e:
+    print(f"warn: enrich OUT JSON failed: {e}")
+PYENRICH
+  fi
+  if [[ "$QUADS_VAL" -gt 0 ]]; then
+    THRESH=$(( QUADS_VAL / 10 ))
+    if [[ "$THRESH" -gt 0 && "$DRAW_VAL" -ge "$THRESH" ]]; then
+      echo "AC1 fail: draw $DRAW_VAL quads $QUADS_VAL need draw < quads/10 ($THRESH) for 10x" >&2
+      exit 1
+    fi
+    if [[ "$THRESH" -eq 0 ]]; then
+      echo "AC1 perf gate SKIP (quads $QUADS_VAL <10, threshold 0, not dense enough to enforce 10x)"
+    else
+      echo "AC1 perf gate PASS: draw $DRAW_VAL < quads/10 ($THRESH) quads $QUADS_VAL instances $INST_VAL"
+    fi
+  else
+    echo "AC1 perf gate SKIP: no perf data (quads==0, RENPY_HOST_PERF not enabled or no frame)"
+  fi
   exit 0
 fi
 

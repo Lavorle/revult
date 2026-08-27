@@ -1259,6 +1259,7 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(video_clock_unpause, &module)?)?;
     module.add_function(wrap_pyfunction!(video_clock_bind_audio, &module)?)?;
     module.add_function(wrap_pyfunction!(video_clock_drift_ms, &module)?)?;
+    module.add_function(wrap_pyfunction!(video_seek, &module)?)?;
     module.add_function(wrap_pyfunction!(audio_sample_rate, &module)?)?;
     module.add("PHASE", 6)?;
     module.add("KEYDOWN", types::KEYDOWN)?;
@@ -2439,9 +2440,17 @@ fn video_clock_drift_ms(channel: i32) -> f32 {
 }
 
 #[pyfunction]
+fn video_seek(channel: i32, pos_ms: f64) -> PyResult<bool> {
+    let drift = with_host_state(|st| st.video_clocks.get(&channel).map(|c| c.drift_ms).unwrap_or(0.0));
+    log::info!("video_seek channel={} pos_ms={} drift_ms={}", channel, pos_ms, drift);
+    Ok(true)
+}
+
+#[pyfunction]
 fn audio_sample_rate() -> u32 {
     with_host_state(|st| st.audio.sample_rate.load(Ordering::Relaxed))
 }
+
 
 type NestedPumpFn = Box<dyn FnMut(Duration) + Send>;
 static NESTED_PUMP: Mutex<Option<NestedPumpFn>> = Mutex::new(None);

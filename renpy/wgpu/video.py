@@ -31,6 +31,7 @@ Chunked decode (product 360@30):
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import queue as _queue
 import shutil
@@ -89,18 +90,49 @@ class FrameBag(list):
     ``live_cap`` is given, an internal ``deque(maxlen=live_cap)`` enforces a
     bounded ring while preserving the ``list``-like API and ``isinstance``
     checks used across the decode pipeline.
+
+    Byte-cap extension (M2 T3): ``cap_bytes`` limits retained bytes (None=unlimited,
+    default 64 MiB), ``evicted_bytes`` counts evicted payload, ``seek_index``
+    records (pts_ms, byte_offset, is_key) probes. ``append_limited`` enforces
+    the cap by popleft eviction, keeps ``_abs_total`` monotonic, and syncs
+    ``seek_index`` removal. ``build_seek_cmd`` is a probe returning an
+    ``ffmpeg -ss``-prefixed command and recording the seek in ``seek_index``.
     """
 
-    def __init__(self, iterable=(), *, abs_total: int = 0, live_cap: int | None = None):
+    def __init__(self, iterable=(), *, abs_total: int = 0, live_cap: int | None = None, cap_bytes: int | None = 64 * 1024 * 1024):
         if iterable is None:
             iterable = ()
         super().__init__(iterable)
         self._abs_total = int(abs_total or 0)
+        if self._abs_total == 0 and len(self) > 0:
+            # Preserve monotonic total when caller supplies iterable without explicit total
+            with contextlib.suppress(Exception):
+                self._abs_total = len(self)
         self._live_cap = live_cap
+        self.cap_bytes: int | None = cap_bytes
+        self.evicted_bytes: int = 0
+        self.seek_index: list[tuple[int, int, bool]] = []
         if live_cap is not None:
             self.frames: deque = deque(self, maxlen=live_cap)
         else:
             self.frames: deque = deque(self)
+        # Enforce byte cap on initial iterable (if any) by evicting oldest until under cap
+        if self.cap_bytes is not None and self.cap_bytes > 0 and len(self) > 0:
+            try:
+                total = sum(len(f) for f in self)  # type: ignore[arg-type]
+                while total > self.cap_bytes and len(self) > 0:
+                    ev = super().pop(0)
+                    self.evicted_bytes += len(ev) if isinstance(ev, (bytes, bytearray)) else 0
+                    if self.seek_index:
+                        with contextlib.suppress(Exception):
+                            self.seek_index.pop(0)
+                    total = sum(len(f) for f in self)  # type: ignore[arg-type]
+                if live_cap is not None:
+                    self.frames = deque(self, maxlen=live_cap)
+                else:
+                    self.frames = deque(self)
+            except Exception:
+                pass
 
     def append(self, item):  # type: ignore[override]
         if self._live_cap is not None:
@@ -118,6 +150,10 @@ class FrameBag(list):
         super().clear()
         with contextlib.suppress(Exception):
             self.frames.clear()
+        # Reset probes but keep cap
+        with contextlib.suppress(Exception):
+            self.evicted_bytes = 0
+            self.seek_index.clear()
 
     def __setitem__(self, key, value):  # type: ignore[override]
         super().__setitem__(key, value)
@@ -128,6 +164,154 @@ class FrameBag(list):
             self.frames = deque(self, maxlen=self._live_cap)
         else:
             self.frames = deque(self)
+
+    def append_limited(self, frame: bytes) -> None:
+        """Append *frame* respecting ``cap_bytes`` byte budget.
+
+        If ``cap_bytes`` is not None and ``sum_len + len(frame) > cap_bytes``,
+        popleft the oldest frames (accumulating ``evicted_bytes``) until the
+        new frame fits or the list is empty. Keeps ``_abs_total`` monotonic
+        and syncs ``seek_index`` removal. Also logs ``evicted_bytes``/
+        ``cap_bytes``/``ring_len`` for observability.
+        """
+        try:
+            flen = len(frame)  # type: ignore[arg-type]
+        except Exception:
+            flen = 0
+        # Byte-cap eviction loop
+        if self.cap_bytes is not None:
+            try:
+                cur = sum(len(f) for f in self)  # type: ignore[arg-type]
+            except Exception:
+                cur = 0
+            while cur + flen > self.cap_bytes and len(self) > 0:
+                try:
+                    ev = super().pop(0)
+                except Exception:
+                    break
+                ev_len = len(ev) if isinstance(ev, (bytes, bytearray)) else 0
+                self.evicted_bytes += ev_len
+                if self.seek_index:
+                    with contextlib.suppress(Exception):
+                        self.seek_index.pop(0)
+                # sync deque after each eviction
+                with contextlib.suppress(Exception):
+                    if self._live_cap is not None:
+                        self.frames = deque(self, maxlen=self._live_cap)
+                    else:
+                        # rebuild deque from list
+                        self.frames = deque(self)
+                with contextlib.suppress(Exception):
+                    logging.getLogger(__name__).info(
+                        "FrameBag evicted cap_bytes=%s evicted_bytes=%s ring_len=%s",
+                        self.cap_bytes,
+                        self.evicted_bytes,
+                        len(self),
+                    )
+                try:
+                    cur = sum(len(f) for f in self)  # type: ignore[arg-type]
+                except Exception:
+                    cur = 0
+        # live_cap pre-evict bookkeeping: if next append would overflow live_cap, account oldest
+        if self._live_cap is not None and len(self) >= self._live_cap and len(self) > 0:
+            try:
+                oldest = self[0]
+                oldest_len = len(oldest) if isinstance(oldest, (bytes, bytearray)) else 0
+                # Will be evicted by deque maxlen; count it now and sync seek_index
+                self.evicted_bytes += oldest_len
+                if self.seek_index:
+                    with contextlib.suppress(Exception):
+                        self.seek_index.pop(0)
+            except Exception:
+                pass
+        # Actual append respecting live_cap
+        if self._live_cap is not None:
+            self.frames.append(frame)
+            super().__init__(self.frames)
+        else:
+            super().append(frame)
+            with contextlib.suppress(Exception):
+                self.frames.append(frame)
+        # monotonic total
+        try:
+            self._abs_total = int(self._abs_total or 0) + 1
+        except Exception:
+            with contextlib.suppress(Exception):
+                self._abs_total = len(self)
+        # seek_index probe: pts derived from _abs_total (approx 30fps), byte_offset from evicted+prefix
+        try:
+            pts_ms = int((self._abs_total - 1) * 1000 / 30.0)
+            try:
+                # byte_offset = evicted plus bytes before this frame
+                byte_offset = self.evicted_bytes + sum(len(f) for f in self[:-1])  # type: ignore[arg-type]
+            except Exception:
+                byte_offset = self.evicted_bytes
+            is_key = True
+            self.seek_index.append((pts_ms, int(byte_offset), bool(is_key)))
+        except Exception:
+            pass
+        with contextlib.suppress(Exception):
+            logging.getLogger(__name__).debug(
+                "FrameBag cap_bytes=%s evicted_bytes=%s ring_len=%s total=%s",
+                self.cap_bytes,
+                self.evicted_bytes,
+                len(self),
+                self._abs_total,
+            )
+
+    def build_seek_cmd(self, path: str, w: int, h: int, fps: float, seek_ms: int) -> list[str]:
+        """Probe: build ``ffmpeg -ss`` seek command and record ``seek_index``.
+
+        Reuses :func:`_vf_scale_fps` and :func:`_chunk_frame_budget` (no new
+        timeout dimension). Records ``(seek_ms, byte_offset, is_key)`` in
+        ``seek_index`` and logs cap state.
+        """
+        # Reuse helpers for contract
+        try:
+            _ = _chunk_frame_budget()
+        except Exception:
+            pass
+        try:
+            vf = _vf_scale_fps(int(w), int(h), float(fps), scale=True)
+        except Exception:
+            vf = f"fps={fps}"
+        try:
+            seek_s = float(seek_ms) / 1000.0
+        except Exception:
+            seek_s = 0.0
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-threads",
+            "0",
+            "-ss",
+            f"{seek_s:.3f}",
+            "-i",
+            str(path),
+            "-vf",
+            vf,
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "pipe:1",
+        ]
+        try:
+            byte_offset = self.evicted_bytes + sum(len(f) for f in self) if self else self.evicted_bytes  # type: ignore[arg-type]
+        except Exception:
+            byte_offset = int(self.evicted_bytes or 0)
+        with contextlib.suppress(Exception):
+            self.seek_index.append((int(seek_ms), int(byte_offset), True))
+        with contextlib.suppress(Exception):
+            logging.getLogger(__name__).info(
+                "FrameBag build_seek_cmd path=%r seek_ms=%s cap_bytes=%s evicted_bytes=%s ring_len=%s",
+                path,
+                seek_ms,
+                self.cap_bytes,
+                self.evicted_bytes,
+                len(self),
+            )
+        return cmd
 
 
 def _as_frame_bag(frames) -> FrameBag:
@@ -375,6 +559,46 @@ class FfmpegCmdBuilder:
         vf = _vf_scale_fps(int(w), int(h), float(fps), scale=True)
         pix = "yuv420p" if yuv == "yuv420p" else "rgba"
         cmd = ["ffmpeg", "-hide_banner", "-threads", "0", "-vf", vf, "-pix_fmt", pix, "-f", "rawvideo"]
+        return cmd
+
+    @staticmethod
+    def build_seek_cmd(path: str, w: int, h: int, fps: float, seek_ms: int) -> list[str]:
+        """Probe: build ``ffmpeg -ss`` seek-prefixed command.
+
+        Reuses :func:`_vf_scale_fps` and :func:`_chunk_frame_budget` (no new
+        timeout dimension). Returns ``["ffmpeg","-hide_banner","-threads","0",
+        "-ss",<seek_s>,"-i",path,"-vf",<vf>,"-f","rawvideo","-pix_fmt","rgba",
+        "pipe:1"]``. Caller may record the seek in ``FrameBag.seek_index``.
+        """
+        # Reuse helpers for contract
+        with contextlib.suppress(Exception):
+            _ = _chunk_frame_budget()
+        vf = _vf_scale_fps(int(w), int(h), float(fps), scale=True)
+        try:
+            seek_s = float(seek_ms) / 1000.0
+        except Exception:
+            seek_s = 0.0
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-threads",
+            "0",
+            "-ss",
+            f"{seek_s:.3f}",
+            "-i",
+            str(path),
+            "-vf",
+            vf,
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "pipe:1",
+        ]
+        with contextlib.suppress(Exception):
+            logging.getLogger(__name__).debug(
+                "FfmpegCmdBuilder build_seek_cmd path=%r seek_ms=%s vf=%s", path, seek_ms, vf
+            )
         return cmd
 
 

@@ -24,6 +24,7 @@ on PATH for product Movie (blank ≠ pass).
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import threading
@@ -1181,9 +1182,39 @@ def _new_path_entry(path: str) -> dict:
     dw, dh = _decode_size()
     lw, lh = _layout_size()
     max_frames, fps = _decode_budget()
+    # Byte cap from env (M2 T3): RENPY_HOST_VIDEO_CAP_MB, default 64 MiB, floor 16 MiB
+    try:
+        cap_mb = int(os.environ.get("RENPY_HOST_VIDEO_CAP_MB", "64"))
+    except Exception:
+        cap_mb = 64
+    cap_mb = max(16, cap_mb)
+    cap_bytes = cap_mb * 1024 * 1024
+    # FrameBag with byte cap; lazy import to avoid circular import at import time
+    try:
+        from renpy.wgpu.video import FrameBag as _FB  # type: ignore
+        fb = _FB(cap_bytes=cap_bytes)
+    except Exception:
+        fb = []  # type: ignore
+        with contextlib.suppress(Exception):
+            fb.cap_bytes = cap_bytes  # type: ignore[attr-defined]
+            fb.evicted_bytes = 0  # type: ignore[attr-defined]
+            fb.seek_index = []  # type: ignore[attr-defined]
+            fb._abs_total = 0  # type: ignore[attr-defined]
+    # Ensure seek_index alias points to FrameBag's list when possible
+    try:
+        seek_idx = getattr(fb, "seek_index", [])
+    except Exception:
+        seek_idx = []
+    try:
+        evicted = int(getattr(fb, "evicted_bytes", 0) or 0)
+    except Exception:
+        evicted = 0
     return {
         "path": path,
-        "frames": None,  # list[bytes] | None; immutable swap under lock
+        "frames": fb,  # FrameBag(cap_bytes=...) byte-budget ring (list-compatible)
+        "cap_bytes": cap_bytes,
+        "seek_index": seek_idx,
+        "evicted_bytes": evicted,
         "decode_w": dw,
         "decode_h": dh,
         "layout_w": lw,
@@ -1240,10 +1271,14 @@ def _min_playable_frames() -> int:
 
 
 def _publish_frames(path: str, frames: List[bytes], *, full: bool) -> None:
-    """Main-thread-safe list swap under entry lock (optional ring window).
+    """Main-thread-safe publish with byte-cap ring (M2 T3).
 
     Absolute total from frames._abs_total when set; otherwise len(frames).
-    Storage keeps only the trailing RING frames when RING > 0.
+    Storage is a :class:`renpy.wgpu.video.FrameBag` with ``cap_bytes``; publish
+    walks ``frames`` via ``append_limited`` (evicting oldest when over
+    ``cap_bytes``), syncs ``seek_index`` ``pts=len*1000/fps`` and
+    ``evicted_bytes``, and maintains ``total_decoded``/``base_index``.
+    Ring frame-count window still applied for RAM bound when ``RING>0``.
     """
     entry = _get_or_create_entry(path)
     # Snapshot frames for storage (may ring-trim). Do not mutate caller's list
@@ -1263,10 +1298,6 @@ def _publish_frames(path: str, frames: List[bytes], *, full: bool) -> None:
     if prev_total_quick > 0 and int(total) + 1 < prev_total_quick and not full:
         return
     # Growing + RING>0: trailing window only (RAM bound).
-    # RING==0 / full: share the live list reference when possible so 1080p
-    # progressive publish does not copy hundreds of frame pointers under the
-    # product GIL every chunk (decode starvation class).
-    # Full list identity is required for loop (abs 0..total-1).
     if ring > 0 and (not full) and len(src_list) > ring:
         frozen = list(src_list[-ring:])
     elif isinstance(src_list, list):
@@ -1278,17 +1309,106 @@ def _publish_frames(path: str, frames: List[bytes], *, full: bool) -> None:
         and prev_total_quick == int(total)
         and prev_n_quick == len(frozen)
     ):
-        return
+        # Duplicate publish fast-path, but FrameBag byte-cap may have evicted
+        # so len mismatch still means no new data; keep early return for
+        # non-FrameBag path. For FrameBag we re-check after lock.
+        with contextlib.suppress(Exception):
+            fb_q = entry.get("frames")
+            if not hasattr(fb_q, "append_limited"):
+                return
+            if len(fb_q or []) == prev_n_quick:
+                return
     target = int(entry.get("target_frames") or _DEFAULT_MAX_FRAMES)
     min_play = _min_playable_frames()
+    # Byte-cap incremental publish under lock
     with entry["lock"]:
+        fb = entry.get("frames")
+        is_framebag = False
+        with contextlib.suppress(Exception):
+            is_framebag = hasattr(fb, "append_limited") and hasattr(fb, "cap_bytes")
+        if not is_framebag:
+            # Upgrade plain list / None to FrameBag with byte cap
+            try:
+                cap_bytes = int(entry.get("cap_bytes") or max(16, int(os.environ.get("RENPY_HOST_VIDEO_CAP_MB", "64"))) * 1024 * 1024)
+            except Exception:
+                cap_bytes = 64 * 1024 * 1024
+            try:
+                from renpy.wgpu.video import FrameBag as _FB  # type: ignore
+                new_fb = _FB(cap_bytes=cap_bytes)
+                old_list = fb if isinstance(fb, list) else []
+                for fr in old_list:
+                    with contextlib.suppress(Exception):
+                        new_fb.append_limited(fr)  # type: ignore[attr-defined]
+                fb = new_fb
+            except Exception:
+                fb = fb if isinstance(fb, list) else []
+                with contextlib.suppress(Exception):
+                    fb.cap_bytes = cap_bytes  # type: ignore[attr-defined]
+                    fb.evicted_bytes = 0  # type: ignore[attr-defined]
+                    fb.seek_index = []  # type: ignore[attr-defined]
+                    fb._abs_total = 0  # type: ignore[attr-defined]
+            entry["frames"] = fb
+            entry["cap_bytes"] = cap_bytes
+            if "seek_index" not in entry or entry["seek_index"] is None:
+                with contextlib.suppress(Exception):
+                    entry["seek_index"] = getattr(fb, "seek_index", [])
+            if "evicted_bytes" not in entry:
+                with contextlib.suppress(Exception):
+                    entry["evicted_bytes"] = int(getattr(fb, "evicted_bytes", 0) or 0)
+        # Ensure seek_index / evicted_bytes aliases exist
+        if "seek_index" not in entry or entry["seek_index"] is None:
+            with contextlib.suppress(Exception):
+                entry["seek_index"] = getattr(fb, "seek_index", [])
+        if "evicted_bytes" not in entry:
+            with contextlib.suppress(Exception):
+                entry["evicted_bytes"] = int(getattr(fb, "evicted_bytes", 0) or 0)
+        # Alias entry seek_index to fb's list when possible for sync
+        with contextlib.suppress(Exception):
+            if entry.get("seek_index") is not getattr(fb, "seek_index", None):
+                # Keep them aliased: entry points to fb's list
+                entry["seek_index"] = getattr(fb, "seek_index", entry["seek_index"])
+        fps = float(entry.get("fps") or 12.0)
         prev_total = int(entry.get("total_decoded") or 0)
-        # total_decoded never regresses; base is always derived from the
-        # committed total so ring windows stay (total-n .. total-1).
-        new_total = max(prev_total, int(total))
-        have = len(frozen)
+        base_src = int(total) - len(frozen)
+        start_in_frozen = max(0, prev_total - base_src) if len(frozen) > 0 else 0
+        # If frozen is the live reference that may have been mutated, ensure we don't miss tail
+        # When frozen is shared src_list and src_list grew, start_in_frozen correctly slices tail
+        new_frames = frozen[start_in_frozen:] if start_in_frozen < len(frozen) else []
+        # Fallback for first publish where fb empty but new_frames empty due to miscalc: publish all
+        if len(new_frames) == 0 and len(fb) == 0 and len(frozen) > 0 and prev_total == 0:
+            new_frames = frozen
+        for idx, fr in enumerate(new_frames):
+            try:
+                if hasattr(fb, "append_limited"):
+                    fb.append_limited(fr)  # type: ignore[attr-defined]
+                    # Correct pts for this frame using entry fps
+                    with contextlib.suppress(Exception):
+                        if hasattr(fb, "seek_index") and fb.seek_index:  # type: ignore[attr-defined]
+                            last_pts, last_off, last_key = fb.seek_index[-1]  # type: ignore[attr-defined]
+                            pts_ms = int((prev_total + idx) * 1000 / fps) if fps else last_pts
+                            fb.seek_index[-1] = (pts_ms, last_off, last_key)  # type: ignore[attr-defined]
+                            entry["seek_index"] = fb.seek_index  # type: ignore[attr-defined]
+                else:
+                    fb.append(fr)  # type: ignore[attr-defined]
+                    with contextlib.suppress(Exception):
+                        pts_ms = int((prev_total + idx) * 1000 / fps) if fps else 0
+                        try:
+                            byte_off = int(entry.get("evicted_bytes") or 0) + sum(len(x) for x in fb[:-1]) if len(fb) > 1 else int(entry.get("evicted_bytes") or 0)  # type: ignore
+                        except Exception:
+                            byte_off = int(entry.get("evicted_bytes") or 0)
+                        entry["seek_index"].append((pts_ms, byte_off, True))  # type: ignore[attr-defined]
+            except Exception:
+                with contextlib.suppress(Exception):
+                    fb.append(fr)  # type: ignore
+            with contextlib.suppress(Exception):
+                entry["evicted_bytes"] = int(getattr(fb, "evicted_bytes", 0) or entry.get("evicted_bytes") or 0)
+                entry["cap_bytes"] = int(getattr(fb, "cap_bytes", 0) or entry.get("cap_bytes") or 0)
+                entry["seek_index"] = getattr(fb, "seek_index", entry["seek_index"])
+        # Update totals and ready flags based on fb state
+        prev_total2 = int(entry.get("total_decoded") or 0)
+        new_total = max(prev_total2, int(total))
+        have = len(fb) if fb is not None else 0
         new_base = max(0, new_total - have)
-        entry["frames"] = frozen
         entry["base_index"] = int(new_base)
         entry["total_decoded"] = int(new_total)
         entry["ready_partial"] = have >= 1
@@ -1296,9 +1416,6 @@ def _publish_frames(path: str, frames: List[bytes], *, full: bool) -> None:
         if full and entry["total_decoded"] >= max(1, target):
             entry["ready_full"] = True
         elif full and entry["total_decoded"] < max(1, target):
-            # Undershot target only counts as full on true EOF (caller sets
-            # full=True after pipe EOF). Require progress near stage to avoid
-            # marking full after a mid-stream stall at ~half the movie.
             if (
                 entry["total_decoded"] >= 1
                 and not entry.get("inflight")
@@ -1309,22 +1426,39 @@ def _publish_frames(path: str, frames: List[bytes], *, full: bool) -> None:
                 entry["ready_full"] = False
         if entry.get("layout_cached"):
             entry["layout_cached"] = bool(entry.get("layout_cached"))
-    if entry.get("ready_full") and frozen:
-        _phase0_log(
-            f"T_cache_full path={path!r} frames={len(frozen)} "
-            f"total={entry.get('total_decoded')} base={entry.get('base_index')} "
-            f"decode={entry['decode_w']}x{entry['decode_h']}"
+        _have_for_log = have
+        _total_for_log = new_total
+    # Observability: log cap metrics for grep
+    with contextlib.suppress(Exception):
+        cap_b = entry.get("cap_bytes")
+        ev_b = entry.get("evicted_bytes")
+        ring_len = len(entry.get("frames") or [])
+        import logging as _logging
+        _logging.getLogger(__name__).info(
+            "publish cap_bytes=%s evicted_bytes=%s ring_len=%s total=%s", cap_b, ev_b, ring_len, entry.get("total_decoded")
         )
-    elif frozen:
+    # Keep original phase0 logs but adapt to FrameBag length
+    try:
+        fb_len = len(entry.get("frames") or [])
+    except Exception:
+        fb_len = 0
+    if entry.get("ready_full") and fb_len:
+        _phase0_log(
+            f"T_cache_full path={path!r} frames={fb_len} "
+            f"total={entry.get('total_decoded')} base={entry.get('base_index')} "
+            f"decode={entry['decode_w']}x{entry['decode_h']} "
+            f"cap_bytes={entry.get('cap_bytes')} evicted_bytes={entry.get('evicted_bytes')} ring_len={fb_len}"
+        )
+    elif fb_len:
         tag = "T_frame0_ready" if entry.get("total_decoded") == 1 else "T_partial_ready"
-        # Throttle partial logs after playable to avoid I/O storms.
         tot = int(entry.get("total_decoded") or 0)
         if tot <= 8 or (tot % 30) == 0 or full:
             _phase0_log(
-                f"{tag} path={path!r} frames={len(frozen)} "
+                f"{tag} path={path!r} frames={fb_len} "
                 f"total={entry.get('total_decoded')} base={entry.get('base_index')} "
                 f"decode={entry['decode_w']}x{entry['decode_h']} "
-                f"playable={int(bool(entry.get('ready_playable')))}"
+                f"playable={int(bool(entry.get('ready_playable')))} "
+                f"cap_bytes={entry.get('cap_bytes')} evicted_bytes={entry.get('evicted_bytes')} ring_len={fb_len}"
             )
 
 

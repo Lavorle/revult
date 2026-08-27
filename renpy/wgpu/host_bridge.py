@@ -43,4 +43,26 @@ def get_host():
     return renpy_host
 
 
-__all__ = ["get_host", "host_env_bool", "renpy_host"]
+def get_frame_stats():
+    """Thin wrapper for ``renpy_host.get_frame_stats`` with hasattr fallback.
+
+    Returns a dict with 5 keys: draw_calls, quads, instances, overdraw_est, ms.
+    Falls back to zeros when the host is unavailable, lacks the symbol, or
+    raises (perf gate not enabled / no frame yet). Never raises.
+    """
+    try:
+        h = get_host()
+        if h is not None and hasattr(h, "get_frame_stats"):
+            return h.get_frame_stats()  # type: ignore[union-attr]
+    except Exception:
+        pass
+    return {
+        "draw_calls": 0,
+        "quads": 0,
+        "instances": 0,
+        "overdraw_est": 0.0,
+        "ms": 0.0,
+    }
+
+
+__all__ = ["get_host", "host_env_bool", "renpy_host", "get_frame_stats"]

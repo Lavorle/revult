@@ -1227,6 +1227,7 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(reset_present_stats, &module)?)?;
     module.add_function(wrap_pyfunction!(take_inter_present_gaps_ms, &module)?)?;
     module.add_function(wrap_pyfunction!(inter_present_gaps_ms, &module)?)?;
+    module.add_function(wrap_pyfunction!(get_frame_stats, &module)?)?;
     module.add_function(wrap_pyfunction!(create_render_texture, &module)?)?;
     module.add_function(wrap_pyfunction!(begin_target, &module)?)?;
     module.add_function(wrap_pyfunction!(end_target, &module)?)?;
@@ -2047,6 +2048,33 @@ fn inter_present_gaps_ms() -> Vec<f32> {
         .lock()
         .map(|s| s.inter_present_gaps_ms.clone())
         .unwrap_or_default()
+}
+
+#[pyfunction]
+fn get_frame_stats(py: Python<'_>) -> PyResult<Py<PyDict>> {
+    // Perf gate: when RENPY_HOST_PERF not enabled, return zeroed stats not error.
+    // Matches config.rs env_bool ("1"/"true"/"yes", case-insensitive).
+    let perf_enabled = matches!(
+        std::env::var("RENPY_HOST_PERF")
+            .map(|v| v.trim().to_lowercase())
+            .as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    );
+    let stats = if perf_enabled {
+        host_state()
+            .lock()
+            .map(|s| s.arena.last_frame_stats())
+            .unwrap_or_default()
+    } else {
+        crate::arena::FrameStats::default()
+    };
+    let dict = PyDict::new(py);
+    dict.set_item("draw_calls", stats.draw_calls)?;
+    dict.set_item("quads", stats.quads)?;
+    dict.set_item("instances", stats.instances)?;
+    dict.set_item("overdraw_est", stats.overdraw_est)?;
+    dict.set_item("ms", stats.ms)?;
+    Ok(dict.into())
 }
 
 #[pyfunction]

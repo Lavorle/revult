@@ -14,6 +14,14 @@ pub const RING_INIT: usize = 256;
 pub const MAX_RTTS_PER_SIZE: usize = 16;
 pub const QUERY_RESOLVE_SIZE: usize = 16;
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FrameStats {
+    pub draw_calls: u32,
+    pub quads: u32,
+    pub instances: u32,
+    pub overdraw_est: f32,
+    pub ms: f32,
+}
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(dead_code)]
 pub struct TextureHandle(pub u64);
@@ -289,6 +297,12 @@ pub struct GpuArena {
     uniform_ring: Vec<wgpu::Buffer>,
     /// Next free slot in uniform_ring for the current encode_pass.
     uniform_ring_next: usize,
+    /// Last frame stats for perf gate (M1 Wave32).
+    pub last_stats: FrameStats,
+    /// Per-frame overdraw accumulator (Σ 1.0 per draw_model; future mesh area/fb).
+    frame_overdraw_acc: f32,
+    /// Stack for nested begin_frame overdraw so parent frame is restored.
+    frame_overdraw_stack: Vec<f32>,
 }
 
 impl GpuArena {
@@ -351,6 +365,9 @@ impl GpuArena {
             bg_cache: HashMap::new(),
             uniform_ring: Vec::new(),
             uniform_ring_next: 0,
+            last_stats: FrameStats::default(),
+            frame_overdraw_acc: 0.0,
+            frame_overdraw_stack: Vec::new(),
         }
     }
 
@@ -1307,9 +1324,11 @@ impl GpuArena {
         if self.in_frame {
             let parent = std::mem::take(&mut self.frame_cmds);
             self.frame_cmd_stack.push(parent);
+            self.frame_overdraw_stack.push(self.frame_overdraw_acc);
         } else {
             self.frame_cmds.clear();
         }
+        self.frame_overdraw_acc = 0.0;
         self.in_frame = true;
     }
 
@@ -1332,6 +1351,8 @@ impl GpuArena {
         self.in_frame = false;
         self.active_target = None;
         self.active_target_stack.clear();
+        self.frame_overdraw_acc = 0.0;
+        self.frame_overdraw_stack.clear();
         // Pins are gone with the cleared cmds; free anything deferred while
         // those cmds were open so recovery cannot leak MeshSlots forever.
         // Keep last_frame_sample_textures — product chrome may still be live on
@@ -1368,6 +1389,8 @@ impl GpuArena {
         if let Some(t) = texture2 {
             self.touch_texture(t);
         }
+        // Wave32 FrameStats: overdraw estimate Σ 1.0 per quad (future: mesh area / fb area).
+        self.frame_overdraw_acc += 1.0;
         self.frame_cmds.push(DrawCmd {
             pipeline,
             mesh,
@@ -1376,6 +1399,10 @@ impl GpuArena {
             texture2,
             uniforms: uniforms.unwrap_or([0.0; 16]),
         });
+    }
+
+    pub fn last_frame_stats(&self) -> FrameStats {
+        self.last_stats
     }
 
     /// Draw into game RT (for readback) and present the same content to swapchain.
@@ -1393,6 +1420,7 @@ impl GpuArena {
     /// thrash when a concurrent force-redraw and product interact interleave
     /// `end_frame_present` (class b / dead_present thrash companion).
     pub fn end_frame_present(&mut self, gpu: &mut GpuState) -> Result<bool, String> {
+        let t0 = std::time::Instant::now();
         // Idle end: never clear the product RT. Concurrent force-redraw paths
         // and prepare recovery can double-call end_frame_present after a good
         // present; wiping to (0.05,0.05,0.08) looks like permanent black chrome.
@@ -1412,6 +1440,8 @@ impl GpuArena {
 
         let cmds: Vec<DrawCmd> = self.frame_cmds.drain(..).collect();
         let nested = !self.frame_cmd_stack.is_empty();
+        let frame_quads = cmds.len() as u32;
+        let frame_overdraw = self.frame_overdraw_acc;
 
         if let Some(tid) = self.active_target {
             let view = self
@@ -1425,8 +1455,10 @@ impl GpuArena {
                 // Restore parent frame cmds; keep in_frame so outer draw continues.
                 self.frame_cmds = self.frame_cmd_stack.pop().unwrap_or_default();
                 self.in_frame = true;
+                self.frame_overdraw_acc = self.frame_overdraw_stack.pop().unwrap_or(0.0);
             } else {
                 self.in_frame = false;
+                self.frame_overdraw_acc = 0.0;
             }
             // Unpinned meshes/textures from this RTT bake can die; parent-pinned stay.
             self.flush_deferred_meshes();
@@ -1441,6 +1473,7 @@ impl GpuArena {
             // for mesh bake (always RTT). Drop cmds and restore parent.
             self.frame_cmds = self.frame_cmd_stack.pop().unwrap_or_default();
             self.in_frame = true;
+            self.frame_overdraw_acc = self.frame_overdraw_stack.pop().unwrap_or(0.0);
             self.flush_deferred_meshes();
             self.flush_deferred_textures();
             return Ok(false);
@@ -1457,6 +1490,7 @@ impl GpuArena {
                 self.last_frame_cmd_count
             );
             self.in_frame = false;
+            self.frame_overdraw_acc = 0.0;
             self.flush_deferred_meshes();
             self.flush_deferred_textures();
             // Keep last good chrome on swapchain (do not freeze/hitch).
@@ -1480,6 +1514,7 @@ impl GpuArena {
                 prev_n
             );
             self.in_frame = false;
+            self.frame_overdraw_acc = 0.0;
             self.flush_deferred_meshes();
             self.flush_deferred_textures();
             return self.present_last_game_rt(gpu);
@@ -1531,6 +1566,7 @@ impl GpuArena {
                     prev_n
                 );
                 self.in_frame = false;
+                self.frame_overdraw_acc = 0.0;
                 self.flush_deferred_meshes();
                 self.flush_deferred_textures();
                 // Blit last complete game RT — reject half-built cmd list without
@@ -1573,6 +1609,19 @@ impl GpuArena {
             self.encode_pass(gpu, &swap_view, &cmds, false)?;
         }
         frame.present();
+        // Wave32 FrameStats: record per-frame counters for perf gate.
+        // draw_calls counts set_pipeline; quads = cmds len; instances same for now;
+        // overdraw_est = Σ1.0 per draw_model; ms = elapsed since end_frame_present entry.
+        let elapsed_ms = t0.elapsed().as_secs_f32() * 1000.0;
+        let draw_calls = frame_quads;
+        self.last_stats = FrameStats {
+            draw_calls,
+            quads: frame_quads,
+            instances: frame_quads,
+            overdraw_est: frame_overdraw,
+            ms: elapsed_ms,
+        };
+        self.frame_overdraw_acc = 0.0;
         // Remember sample textures used by this product frame so the next
         // prepare walk cannot FIFO-kill them before draw_model re-touches
         // (dense dialog_config after image_config thrash residual).

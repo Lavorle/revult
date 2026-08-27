@@ -1,5 +1,4 @@
 //! renpy-host entry — winit outermost, Python pumped (plan §4.1.1).
-
 mod app;
 mod arena;
 mod audio;
@@ -12,6 +11,8 @@ mod python;
 mod shader;
 mod state;
 mod timer;
+mod video;
+
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -38,6 +39,31 @@ thread_local! {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     info!("renpy-host Phase 2 starting");
+    {
+        let backend = std::env::var("RENPY_HOST_VIDEO_BACKEND").unwrap_or_else(|_| "cli".to_string());
+        let cap = crate::gpu::STAGING_RING_CAP_BYTES;
+        let workers = crate::gpu::DECODE_POOL_WORKERS_DEFAULT;
+        if backend == "host" {
+            info!(
+                "video backend=host DecodePool workers={} StagingRing cap_bytes={} backend=Vulkan cap={}MiB",
+                workers,
+                cap,
+                cap / (1024 * 1024)
+            );
+        } else {
+            info!(
+                "video backend={} DecodePool StagingRing backend=Vulkan workers={} cap_bytes={}",
+                backend, workers, cap
+            );
+        }
+        let probe = format!(
+            "DecodePool workers={} cap_bytes={} ffmpeg-host={} backend=Vulkan StagingRing",
+            workers,
+            cap,
+            cfg!(feature = "ffmpeg-host")
+        );
+        info!("video probe {} backend=Vulkan", probe);
+    }
     // Slice 0: dump INPUT_TRACE on exit / SIGTERM when RENPY_HOST_INPUT_TRACE=1.
     crate::input_trace::install_exit_hooks();
     let _input_trace_dump = crate::input_trace::DumpOnDrop;

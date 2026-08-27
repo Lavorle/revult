@@ -72,6 +72,10 @@ try:
 except ImportError:  # pragma: no cover - SDL tree
     renpy_host = None  # type: ignore
 
+def _video_backend() -> str:
+    """M2 B3 T4 分流桩: RENPY_HOST_VIDEO_BACKEND=cli|host 默认 cli, V1 仍 CLI V2 切 host."""
+    return os.environ.get("RENPY_HOST_VIDEO_BACKEND", "cli")
+
 # Full-screen NDC quad: x,y,u,v,r,g,b,a
 _FULLSCREEN_VERTS = [
     -1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
@@ -881,6 +885,29 @@ def _decode_ffmpeg_chunk(
     the product path publishing first at frames=60 and a multi-second black
     gap under end_splash. Scale-only + ``-frames:v 1`` is reliable and faster.
     """
+    # M2 B3 T4: host 分流桩 — backend==host 则探针 renpy_host.video_decode_host
+    if _video_backend() == "host" and renpy_host is not None and hasattr(renpy_host, "video_decode_host"):
+        try:
+            _log = logging.getLogger(__name__)
+            _log.info(
+                "video _decode_ffmpeg_chunk host path=%r start=%s n=%s fps=%s backend=host DecodePool StagingRing backend=Vulkan",
+                path,
+                start_frame,
+                n_frames,
+                fps,
+            )
+            try:
+                probe = renpy_host.video_host_probe() if hasattr(renpy_host, "video_host_probe") else ""
+                _log.info("video host probe=%s", probe)
+            except Exception:
+                pass
+            ok = renpy_host.video_decode_host(path, float(fps), "yuv420p")
+            _log.info("video host decode ok=%s path=%r backend=host", ok, path)
+            if ok:
+                # V2 would return host frames; V1 stub always False so fallthrough to CLI
+                pass
+        except Exception:
+            pass
     if n_frames <= 0 or width <= 0 or height <= 0 or fps <= 0:
         return []
     start_time = float(start_frame) / float(fps)

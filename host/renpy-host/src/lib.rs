@@ -9,6 +9,7 @@ pub mod python;
 pub mod shader;
 pub mod state;
 pub mod timer;
+pub mod video;
 
 /// Computes the average duration across `count` iterations using nanoseconds conversion with divide-by-zero protection.
 pub fn calculate_avg_duration(total: std::time::Duration, count: u64) -> std::time::Duration {

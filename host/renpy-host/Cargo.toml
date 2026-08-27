@@ -25,3 +25,8 @@ env_logger = { workspace = true }
 cpal = { workspace = true }
 sha1 = { workspace = true }
 naga = { workspace = true }
+ffmpeg-sys-next = { workspace = true, optional = true }
+symphonia = { workspace = true }
+
+[features]
+ffmpeg-host = ["ffmpeg-sys-next"]

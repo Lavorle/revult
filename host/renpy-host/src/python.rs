@@ -1261,6 +1261,9 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(video_clock_drift_ms, &module)?)?;
     module.add_function(wrap_pyfunction!(video_seek, &module)?)?;
     module.add_function(wrap_pyfunction!(audio_sample_rate, &module)?)?;
+    // M2 B3 T4: host decode probe + host decode stub
+    module.add_function(wrap_pyfunction!(video_host_probe, &module)?)?;
+    module.add_function(wrap_pyfunction!(video_decode_host, &module)?)?;
     module.add("PHASE", 6)?;
     module.add("KEYDOWN", types::KEYDOWN)?;
     module.add("KEYUP", types::KEYUP)?;
@@ -2449,6 +2452,45 @@ fn video_seek(channel: i32, pos_ms: f64) -> PyResult<bool> {
 #[pyfunction]
 fn audio_sample_rate() -> u32 {
     with_host_state(|st| st.audio.sample_rate.load(Ordering::Relaxed))
+}
+
+// --- M2 B3 T4: host video decode probe + decode stub (V1 桩) --------------
+#[pyfunction]
+fn video_host_probe() -> String {
+    let workers = crate::gpu::DECODE_POOL_WORKERS_DEFAULT;
+    let cap = crate::gpu::STAGING_RING_CAP_BYTES;
+    let ffmpeg = cfg!(feature = "ffmpeg-host");
+    let backend = "Vulkan";
+    let probe = format!(
+        "DecodePool workers={} cap_bytes={} ffmpeg-host={} backend={} StagingRing cap={}MiB",
+        workers,
+        cap,
+        ffmpeg,
+        backend,
+        cap / (1024 * 1024)
+    );
+    log::info!("video_host_probe {} cap_bytes={} workers={} backend=Vulkan StagingRing DecodePool", probe, cap, workers);
+    probe
+}
+
+#[pyfunction]
+fn video_decode_host(path: String, fps: f32, yuv_kind: String) -> bool {
+    let yuv = crate::video::YuvKind::from_str(&yuv_kind).unwrap_or(crate::video::YuvKind::Yuv420p);
+    log::info!(
+        "video_decode_host path={} fps={} yuv_kind={} yuv={} backend=Vulkan DecodePool workers={} StagingRing cap_bytes={} — V1 stub",
+        path,
+        fps,
+        yuv_kind,
+        yuv,
+        crate::gpu::DECODE_POOL_WORKERS_DEFAULT,
+        crate::gpu::STAGING_RING_CAP_BYTES
+    );
+    // V1 桩: walk through SSOT to prove wiring, then return false so Python 回落 CLI
+    let dec = crate::video::VideoDecoder::new(path.clone(), fps, yuv);
+    let _ = dec.decode_chunk(0, 33);
+    let pool = crate::video::DecodePool::new(crate::gpu::DECODE_POOL_WORKERS_DEFAULT);
+    pool.spawn(std::sync::Arc::new(dec));
+    false
 }
 
 

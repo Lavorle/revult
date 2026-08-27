@@ -27,6 +27,15 @@ if "renpy_host" not in sys.modules:
     stub.video_clock_drift_ms = lambda *a, **k: 0.0  # type: ignore
     stub.video_seek = lambda *a, **k: True  # type: ignore
     stub.audio_sample_rate = lambda: 48000  # type: ignore
+    # M2 T2/T4 YUV + host decode probes — keep dual-tree green when stubbed
+    stub.create_texture_nv12 = lambda *a, **k: (1, 2)  # type: ignore
+    stub.create_texture_yuv420p = lambda *a, **k: (1, 2, 3)  # type: ignore
+    stub.create_texture_rgba = lambda *a, **k: 1  # type: ignore
+    stub.yuv420p_pipeline = lambda *a, **k: 1  # type: ignore
+    stub.nv12_pipeline = lambda *a, **k: 1  # type: ignore
+    stub.textured_pipeline = lambda *a, **k: 1  # type: ignore
+    stub.video_host_probe = lambda *a, **k: "DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=False backend=Vulkan StagingRing"  # type: ignore
+    stub.video_decode_host = lambda *a, **k: False  # type: ignore
     sys.modules["renpy_host"] = stub
 
 import unittest

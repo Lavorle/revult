@@ -12,6 +12,10 @@ use winit::window::Window;
 /// Some Wayland/X11 surfaces only expose Bgra8Unorm{,Srgb}; GpuState falls back
 /// and stores the actual `surface_format` so arena pipelines/textures match.
 pub const SWAPCHAIN_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+/// Staging ring cap for progressive decode → GPU upload (64 MiB).
+pub const STAGING_RING_CAP_BYTES: usize = 64 * 1024 * 1024;
+/// Default decode pool workers for YUV file-backed path.
+pub const DECODE_POOL_WORKERS_DEFAULT: usize = 2;
 pub struct GpuState {
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,

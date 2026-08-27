@@ -2,10 +2,17 @@
 //! Callback thread: read ring only — **no Python**.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
+
+/// Global sample clock (frames, not samples) — SSOT for VideoClock AudioSample master.
+/// Incremented in PcmRing::fill_output; read by VideoClock::pos_ms without HostState lock.
+pub static GLOBAL_SAMPLE_CLOCK: AtomicU64 = AtomicU64::new(0);
+pub static GLOBAL_CHANNELS: AtomicU32 = AtomicU32::new(2);
+pub static GLOBAL_DROPPED: AtomicU32 = AtomicU32::new(0);
+pub static GLOBAL_REPEATED: AtomicU32 = AtomicU32::new(0);
 
 /// Stereo f32 interleaved ring buffer shared with the cpal callback.
 pub struct PcmRing {
@@ -36,6 +43,12 @@ impl PcmRing {
         for s in out.iter_mut() {
             *s = q.pop_front().unwrap_or(0.0);
         }
+        // Increment sample clock by frames (not samples) — only atomic add, no alloc.
+        let ch = GLOBAL_CHANNELS.load(Ordering::Relaxed).max(1) as usize;
+        let frames = out.len() / ch.max(1);
+        if frames > 0 {
+            GLOBAL_SAMPLE_CLOCK.fetch_add(frames as u64, Ordering::Relaxed);
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -61,6 +74,9 @@ pub struct AudioEngine {
     pub running: AtomicBool,
     /// Master volume 0..1 as fixed-point 1e6.
     pub volume: Arc<AtomicU32>,
+    pub sample_clock: AtomicU64,
+    pub dropped: AtomicU32,
+    pub repeated: AtomicU32,
     stream: Mutex<Option<SendStream>>,
 }
 
@@ -72,6 +88,9 @@ impl AudioEngine {
             channels: AtomicU32::new(2),
             running: AtomicBool::new(false),
             volume: Arc::new(AtomicU32::new(1_000_000)),
+            sample_clock: AtomicU64::new(0),
+            dropped: AtomicU32::new(0),
+            repeated: AtomicU32::new(0),
             stream: Mutex::new(None),
         }
     }
@@ -104,6 +123,7 @@ impl AudioEngine {
         let channels = config.channels() as u32;
         self.sample_rate.store(sample_rate, Ordering::Relaxed);
         self.channels.store(channels, Ordering::Relaxed);
+        GLOBAL_CHANNELS.store(channels, Ordering::Relaxed);
 
         let ring = self.ring.clone();
         let vol = self.volume.clone();
@@ -155,8 +175,8 @@ impl AudioEngine {
         *self.stream.lock().unwrap() = Some(SendStream(stream));
         self.running.store(true, Ordering::Relaxed);
         info!(
-            "[renpy-host] cpal audio started rate={} channels={}",
-            sample_rate, channels
+            "[renpy-host] cpal audio started rate={} channels={} sample_clock={}",
+            sample_rate, channels, GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed)
         );
         Ok(())
     }

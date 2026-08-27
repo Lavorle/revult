@@ -12,6 +12,7 @@ use pyo3::Bound;
 use crate::event_queue::{types, EventValue, HostEvent, EVENT_QUEUE};
 use crate::pump::{get_ticks_ms, log_wait};
 use crate::state::host_state;
+use std::sync::atomic::Ordering;
 use crate::timer::TimerKind;
 
 /// Unify repeated host_state lock + arena delegation boilerplate.
@@ -91,6 +92,8 @@ define_pipeline_accessor!(live2d_mask_pipeline, live2d_mask_pipeline);
 define_pipeline_accessor!(live2d_inverted_mask_pipeline, live2d_inverted_mask_pipeline);
 define_pipeline_accessor!(live2d_colors_pipeline, live2d_colors_pipeline);
 define_pipeline_accessor!(live2d_flip_pipeline, live2d_flip_pipeline);
+define_pipeline_accessor!(yuv420p_pipeline, yuv420p_pipeline);
+define_pipeline_accessor!(nv12_pipeline, nv12_pipeline);
 
 /// Embedded interpreter handle.
 pub struct PythonRuntime {
@@ -1184,6 +1187,10 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     // Phase 2 GPU FFI (draw_model primary path)
     module.add_function(wrap_pyfunction!(create_texture_rgba, &module)?)?;
     module.add_function(wrap_pyfunction!(write_texture_rgba, &module)?)?;
+    module.add_function(wrap_pyfunction!(create_texture_yuv420p, &module)?)?;
+    module.add_function(wrap_pyfunction!(write_texture_yuv420p, &module)?)?;
+    module.add_function(wrap_pyfunction!(create_texture_nv12, &module)?)?;
+    module.add_function(wrap_pyfunction!(write_texture_nv12, &module)?)?;
     module.add_function(wrap_pyfunction!(create_mesh, &module)?)?;
     register_host_fns!(
         module,
@@ -1212,6 +1219,8 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(live2d_inverted_mask_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(live2d_colors_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(live2d_flip_pipeline, &module)?)?;
+    module.add_function(wrap_pyfunction!(yuv420p_pipeline, &module)?)?;
+    module.add_function(wrap_pyfunction!(nv12_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(begin_frame, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_model, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_models, &module)?)?;
@@ -1248,6 +1257,9 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(video_clock_set_pos, &module)?)?;
     module.add_function(wrap_pyfunction!(video_clock_pause, &module)?)?;
     module.add_function(wrap_pyfunction!(video_clock_unpause, &module)?)?;
+    module.add_function(wrap_pyfunction!(video_clock_bind_audio, &module)?)?;
+    module.add_function(wrap_pyfunction!(video_clock_drift_ms, &module)?)?;
+    module.add_function(wrap_pyfunction!(audio_sample_rate, &module)?)?;
     module.add("PHASE", 6)?;
     module.add("KEYDOWN", types::KEYDOWN)?;
     module.add("KEYUP", types::KEYUP)?;
@@ -1758,6 +1770,86 @@ fn write_texture_rgba(id: u64, rgba: Vec<u8>) -> PyResult<()> {
 
 })}
 
+#[pyfunction]
+fn create_texture_yuv420p(
+    width: u32,
+    height: u32,
+    y: Vec<u8>,
+    u: Vec<u8>,
+    v: Vec<u8>,
+) -> PyResult<(u64, u64, u64)> {
+    with_host_state_mut(|st| {
+    let gpu = st
+        .gpu
+        .take()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+    st.arena.set_color_format(gpu.surface_format);
+    let result = st
+        .arena
+        .create_texture_yuv420p(&gpu.device, &gpu.queue, width, height, &y, &u, &v);
+    st.gpu = Some(gpu);
+    result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
+
+})}
+
+#[pyfunction]
+#[pyo3(signature = (y_id, y, u_id, u, v_id, v))]
+fn write_texture_yuv420p(
+    y_id: u64,
+    y: Vec<u8>,
+    u_id: u64,
+    u: Vec<u8>,
+    v_id: u64,
+    v: Vec<u8>,
+) -> PyResult<()> {
+    with_host_state_mut(|st| {
+    let gpu = st
+        .gpu
+        .take()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+    let result = st
+        .arena
+        .write_texture_yuv420p(&gpu.queue, y_id, &y, u_id, &u, v_id, &v);
+    st.gpu = Some(gpu);
+    result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
+
+})}
+
+#[pyfunction]
+fn create_texture_nv12(
+    width: u32,
+    height: u32,
+    y: Vec<u8>,
+    uv: Vec<u8>,
+) -> PyResult<(u64, u64)> {
+    with_host_state_mut(|st| {
+    let gpu = st
+        .gpu
+        .take()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+    st.arena.set_color_format(gpu.surface_format);
+    let result = st
+        .arena
+        .create_texture_nv12(&gpu.device, &gpu.queue, width, height, &y, &uv);
+    st.gpu = Some(gpu);
+    result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
+
+})}
+
+#[pyfunction]
+#[pyo3(signature = (y_id, y, uv_id, uv))]
+fn write_texture_nv12(y_id: u64, y: Vec<u8>, uv_id: u64, uv: Vec<u8>) -> PyResult<()> {
+    with_host_state_mut(|st| {
+    let gpu = st
+        .gpu
+        .take()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+    let result = st.arena.write_texture_nv12(&gpu.queue, y_id, &y, uv_id, &uv);
+    st.gpu = Some(gpu);
+    result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
+
+})}
+
 delegate_host! {
     destroy_texture: destroy_texture: void,
     texture_alive: texture_alive: bool,
@@ -2194,7 +2286,7 @@ fn audio_ring_len() -> usize {
 
 #[pyfunction]
 fn video_clock_start(channel: i32) {
-    use crate::state::VideoClock;
+    use crate::state::{ClockMaster, VideoClock};
     let now = get_ticks_ms();
     with_host_state_mut(|st| {
     st.video_clocks.insert(
@@ -2204,6 +2296,10 @@ fn video_clock_start(channel: i32) {
             paused: false,
             pause_started_ms: None,
             pause_accum_ms: 0,
+            master: ClockMaster::Wall,
+            drift_ms: 0.0,
+            dropped: 0,
+            repeated: 0,
         },
     );
 
@@ -2217,11 +2313,52 @@ fn video_clock_stop(channel: i32) {
 #[pyfunction]
 fn video_clock_pos(channel: i32) -> f64 {
     let now = get_ticks_ms();
-    with_host_state(|st| {
-        st.video_clocks
-            .get(&channel)
-            .map(|c| c.pos_ms(now))
-            .unwrap_or(0.0)
+    with_host_state_mut(|st| {
+        if let Some(c) = st.video_clocks.get_mut(&channel) {
+            // Compute wall vs audio for drift probe (ms)
+            let mut wall_ms = now.saturating_sub(c.start_ms).saturating_sub(c.pause_accum_ms);
+            if let Some(ps) = c.pause_started_ms {
+                wall_ms = wall_ms.saturating_sub(now.saturating_sub(ps));
+            }
+            let wall_ms_f = wall_ms as f64;
+            let audio_ms = match c.master {
+                crate::state::ClockMaster::Wall => wall_ms_f,
+                crate::state::ClockMaster::AudioSample { rate } => {
+                    let frames = crate::audio::GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed);
+                    if rate != 0 {
+                        frames as f64 / rate as f64 * 1000.0
+                    } else {
+                        wall_ms_f
+                    }
+                }
+            };
+            c.drift_ms = (wall_ms_f - audio_ms) as f32;
+            // Dropped/repeated probes on drift threshold (>30ms)
+            if c.drift_ms > 30.0 {
+                c.dropped = c.dropped.saturating_add(1);
+                crate::audio::GLOBAL_DROPPED.fetch_add(1, Ordering::Relaxed);
+                st.audio.dropped.fetch_add(1, Ordering::Relaxed);
+            } else if c.drift_ms < -30.0 {
+                c.repeated = c.repeated.saturating_add(1);
+                crate::audio::GLOBAL_REPEATED.fetch_add(1, Ordering::Relaxed);
+                st.audio.repeated.fetch_add(1, Ordering::Relaxed);
+            }
+            // Sync sample_clock from global for probe consistency
+            let sc = crate::audio::GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed);
+            st.audio.sample_clock.store(sc, Ordering::Relaxed);
+            if c.drift_ms.abs() > 0.5 {
+                log::info!(
+                    "[renpy-host] drift_ms={:.2} sample_clock={} master={:?} channel={}",
+                    c.drift_ms,
+                    sc,
+                    c.master,
+                    channel
+                );
+            }
+            c.pos_ms(now)
+        } else {
+            0.0
+        }
     })
 }
 
@@ -2277,6 +2414,34 @@ fn video_clock_unpause(channel: i32) {
     }
 
 });}
+
+#[pyfunction]
+fn video_clock_bind_audio(channel: i32, rate: u32) {
+    with_host_state_mut(|st| {
+        if let Some(clock) = st.video_clocks.get_mut(&channel) {
+            clock.bind_audio(rate);
+        }
+        st.audio.sample_rate.store(rate, Ordering::Relaxed);
+        // Keep global channels in sync
+        let ch = st.audio.channels.load(Ordering::Relaxed);
+        crate::audio::GLOBAL_CHANNELS.store(ch, Ordering::Relaxed);
+        log::info!(
+            "[renpy-host] video_clock_bind_audio channel={} rate={} master=AudioSample",
+            channel,
+            rate
+        );
+    });
+}
+
+#[pyfunction]
+fn video_clock_drift_ms(channel: i32) -> f32 {
+    with_host_state(|st| st.video_clocks.get(&channel).map(|c| c.drift_ms).unwrap_or(0.0))
+}
+
+#[pyfunction]
+fn audio_sample_rate() -> u32 {
+    with_host_state(|st| st.audio.sample_rate.load(Ordering::Relaxed))
+}
 
 type NestedPumpFn = Box<dyn FnMut(Duration) + Send>;
 static NESTED_PUMP: Mutex<Option<NestedPumpFn>> = Mutex::new(None);

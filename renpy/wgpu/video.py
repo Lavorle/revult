@@ -194,6 +194,106 @@ def synthetic_frames(width: int, height: int, count: int) -> list[bytes]:  # typ
     return frames
 
 
+def split_yuv420p(data: bytes, width: int, height: int) -> tuple[bytes, bytes, bytes]:
+    """Split raw yuv420p bytes into (Y, U, V) planes.
+
+    Y size = w*h, U/V each = w*h//4 (half width/height subsampled).
+    Raises ValueError if buffer too short.
+    """
+    w = int(width)
+    h = int(height)
+    if w <= 0 or h <= 0:
+        raise ValueError("width/height must be >0")
+    y_size = w * h
+    uv_size = (w // 2) * (h // 2)
+    # fallback for odd sizes: use //4
+    if uv_size == 0:
+        uv_size = y_size // 4
+    expected = y_size + uv_size * 2
+    if len(data) < expected:
+        raise ValueError(f"yuv420p buffer too short: {len(data)} < {expected}")
+    y = data[:y_size]
+    u = data[y_size : y_size + uv_size]
+    v = data[y_size + uv_size : y_size + uv_size * 2]
+    return bytes(y), bytes(u), bytes(v)
+
+
+def rgba_to_yuv420p(rgba: bytes, width: int, height: int) -> bytes:
+    """Convert RGBA (w*h*4) to yuv420p raw (BT.601 full range)."""
+    w = int(width)
+    h = int(height)
+    expected = w * h * 4
+    if len(rgba) < expected:
+        raise ValueError(f"rgba too short: {len(rgba)} < {expected}")
+    y_plane = bytearray(w * h)
+    u_plane = bytearray((w // 2) * (h // 2))
+    v_plane = bytearray((w // 2) * (h // 2))
+    # per-pixel Y
+    for y in range(h):
+        for x in range(w):
+            idx = (y * w + x) * 4
+            r = rgba[idx]
+            g = rgba[idx + 1]
+            b = rgba[idx + 2]
+            y_val = int(round(0.299 * r + 0.587 * g + 0.114 * b))
+            y_plane[y * w + x] = max(0, min(255, y_val))
+    # subsampled U/V average 2x2
+    for y in range(0, h, 2):
+        for x in range(0, w, 2):
+            r_sum = g_sum = b_sum = 0
+            cnt = 0
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    yy = y + dy
+                    xx = x + dx
+                    if yy < h and xx < w:
+                        idx = (yy * w + xx) * 4
+                        r_sum += rgba[idx]
+                        g_sum += rgba[idx + 1]
+                        b_sum += rgba[idx + 2]
+                        cnt += 1
+            if cnt == 0:
+                continue
+            r_avg = r_sum / cnt
+            g_avg = g_sum / cnt
+            b_avg = b_sum / cnt
+            u_val = int(round(-0.168736 * r_avg - 0.331264 * g_avg + 0.5 * b_avg + 128))
+            v_val = int(round(0.5 * r_avg - 0.418688 * g_avg - 0.081312 * b_avg + 128))
+            u_plane[(y // 2) * (w // 2) + (x // 2)] = max(0, min(255, u_val))
+            v_plane[(y // 2) * (w // 2) + (x // 2)] = max(0, min(255, v_val))
+    return bytes(y_plane) + bytes(u_plane) + bytes(v_plane)
+
+
+def yuv420p_to_rgba(yuv: bytes, width: int, height: int) -> bytes:
+    """Convert yuv420p raw back to RGBA (BT.601 full range, shader parity)."""
+    w = int(width)
+    h = int(height)
+    y_size = w * h
+    uv_size = (w // 2) * (h // 2)
+    if len(yuv) < y_size + uv_size * 2:
+        raise ValueError("yuv buffer too short")
+    y_plane, u_plane, v_plane = split_yuv420p(yuv, w, h)
+    out = bytearray(w * h * 4)
+    uv_w = w // 2
+    for y in range(h):
+        for x in range(w):
+            Y = y_plane[y * w + x]
+            uv_x = x // 2
+            uv_y = y // 2
+            U = u_plane[uv_y * uv_w + uv_x]
+            V = v_plane[uv_y * uv_w + uv_x]
+            u_ = U - 128
+            v_ = V - 128
+            r = Y + 1.402 * v_
+            g = Y - 0.344136 * u_ - 0.714136 * v_
+            b = Y + 1.772 * u_
+            out[(y * w + x) * 4] = int(max(0, min(255, round(r))))
+            out[(y * w + x) * 4 + 1] = int(max(0, min(255, round(g))))
+            out[(y * w + x) * 4 + 2] = int(max(0, min(255, round(b))))
+            out[(y * w + x) * 4 + 3] = 255
+    return bytes(out)
+
+
 def ffmpeg_available() -> bool:  # type: ignore - shim retained (feature probe)
     return shutil.which("ffmpeg") is not None
 
@@ -255,6 +355,26 @@ class FfmpegCmdBuilder:
         cmd = ["ffmpeg", "-hide_banner", "-threads", "0", "-vf", vf]
         if not use_file:
             cmd += ["-f", "rawvideo"]
+        return cmd
+
+    @staticmethod
+    def build_chunk_cmd(
+        path: str,
+        w: int,
+        h: int,
+        fps: float,
+        *,
+        yuv: str | None = None,
+    ) -> list[str]:
+        """Build ffmpeg command prefix for a chunk, optionally YUV420p.
+
+        When yuv=='yuv420p' emits ``-pix_fmt yuv420p -f rawvideo`` (full-range BT.601),
+        otherwise defaults to rgba.
+        """
+        _ = path
+        vf = _vf_scale_fps(int(w), int(h), float(fps), scale=True)
+        pix = "yuv420p" if yuv == "yuv420p" else "rgba"
+        cmd = ["ffmpeg", "-hide_banner", "-threads", "0", "-vf", vf, "-pix_fmt", pix, "-f", "rawvideo"]
         return cmd
 
 
@@ -944,6 +1064,10 @@ class VideoTexture:
     """
     Host-side movie texture: one reusable RGBA texture updated per frame.
 
+    YUV420p path (host_build): upload_yuv420p(y,u,v) or upload_yuv420p_raw(raw) then
+    draw via renpy_host.yuv420p_pipeline with 3 planes (BT.601 full range).
+    Dual-tree safe: SDL path does not import this module for RGBA.
+
     Usage:
         vt = VideoTexture(64, 64, channel=0)
         for rgba in frames:
@@ -966,16 +1090,71 @@ class VideoTexture:
         self.mesh = renpy_host.create_mesh(_FULLSCREEN_VERTS, _FULLSCREEN_INDICES)
         self.pipeline = renpy_host.textured_pipeline()
         self.frame_index = 0
+        # YUV420p state (host_build branch)
+        self._y_tex: int | None = None
+        self._u_tex: int | None = None
+        self._v_tex: int | None = None
+        self._yuv_pipeline: int | None = None
+        self._is_yuv = False
+        # try to probe yuv pipeline (dual-tree safe - may not exist on SDL or old host)
+        try:
+            if hasattr(renpy_host, "yuv420p_pipeline"):
+                self._yuv_pipeline = renpy_host.yuv420p_pipeline()  # type: ignore[attr-defined]
+        except Exception:
+            self._yuv_pipeline = None
         renpy_host.video_clock_start(self.channel)
 
     def upload(self, rgba: bytes) -> None:
         expected = self.width * self.height * 4
         if len(rgba) < expected:
             raise ValueError(f"frame too short: {len(rgba)} < {expected}")
+        # if previously in YUV mode, ensure RGBA path still works (fallback)
         renpy_host.write_texture_rgba(self.texture, rgba)
         self.frame_index += 1
+        self._is_yuv = False
+
+    def upload_yuv420p(self, y: bytes, u: bytes | None = None, v: bytes | None = None) -> None:
+        """Upload YUV420p planes. Supports upload_yuv420p(y,u,v) or upload_yuv420p(raw_yuv)."""
+        # raw path: single arg contains concatenated Y+U+V
+        if u is None and v is None:
+            raw = y
+            y, u, v = split_yuv420p(raw, self.width, self.height)
+        if y is None or u is None or v is None:
+            raise ValueError("y,u,v planes required")
+        # lazy create yuv textures
+        if self._y_tex is None or self._u_tex is None or self._v_tex is None:
+            try:
+                y_id, u_id, v_id = renpy_host.create_texture_yuv420p(  # type: ignore[attr-defined]
+                    self.width, self.height, bytes(y), bytes(u), bytes(v)
+                )
+                self._y_tex, self._u_tex, self._v_tex = int(y_id), int(u_id), int(v_id)
+            except AttributeError:
+                # fallback: host lacks yuv - raise
+                raise RuntimeError("host missing create_texture_yuv420p")
+        else:
+            renpy_host.write_texture_yuv420p(  # type: ignore[attr-defined]
+                self._y_tex, bytes(y), self._u_tex, bytes(u), self._v_tex, bytes(v)
+            )
+        self.frame_index += 1
+        self._is_yuv = True
+
+    def split_yuv420p(self, data: bytes) -> tuple[bytes, bytes, bytes]:
+        """Helper: split raw yuv420p into (Y,U,V) — U/V each w*h//4."""
+        return split_yuv420p(data, self.width, self.height)
 
     def draw(self) -> None:
+        # host_build YUV branch
+        if self._is_yuv and self._y_tex is not None and self._u_tex is not None and self._v_tex is not None and self._yuv_pipeline is not None:
+            renpy_host.begin_frame()
+            # draw_model pipeline mesh texture texture1 uniforms texture2
+            # Use keyword-style to handle uniforms=None correctly
+            try:
+                renpy_host.draw_model(self._yuv_pipeline, self.mesh, self._y_tex, self._u_tex, None, self._v_tex)  # type: ignore[call-arg]
+            except TypeError:
+                # fallback positional if binding mismatched
+                renpy_host.draw_model(self._yuv_pipeline, self.mesh, self._y_tex, self._u_tex, self._v_tex)  # type: ignore[call-arg]
+            renpy_host.end_frame_present()
+            return
         renpy_host.begin_frame()
         renpy_host.draw_model(self.pipeline, self.mesh, self.texture)
         renpy_host.end_frame_present()
@@ -991,6 +1170,15 @@ class VideoTexture:
 
     def close(self) -> None:
         renpy_host.video_clock_stop(self.channel)
+        try:
+            if self._y_tex is not None:
+                renpy_host.destroy_texture(self._y_tex)
+            if self._u_tex is not None:
+                renpy_host.destroy_texture(self._u_tex)
+            if self._v_tex is not None:
+                renpy_host.destroy_texture(self._v_tex)
+        except Exception:
+            pass
         renpy_host.destroy_texture(self.texture)
         renpy_host.destroy_mesh(self.mesh)
 

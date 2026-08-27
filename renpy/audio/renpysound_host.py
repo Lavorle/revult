@@ -164,6 +164,7 @@ def stop(channel):
     if channel in _channels:
         _channels[channel]["playing"] = False
         _channels[channel]["name"] = None
+        _channels[channel].pop("_audio_clock_bound", None)
         if _channels[channel].get("video"):
             try:
                 renpy_host.video_clock_stop(channel)
@@ -705,6 +706,7 @@ def _clear_video_cache(channel: int) -> None:
     ch.pop("_phase0_present_logged", None)
     ch.pop("_phase0_last_idx", None)
     ch.pop("_phase0_last_t", None)
+    ch.pop("_audio_clock_bound", None)
 
 
 def _strip_audio_spec(name: Any) -> str:
@@ -1809,6 +1811,27 @@ def _maybe_arm_clock(channel: int) -> None:
         f"nframes={len(frozen)} fps={fps} ready_full={int(ready_full)} "
         f"growing={int(not ready_full)}"
     )
+    # T1: bind audio sample clock as master when channel is playing and clock exists.
+    # Only bind once when master is Wall; AudioSample master is set via video_clock_bind_audio.
+    try:
+        import renpy_host
+        ch2 = _channels.get(channel)
+        if ch2 and ch2.get("playing") and ch2.get("video"):
+            # Check video_clock exists (pos >=0) and not yet bound
+            try:
+                # If drift probe exists, we can infer master; otherwise just attempt bind
+                _has_bind = hasattr(renpy_host, "video_clock_bind_audio")
+                _has_rate = hasattr(renpy_host, "audio_sample_rate")
+                if _has_bind:
+                    # Only bind if not already AudioSample (use flag or check drift? try bind idempotently)
+                    if not ch2.get("_audio_clock_bound"):
+                        _rate = int(renpy_host.audio_sample_rate() if _has_rate else 48000)
+                        renpy_host.video_clock_bind_audio(int(channel), int(_rate))
+                        ch2["_audio_clock_bound"] = True
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def _ensure_video_frames(channel: int, block: bool = True) -> None:

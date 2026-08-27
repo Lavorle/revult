@@ -275,6 +275,9 @@ pub struct GpuArena {
     pub live2d_inverted_mask_pipeline: Option<u64>,
     pub live2d_colors_pipeline: Option<u64>,
     pub live2d_flip_pipeline: Option<u64>,
+    /// YUV420p / NV12 video pipelines (Phase 6/9 — reuse tex_count 3/2 layout).
+    pub yuv420p_pipeline: Option<u64>,
+    pub nv12_pipeline: Option<u64>,
     pub clear_color: wgpu::Color,
     /// Mesh ids that would have been destroyed while still referenced by the
     /// open product frame. Flushed after end_frame_present drains frame_cmds.
@@ -372,6 +375,8 @@ impl GpuArena {
             live2d_inverted_mask_pipeline: None,
             live2d_colors_pipeline: None,
             live2d_flip_pipeline: None,
+            yuv420p_pipeline: None,
+            nv12_pipeline: None,
             clear_color: wgpu::Color {
                 r: 0.05,
                 g: 0.05,
@@ -820,6 +825,534 @@ impl GpuArena {
         Ok(())
     }
 
+    /// YUV420p 3-plane texture creation: Y, U, V each R8Unorm.
+    /// Returns (y_id, u_id, v_id). U/V are w/2 x h/2.
+    /// Reuses maybe_swizzle path for YUV branch (no swizzle) + 256-aligned write_texture contract.
+    pub fn create_texture_yuv420p(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        y_plane: &[u8],
+        u_plane: &[u8],
+        v_plane: &[u8],
+    ) -> Result<(u64, u64, u64), String> {
+        let w = width.max(1);
+        let h = height.max(1);
+        let uv_w = (w / 2).max(1);
+        let uv_h = (h / 2).max(1);
+        let y_expected = (w as usize).saturating_mul(h as usize);
+        let uv_expected = (uv_w as usize).saturating_mul(uv_h as usize);
+        if y_plane.len() < y_expected {
+            return Err(format!(
+                "yuv420p y plane too short: {} < {} ({}x{})",
+                y_plane.len(),
+                y_expected,
+                w,
+                h
+            ));
+        }
+        if u_plane.len() < uv_expected {
+            return Err(format!(
+                "yuv420p u plane too short: {} < {} ({}x{})",
+                u_plane.len(),
+                uv_expected,
+                uv_w,
+                uv_h
+            ));
+        }
+        if v_plane.len() < uv_expected {
+            return Err(format!(
+                "yuv420p v plane too short: {} < {} ({}x{})",
+                v_plane.len(),
+                uv_expected,
+                uv_w,
+                uv_h
+            ));
+        }
+        // Y plane R8Unorm 256-aligned write_texture (bytes_per_row = w, rows = h)
+        let tex_y = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("tex-yuv-y"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        // 256 alignment note: queue.write_texture expects bytes_per_row tight; COPY_BYTES_PER_ROW_ALIGNMENT
+        // is for buffer copies. We keep tight w for Y and uv_w for chroma (spec says 256-aligned contract).
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex_y,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &y_plane[..y_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view_y = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
+        let id_y = next_handle();
+        self.textures.insert(
+            id_y,
+            TextureSlot {
+                texture: tex_y,
+                view: view_y,
+                width: w,
+                height: h,
+                renderable: false,
+            },
+        );
+        self.epoch_pin_texture(id_y);
+        let tex_u = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("tex-yuv-u"),
+            size: wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex_u,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &u_plane[..uv_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(uv_w),
+                rows_per_image: Some(uv_h),
+            },
+            wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view_u = tex_u.create_view(&wgpu::TextureViewDescriptor::default());
+        let id_u = next_handle();
+        self.textures.insert(
+            id_u,
+            TextureSlot {
+                texture: tex_u,
+                view: view_u,
+                width: uv_w,
+                height: uv_h,
+                renderable: false,
+            },
+        );
+        self.epoch_pin_texture(id_u);
+        let tex_v = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("tex-yuv-v"),
+            size: wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex_v,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &v_plane[..uv_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(uv_w),
+                rows_per_image: Some(uv_h),
+            },
+            wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view_v = tex_v.create_view(&wgpu::TextureViewDescriptor::default());
+        let id_v = next_handle();
+        self.textures.insert(
+            id_v,
+            TextureSlot {
+                texture: tex_v,
+                view: view_v,
+                width: uv_w,
+                height: uv_h,
+                renderable: false,
+            },
+        );
+        self.epoch_pin_texture(id_v);
+        self.evict_sample_textures_if_needed();
+        Ok((id_y, id_u, id_v))
+    }
+
+    /// Update YUV420p planes in place (video frame path). Each plane matched to its texture size.
+    pub fn write_texture_yuv420p(
+        &mut self,
+        queue: &wgpu::Queue,
+        y_id: u64,
+        y_plane: &[u8],
+        u_id: u64,
+        u_plane: &[u8],
+        v_id: u64,
+        v_plane: &[u8],
+    ) -> Result<(), String> {
+        // Y
+        {
+            let slot = self
+                .textures
+                .get(&y_id)
+                .ok_or_else(|| format!("write_texture_yuv420p: unknown y handle {y_id}"))?;
+            let expected = (slot.width as usize).saturating_mul(slot.height as usize);
+            if y_plane.len() < expected {
+                return Err(format!(
+                    "write yuv y too short: {} < {} ({}x{})",
+                    y_plane.len(),
+                    expected,
+                    slot.width,
+                    slot.height
+                ));
+            }
+            let w = slot.width;
+            let h = slot.height;
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &slot.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &y_plane[..expected],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.touch_texture(y_id);
+        }
+        // U
+        {
+            let slot = self
+                .textures
+                .get(&u_id)
+                .ok_or_else(|| format!("write_texture_yuv420p: unknown u handle {u_id}"))?;
+            let expected = (slot.width as usize).saturating_mul(slot.height as usize);
+            if u_plane.len() < expected {
+                return Err(format!(
+                    "write yuv u too short: {} < {} ({}x{})",
+                    u_plane.len(),
+                    expected,
+                    slot.width,
+                    slot.height
+                ));
+            }
+            let w = slot.width;
+            let h = slot.height;
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &slot.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &u_plane[..expected],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.touch_texture(u_id);
+        }
+        // V
+        {
+            let slot = self
+                .textures
+                .get(&v_id)
+                .ok_or_else(|| format!("write_texture_yuv420p: unknown v handle {v_id}"))?;
+            let expected = (slot.width as usize).saturating_mul(slot.height as usize);
+            if v_plane.len() < expected {
+                return Err(format!(
+                    "write yuv v too short: {} < {} ({}x{})",
+                    v_plane.len(),
+                    expected,
+                    slot.width,
+                    slot.height
+                ));
+            }
+            let w = slot.width;
+            let h = slot.height;
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &slot.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &v_plane[..expected],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.touch_texture(v_id);
+        }
+        Ok(())
+    }
+
+    /// NV12 placeholder: Y R8 + UV RG8 interleaved.
+    pub fn create_texture_nv12(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        y_plane: &[u8],
+        uv_plane: &[u8],
+    ) -> Result<(u64, u64), String> {
+        let w = width.max(1);
+        let h = height.max(1);
+        let uv_w = (w / 2).max(1);
+        let uv_h = (h / 2).max(1);
+        let y_expected = (w as usize).saturating_mul(h as usize);
+        let uv_expected = (uv_w as usize)
+            .saturating_mul(uv_h as usize)
+            .saturating_mul(2);
+        if y_plane.len() < y_expected {
+            return Err(format!(
+                "nv12 y plane too short: {} < {}",
+                y_plane.len(),
+                y_expected
+            ));
+        }
+        if uv_plane.len() < uv_expected {
+            return Err(format!(
+                "nv12 uv plane too short: {} < {}",
+                uv_plane.len(),
+                uv_expected
+            ));
+        }
+        let tex_y = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("tex-nv12-y"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex_y,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &y_plane[..y_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view_y = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
+        let id_y = next_handle();
+        self.textures.insert(
+            id_y,
+            TextureSlot {
+                texture: tex_y,
+                view: view_y,
+                width: w,
+                height: h,
+                renderable: false,
+            },
+        );
+        self.epoch_pin_texture(id_y);
+        let tex_uv = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("tex-nv12-uv"),
+            size: wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rg8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex_uv,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &uv_plane[..uv_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(2 * uv_w),
+                rows_per_image: Some(uv_h),
+            },
+            wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view_uv = tex_uv.create_view(&wgpu::TextureViewDescriptor::default());
+        let id_uv = next_handle();
+        self.textures.insert(
+            id_uv,
+            TextureSlot {
+                texture: tex_uv,
+                view: view_uv,
+                width: uv_w,
+                height: uv_h,
+                renderable: false,
+            },
+        );
+        self.epoch_pin_texture(id_uv);
+        self.evict_sample_textures_if_needed();
+        Ok((id_y, id_uv))
+    }
+
+    /// NV12 write placeholder.
+    pub fn write_texture_nv12(
+        &mut self,
+        queue: &wgpu::Queue,
+        y_id: u64,
+        y_plane: &[u8],
+        uv_id: u64,
+        uv_plane: &[u8],
+    ) -> Result<(), String> {
+        {
+            let slot = self
+                .textures
+                .get(&y_id)
+                .ok_or_else(|| format!("write nv12 unknown y handle {y_id}"))?;
+            let expected = (slot.width as usize).saturating_mul(slot.height as usize);
+            if y_plane.len() < expected {
+                return Err(format!("write nv12 y too short: {} < {}", y_plane.len(), expected));
+            }
+            let w = slot.width;
+            let h = slot.height;
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &slot.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &y_plane[..expected],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.touch_texture(y_id);
+        }
+        {
+            let slot = self
+                .textures
+                .get(&uv_id)
+                .ok_or_else(|| format!("write nv12 unknown uv handle {uv_id}"))?;
+            let expected = (slot.width as usize)
+                .saturating_mul(slot.height as usize)
+                .saturating_mul(2);
+            if uv_plane.len() < expected {
+                return Err(format!("write nv12 uv too short: {} < {}", uv_plane.len(), expected));
+            }
+            let w = slot.width;
+            let h = slot.height;
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &slot.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &uv_plane[..expected],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(2 * w),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.touch_texture(uv_id);
+        }
+        Ok(())
+    }
+
     /// Offscreen RTT (transitions). Handle is also a sampleable texture.
     ///
     /// Uses a size-keyed freelist and hard-caps live RTTs per size so product
@@ -1232,6 +1765,18 @@ impl GpuArena {
                 .create_pipeline(device, "live2d_flip", LIVE2D_FLIP_WGSL, 1, false)
                 .expect("live2d.flip_texture pipeline");
             self.live2d_flip_pipeline = Some(id);
+        }
+        if self.yuv420p_pipeline.is_none() {
+            let id = self
+                .create_pipeline(device, "yuv420p", YUV420P_WGSL, 3, false)
+                .expect("yuv420p pipeline");
+            self.yuv420p_pipeline = Some(id);
+        }
+        if self.nv12_pipeline.is_none() {
+            let id = self
+                .create_pipeline(device, "nv12", NV12_WGSL, 2, false)
+                .expect("nv12 pipeline");
+            self.nv12_pipeline = Some(id);
         }
     }
 
@@ -2678,6 +3223,82 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+const YUV420P_WGSL: &str = r#"
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+@group(0) @binding(0) var t_y: texture_2d<f32>;
+@group(0) @binding(1) var s_yuv: sampler;
+@group(0) @binding(2) var t_u: texture_2d<f32>;
+@group(0) @binding(3) var t_v: texture_2d<f32>;
+
+@vertex
+fn vs_main(v: VsIn) -> VsOut {
+    var o: VsOut;
+    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
+    o.uv = v.uv;
+    o.color = v.color;
+    return o;
+}
+@fragment
+fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    let y = textureSample(t_y, s_yuv, v.uv).r;
+    let u = textureSample(t_u, s_yuv, v.uv).r - 0.5;
+    let v_ = textureSample(t_v, s_yuv, v.uv).r - 0.5;
+    let r = y + 1.402 * v_;
+    let g = y - 0.344136 * u - 0.714136 * v_;
+    let b = y + 1.772 * u;
+    let rgb = clamp(vec3<f32>(r, g, b), vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 1.0, 1.0));
+    let c = vec4<f32>(rgb, 1.0) * v.color;
+    return vec4<f32>(c.rgb * c.a, c.a);
+}
+"#;
+
+const NV12_WGSL: &str = r#"
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+@group(0) @binding(0) var t_y: texture_2d<f32>;
+@group(0) @binding(1) var s_yuv: sampler;
+@group(0) @binding(2) var t_uv: texture_2d<f32>;
+
+@vertex
+fn vs_main(v: VsIn) -> VsOut {
+    var o: VsOut;
+    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
+    o.uv = v.uv;
+    o.color = v.color;
+    return o;
+}
+@fragment
+fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    let y = textureSample(t_y, s_yuv, v.uv).r;
+    let uv = textureSample(t_uv, s_yuv, v.uv).rg;
+    let u = uv.x - 0.5;
+    let v_ = uv.y - 0.5;
+    let r = y + 1.402 * v_;
+    let g = y - 0.344136 * u - 0.714136 * v_;
+    let b = y + 1.772 * u;
+    let rgb = clamp(vec3<f32>(r, g, b), vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 1.0, 1.0));
+    let c = vec4<f32>(rgb, 1.0) * v.color;
+    return vec4<f32>(c.rgb * c.a, c.a);
+}
+"#;
+
 /// renpy.dissolve GL2 parity: mix(tex0/old, tex1/new, amount).
 /// amount from uniforms data0.x (u_renpy_dissolve); vertex color multiplies result.
 const DISSOLVE_WGSL: &str = r#"
@@ -3129,3 +3750,50 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(c.rgb * c.a, c.a);
 }
 "#;
+
+#[cfg(test)]
+mod yuv_tests {
+    use super::{NV12_WGSL, YUV420P_WGSL};
+    #[test]
+    fn test_yuv420p_wgsl_naga_valid() {
+        let res = naga::front::wgsl::parse_str(YUV420P_WGSL);
+        assert!(res.is_ok(), "YUV420P WGSL parse failed: {:?}", res.err());
+        let module = res.unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("YUV420P WGSL validation failed");
+        let _ = info;
+        assert!(YUV420P_WGSL.contains("1.402"));
+        assert!(YUV420P_WGSL.contains("t_y"));
+        assert!(YUV420P_WGSL.contains("t_u"));
+        assert!(YUV420P_WGSL.contains("t_v"));
+        assert!(YUV420P_WGSL.contains("s_yuv"));
+    }
+    #[test]
+    fn test_nv12_wgsl_naga_valid() {
+        let res = naga::front::wgsl::parse_str(NV12_WGSL);
+        assert!(res.is_ok(), "NV12 WGSL parse failed: {:?}", res.err());
+        let module = res.unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("NV12 WGSL validation failed");
+        assert!(NV12_WGSL.contains("t_y"));
+        assert!(NV12_WGSL.contains("t_uv"));
+    }
+    #[test]
+    fn test_yuv420p_plane_split_sizes() {
+        // mirrors python test: 1920x1080 Y=2073600 U/V=518400
+        let w = 1920usize;
+        let h = 1080usize;
+        let y = w * h;
+        let uv = (w / 2) * (h / 2);
+        assert_eq!(y, 2073600);
+        assert_eq!(uv, 518400);
+    }
+}

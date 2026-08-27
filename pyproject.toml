@@ -96,11 +96,9 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Host shims intentionally swallow broad exceptions and use fallback patterns
-# to keep Ren'Py parity (do not crash on fallback). Bulk noqa was 4994->0 narrow;
-# now explicit per-file-ignores. Remaining 11 codes below are intentional fallbacks
-# (generic Exception mirrors Ren'Py API, try-continue skips bad data, useless-if
-# guards keep GL2-compat, SRCALPHA probe via NameError, renpy global optional).
-"host/python/**/*.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102"]
-
+# Host gates and top-level shims keep broad fallbacks (probe scripts).
+# Host_pygame shims keep BLE001 + probe patterns (per-file-ignores retained per plan T11 narrowing: was host/python/**/*.py global, now scoped).
+"host/python/gates/**/*.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102", "I001"]
+"host/python/_renpy_host.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102", "I001"]
+"host/python/host_pygame/**/*.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102", "I001"]
 [tool.ruff.format]

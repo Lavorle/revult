@@ -1,7 +1,7 @@
 {
   "schema": "product_acceptance.v1",
-  "evidence_revision": "d4373ac7a3a8f27b45b2813957c9f50a7b52f9e2",
-  "timestamp_utc": "2026-08-28T00:16:19.146079+00:00",
+  "evidence_revision": "6f68308315f2523cc2eb98ffc4ab28c6e5c34aad",
+  "timestamp_utc": "2026-08-28T00:17:04.734655+00:00",
   "verdict": "PASS",
   "tier1_host": {
     "cargo_fmt": 0,
@@ -12,8 +12,8 @@
   },
   "tier2_golden": {
     "passed": "8/8",
-    "evidence_revision": "d4373ac7a3a8f27b45b2813957c9f50a7b52f9e2",
-    "envelopes": "14 envelopes d4373ac",
+    "evidence_revision": "6f68308315f2523cc2eb98ffc4ab28c6e5c34aad",
+    "envelopes": "14 envelopes 6f68308",
     "notes": "G02/G06 single-point, exit_code 1, corruption/missing PASS"
   },
   "tier2_composer": {

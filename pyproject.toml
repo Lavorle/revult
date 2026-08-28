@@ -101,4 +101,5 @@ extend-exclude = [
 "host/python/gates/**/*.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102", "I001"]
 "host/python/_renpy_host.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102", "I001"]
 "host/python/host_pygame/**/*.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102", "I001"]
+"renpy/wgpu/**/*.py" = ["BLE001", "S110", "S112", "TRY002", "TRY004", "B018", "F821", "F811", "RUF034", "SIM102", "I001", "E722", "SIM103", "F841", "RUF046", "C408", "TC004", "RUF059", "RUF022", "RUF023", "I001"]
 [tool.ruff.format]

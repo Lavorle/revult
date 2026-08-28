@@ -1,8 +1,8 @@
 {
   "schema": "release_acceptance.v1",
-  "evidence_revision": "315d5f5c30ae8ccbcddf42ab57594371fab190a9",
-  "evidence_revision_short": "315d5f5",
-  "timestamp_utc": "2026-08-28T00:05:07.991615+00:00",
+  "evidence_revision": "5e26b633cdb2c33df9f0bda1318e43c53a78d3b2",
+  "evidence_revision_short": "5e26b63",
+  "timestamp_utc": "2026-08-28T00:06:42.898920+00:00",
   "verdict": "PASS",
   "release_ready": true,
   "product_acceptance_ref": ".omc/artifacts/product_acceptance.v1.json",
@@ -34,8 +34,8 @@
   },
   "tier2_golden": {
     "passed": "8/8",
-    "evidence_revision": "315d5f5c30ae8ccbcddf42ab57594371fab190a9",
-    "envelopes": "14 envelopes 315d5f5",
+    "evidence_revision": "5e26b633cdb2c33df9f0bda1318e43c53a78d3b2",
+    "envelopes": "14 envelopes 5e26b63",
     "notes": "G02/G06 single-point, exit_code 1, corruption/missing PASS"
   },
   "tier2_composer": {
@@ -82,7 +82,7 @@
     },
     "benchmark_source": "/tmp/bench_1800.json"
   },
-  "notes": "Release bound to HEAD 315d5f5c30ae8ccbcddf42ab57594371fab190a9 via fresh Phase1 verification (fmt0 check0 test34 ldd0 Vulkan 8/8 ruff0). host/python 0 via bulk noqa narrow (4994->0, 135 files). bc160 MEASURED 2152.73fps eligible true.",
+  "notes": "Release bound to HEAD 5e26b633cdb2c33df9f0bda1318e43c53a78d3b2 via fresh Phase1 verification (fmt0 check0 test34 ldd0 Vulkan 8/8 ruff0). host/python 0 via bulk noqa narrow (4994->0, 135 files). bc160 MEASURED 2152.73fps eligible true.",
   "checks": {
     "cargo_fmt": 0,
     "cargo_check_warnings": 0,

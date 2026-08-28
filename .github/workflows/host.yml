@@ -73,6 +73,17 @@ jobs:
           bash host/scripts/phase1_gates.sh | tee host/target/verify-phase1.log
           grep -q 'backend=Vulkan' host/target/verify-phase1.log
           grep -q 'OK: no libSDL' host/target/verify-phase1.log
+      - name: Packaging --check (AppImage + sdist dry-run, no network)
+        run: |
+          bash host/scripts/build_appimage.sh --check | tee host/target/verify-appimage.log
+          grep -q "OK: no libSDL" host/target/verify-appimage.log
+          grep -q "OK: libpython" host/target/verify-appimage.log
+          grep -q "OK: WGPU_BACKEND unset" host/target/verify-appimage.log
+          grep -q "backend=Vulkan" host/target/verify-appimage.log
+          grep -q "OK: size budget" host/target/verify-appimage.log
+          bash host/scripts/build_sdist_manifest.sh --check | tee host/target/verify-sdist.log
+          grep -q "host/python" host/target/verify-sdist.log
+          grep -q "renpy/wgpu" host/target/verify-sdist.log
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4

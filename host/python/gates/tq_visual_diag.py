@@ -6,7 +6,6 @@ import types
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 base = Path(os.environ.get("RENPY_HOST_BASE", "/mnt/nvme1n1p2/revult"))
 game = Path(os.environ.get("RENPY_HOST_GAME", str(base / "the_question")))

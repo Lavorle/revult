@@ -8,7 +8,6 @@ import sys
 import traceback
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 # Bind renpy.config BEFORE any print: host bootstrap partially imports renpy and
 # renpy.log redirects stdout to StdoutRedirector which reads renpy.config.

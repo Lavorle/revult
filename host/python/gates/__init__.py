@@ -6,6 +6,6 @@ This re-export keeps ``from host.python.gates import gate_harness`` working
 and documents the 1-version compat window for the legacy plain import.
 """
 
-from ._harness import gate_harness, parametrized_gate  # re-export compat  # noqa: F401
+from ._harness import gate_harness, parametrized_gate  # re-export compat
 
 __all__ = ["gate_harness", "parametrized_gate"]

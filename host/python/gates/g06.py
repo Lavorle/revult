@@ -11,7 +11,6 @@ RENPY_HOST_GATE=live2d (non-golden regression).
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 
 def _make_checker(w, h, c0, c1):

@@ -110,7 +110,10 @@ pub fn gamepad_hat(id: usize, hat: usize) -> (i8, i8) {
     gamepads_lock()
         .lock()
         .ok()
-        .and_then(|g| g.get(id).map(|s| s.hats.get(hat).copied().unwrap_or((0, 0))))
+        .and_then(|g| {
+            g.get(id)
+                .map(|s| s.hats.get(hat).copied().unwrap_or((0, 0)))
+        })
         .unwrap_or((0, 0))
 }
 
@@ -345,7 +348,10 @@ pub fn handle_window_event(event: &WindowEvent) {
                         vec![
                             ("text".into(), EventValue::Str(truncated.clone())),
                             ("start".into(), EventValue::Int(0)),
-                            ("length".into(), EventValue::Int(truncated.chars().count() as i64)),
+                            (
+                                "length".into(),
+                                EventValue::Int(truncated.chars().count() as i64),
+                            ),
                         ],
                     ));
                 }

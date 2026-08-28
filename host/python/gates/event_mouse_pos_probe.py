@@ -9,7 +9,6 @@ Note: run_file prepends imports — no __future__ here.
 import os
 import traceback
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import host_pygame.event as pev  # type: ignore
 import renpy_host  # type: ignore

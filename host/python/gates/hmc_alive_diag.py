@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 def _log(m):
     print("[alive_diag] "+m, flush=True)
@@ -42,7 +41,7 @@ def main():
     import renpy
     renpy.host_build=True
     try:
-        import renpy_main_host; renpy_main_host.install(renpy)  # noqa: I001
+        import renpy_main_host; renpy_main_host.install(renpy)
     except Exception as e:
         _log(f"main_host {e}")
     try:

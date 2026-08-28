@@ -16,7 +16,6 @@ Note: no `from __future__` — host run_file prepends imports before this source
 import os
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy_host
 from renpy.pygame.surface import Surface

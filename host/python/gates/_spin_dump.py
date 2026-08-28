@@ -3,7 +3,6 @@ import os
 import threading
 import time
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 log=open("/tmp/spin_main.log","w",buffering=1)  # noqa: SIM115
 faulthandler.enable(file=log, all_threads=True)
 def d():

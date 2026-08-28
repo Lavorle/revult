@@ -9,7 +9,6 @@ Note: run_file prepends imports before this source — no __future__ here.
 import os
 import traceback
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 # host_pygame is installed by embed bootstrap before gates run.
 import host_pygame.event as pev  # type: ignore

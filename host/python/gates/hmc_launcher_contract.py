@@ -13,7 +13,6 @@ import tempfile
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 
 ROOT = Path(__file__).resolve().parents[3]

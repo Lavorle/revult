@@ -17,7 +17,6 @@ from pathlib import Path
 import bootstrap as boot
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 base = Path(os.environ.get("RENPY_HOST_BASE", "/mnt/nvme1n1p2/revult"))
 game_env = os.environ.get("RENPY_HOST_GAME")

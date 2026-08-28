@@ -3,7 +3,6 @@ import sys
 import traceback
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 outp = Path("/tmp/diag_product.txt")
 out = outp.open("w")
 def log(m):

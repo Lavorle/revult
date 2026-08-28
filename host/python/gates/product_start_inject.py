@@ -11,7 +11,6 @@ import traceback
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 
 def _base():

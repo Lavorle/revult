@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 //! renpy-host entry — winit outermost, Python pumped (plan §4.1.1).
 mod app;
-mod atlas;
 mod arena;
+mod atlas;
 mod audio;
 mod audio_mixer;
 mod event_queue;
@@ -15,7 +15,6 @@ mod shader;
 mod state;
 mod timer;
 mod video;
-
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -43,7 +42,8 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     info!("renpy-host Phase 2 starting");
     {
-        let backend = std::env::var("RENPY_HOST_VIDEO_BACKEND").unwrap_or_else(|_| "cli".to_string());
+        let backend =
+            std::env::var("RENPY_HOST_VIDEO_BACKEND").unwrap_or_else(|_| "cli".to_string());
         let cap = crate::gpu::STAGING_RING_CAP_BYTES;
         let workers = crate::gpu::DECODE_POOL_WORKERS_DEFAULT;
         if backend == "host" {

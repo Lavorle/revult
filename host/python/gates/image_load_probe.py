@@ -13,7 +13,6 @@ import io
 import os
 import traceback
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import host_pygame.image as pimage  # type: ignore
 import renpy_host  # type: ignore

@@ -12,7 +12,6 @@ from golden_mae import compare_or_bootstrap, gate_result_path
 
 from renpy.wgpu import model as model_mod
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 cube = model_mod.procedural_cube_isometric(cx=-0.25, cy=0.05, size=0.32)
 quad = model_mod.procedural_quad(x0=0.15, y0=0.25, x1=0.75, y1=0.75)

@@ -12,7 +12,6 @@ import traceback
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 def _base():
     return Path(os.environ.get("RENPY_HOST_BASE") or "/mnt/nvme1n1p2/revult")
@@ -26,7 +25,7 @@ def _log(m):
 
 def _quit():
     try:
-        import renpy_host; renpy_host.request_quit()  # noqa: I001
+        import renpy_host; renpy_host.request_quit()
     except Exception:
         pass
 
@@ -64,12 +63,12 @@ def _pre():
         for n in dir(u):
             if n.startswith("GL_") or n in ("clear_errors","get_error"): setattr(pkg,n,getattr(u,n))
         pkg.uguu=u; pkg.gl=u
-        import renpy; renpy.uguu=pkg  # noqa: I001
+        import renpy; renpy.uguu=pkg
     except Exception as e: _log(f"uguu {e}")
     try:
         import renpy_ecsign_host as e
         sys.modules["renpy.ecsign"]=e
-        import renpy; renpy.ecsign=e  # noqa: I001
+        import renpy; renpy.ecsign=e
     except Exception as e: _log(f"ecsign {e}")
 
 def _sample_rt():

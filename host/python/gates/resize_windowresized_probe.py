@@ -16,7 +16,6 @@ import renpy_host  # type: ignore
 from host_pygame.locals import WINDOWRESIZED  # type: ignore
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 
 def _drain(n=128):

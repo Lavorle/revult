@@ -14,7 +14,6 @@ import runpy
 import sys
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 
 def _base_dir() -> Path:

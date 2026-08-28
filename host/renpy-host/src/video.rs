@@ -67,7 +67,9 @@ pub struct SeekIndex {
 
 impl SeekIndex {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
     pub fn push(&mut self, pts_ms: u64, is_key: bool) {
         self.entries.push((pts_ms, is_key));
@@ -197,8 +199,14 @@ impl std::fmt::Debug for VideoDecoder {
             .field("path", &self.path)
             .field("fps", &self.fps)
             .field("yuv", &self.yuv)
-            .field("staging_cap", &self.staging.lock().map(|s| s.cap_bytes).unwrap_or(0))
-            .field("seek_len", &self.seek_index.lock().map(|s| s.len()).unwrap_or(0))
+            .field(
+                "staging_cap",
+                &self.staging.lock().map(|s| s.cap_bytes).unwrap_or(0),
+            )
+            .field(
+                "seek_len",
+                &self.seek_index.lock().map(|s| s.len()).unwrap_or(0),
+            )
             .finish()
     }
 }
@@ -371,7 +379,10 @@ mod tests {
         assert_eq!(dec.path, "test.mp4");
         assert_eq!(dec.fps, 30.0);
         assert_eq!(dec.yuv, YuvKind::Yuv420p);
-        assert_eq!(dec.staging.lock().unwrap().cap_bytes, STAGING_RING_CAP_BYTES);
+        assert_eq!(
+            dec.staging.lock().unwrap().cap_bytes,
+            STAGING_RING_CAP_BYTES
+        );
     }
 
     #[test]

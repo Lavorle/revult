@@ -1,7 +1,6 @@
 import sys
 import traceback
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 out = open("/tmp/diag_renpy.txt", "w")  # noqa: SIM115
 try:
     out.write(f"path0={sys.path[:6]!r}\n")

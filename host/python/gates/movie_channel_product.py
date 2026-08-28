@@ -19,7 +19,6 @@ Note: no from __future__; host run_file prepends imports.
 import os
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy_host  # type: ignore
 

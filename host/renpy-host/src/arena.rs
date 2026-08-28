@@ -36,13 +36,19 @@ pub struct MeshHandle(pub u64);
 pub struct PipelineHandle(pub u64);
 
 impl From<u64> for TextureHandle {
-    fn from(v: u64) -> Self { Self(v) }
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
 }
 impl From<u64> for MeshHandle {
-    fn from(v: u64) -> Self { Self(v) }
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
 }
 impl From<u64> for PipelineHandle {
-    fn from(v: u64) -> Self { Self(v) }
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
 }
 
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
@@ -1414,7 +1420,11 @@ impl GpuArena {
                 .ok_or_else(|| format!("write nv12 unknown y handle {y_id}"))?;
             let expected = (slot.width as usize).saturating_mul(slot.height as usize);
             if y_plane.len() < expected {
-                return Err(format!("write nv12 y too short: {} < {}", y_plane.len(), expected));
+                return Err(format!(
+                    "write nv12 y too short: {} < {}",
+                    y_plane.len(),
+                    expected
+                ));
             }
             let w = slot.width;
             let h = slot.height;
@@ -1448,7 +1458,11 @@ impl GpuArena {
                 .saturating_mul(slot.height as usize)
                 .saturating_mul(2);
             if uv_plane.len() < expected {
-                return Err(format!("write nv12 uv too short: {} < {}", uv_plane.len(), expected));
+                return Err(format!(
+                    "write nv12 uv too short: {} < {}",
+                    uv_plane.len(),
+                    expected
+                ));
             }
             let w = slot.width;
             let h = slot.height;
@@ -1725,7 +1739,6 @@ impl GpuArena {
             },
         );
     }
-
 
     /// Vertex layout: pos.xy, uv.xy, color.rgba  (8 f32 = 32 bytes)
     pub fn create_mesh(
@@ -2224,10 +2237,8 @@ impl GpuArena {
         // Always allocate a dedicated 0..1 unit quad.
         // Create fresh unit quad 0..1 (pos.xy, uv.xy, color.rgba white)
         let verts: [f32; 32] = [
-            0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0,
-            1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
-            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
         ];
         let vertex = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("unit-quad-vbo"),
@@ -2385,7 +2396,10 @@ impl GpuArena {
                 self.frame_cmds = self.frame_cmd_stack.pop().unwrap_or_default();
                 self.in_frame = true;
                 self.frame_overdraw_acc = self.frame_overdraw_stack.pop().unwrap_or(0.0);
-                self.instance_next_byte = self.instance_next_byte_stack.pop().unwrap_or(INSTANCE_BYTES);
+                self.instance_next_byte = self
+                    .instance_next_byte_stack
+                    .pop()
+                    .unwrap_or(INSTANCE_BYTES);
             } else {
                 self.in_frame = false;
                 self.frame_overdraw_acc = 0.0;
@@ -2405,7 +2419,10 @@ impl GpuArena {
             self.frame_cmds = self.frame_cmd_stack.pop().unwrap_or_default();
             self.in_frame = true;
             self.frame_overdraw_acc = self.frame_overdraw_stack.pop().unwrap_or(0.0);
-            self.instance_next_byte = self.instance_next_byte_stack.pop().unwrap_or(INSTANCE_BYTES);
+            self.instance_next_byte = self
+                .instance_next_byte_stack
+                .pop()
+                .unwrap_or(INSTANCE_BYTES);
             self.flush_deferred_meshes();
             self.flush_deferred_textures();
             return Ok(false);
@@ -2771,7 +2788,9 @@ impl GpuArena {
     }
 
     fn ensure_instance_ring(&mut self, device: &wgpu::Device, need: usize) {
-        let required = ((need as u64) * INSTANCE_BYTES).max((INSTANCE_RING_INIT as u64) * INSTANCE_BYTES).max(INSTANCE_BYTES);
+        let required = ((need as u64) * INSTANCE_BYTES)
+            .max((INSTANCE_RING_INIT as u64) * INSTANCE_BYTES)
+            .max(INSTANCE_BYTES);
         if self.instance_ring.is_empty() {
             let buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("instance-ring"),
@@ -2865,7 +2884,11 @@ impl GpuArena {
         let has_instance_pipe = cmds.iter().any(|c| {
             self.pipelines
                 .get(&c.pipeline)
-                .map(|p| p.tex_count <= 1 && !p.has_uniforms && (p.parts_key == "solid" || p.parts_key == "textured"))
+                .map(|p| {
+                    p.tex_count <= 1
+                        && !p.has_uniforms
+                        && (p.parts_key == "solid" || p.parts_key == "textured")
+                })
                 .unwrap_or(false)
         });
         if has_instance_pipe {
@@ -2876,17 +2899,25 @@ impl GpuArena {
                     if self
                         .pipelines
                         .get(&c.pipeline)
-                        .map(|p| p.tex_count <= 1 && !p.has_uniforms && (p.parts_key == "solid" || p.parts_key == "textured"))
+                        .map(|p| {
+                            p.tex_count <= 1
+                                && !p.has_uniforms
+                                && (p.parts_key == "solid" || p.parts_key == "textured")
+                        })
                         .unwrap_or(false)
                     {
-                        grouped_instances = grouped_instances.saturating_add(c.instance_count as usize);
+                        grouped_instances =
+                            grouped_instances.saturating_add(c.instance_count as usize);
                     }
                 }
             }
             // need slots = 1 identity + grouped
-            let need_slots = 1usize.saturating_add(grouped_instances).max(INSTANCE_RING_INIT);
+            let need_slots = 1usize
+                .saturating_add(grouped_instances)
+                .max(INSTANCE_RING_INIT);
             // also consider byte high-water mark from draw_instances allocation
-            let need_from_alloc = ((self.instance_next_byte + INSTANCE_BYTES - 1) / INSTANCE_BYTES) as usize;
+            let need_from_alloc =
+                ((self.instance_next_byte + INSTANCE_BYTES - 1) / INSTANCE_BYTES) as usize;
             let need = need_slots.max(need_from_alloc).max(INSTANCE_RING_INIT);
             self.ensure_instance_ring(&gpu.device, need);
             let identity: [f32; 12] = [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
@@ -2898,12 +2929,17 @@ impl GpuArena {
                         let is_inst = self
                             .pipelines
                             .get(&c.pipeline)
-                            .map(|p| p.tex_count <= 1 && !p.has_uniforms && (p.parts_key == "solid" || p.parts_key == "textured"))
+                            .map(|p| {
+                                p.tex_count <= 1
+                                    && !p.has_uniforms
+                                    && (p.parts_key == "solid" || p.parts_key == "textured")
+                            })
                             .unwrap_or(false);
                         if is_inst {
                             let off = c.instance_offset;
                             // saturating arithmetic to avoid overflow
-                            let count_bytes = (c.instance_count as u64).saturating_mul(INSTANCE_BYTES);
+                            let count_bytes =
+                                (c.instance_count as u64).saturating_mul(INSTANCE_BYTES);
                             let needed = off.saturating_add(count_bytes);
                             if needed <= buf.size() {
                                 gpu.queue.write_buffer(buf, off, cast_f32(&c.instance_data));
@@ -2911,7 +2947,11 @@ impl GpuArena {
                                 // fallback: only write what fits to avoid panic
                                 let avail = (buf.size() - off) as usize;
                                 let write_len = avail.min(c.instance_data.len() * 4) / 4;
-                                gpu.queue.write_buffer(buf, off, cast_f32(&c.instance_data[..write_len]));
+                                gpu.queue.write_buffer(
+                                    buf,
+                                    off,
+                                    cast_f32(&c.instance_data[..write_len]),
+                                );
                             }
                         }
                     }
@@ -2956,7 +2996,9 @@ impl GpuArena {
                     Some(p) => (p.tex_count, p.has_uniforms, p.parts_key.clone()),
                     None => continue,
                 };
-                let is_instance = tex_count <= 1 && !has_uniforms && (parts_key == "solid" || parts_key == "textured");
+                let is_instance = tex_count <= 1
+                    && !has_uniforms
+                    && (parts_key == "solid" || parts_key == "textured");
                 let is_grouped = is_instance && cmd.instance_count > 1;
                 if !is_grouped {
                     let Some(_mesh_check) = self.meshes.get(&cmd.mesh) else {
@@ -3131,7 +3173,9 @@ impl GpuArena {
                     let bg = self.bg_cache.get(&key).unwrap();
                     pass.set_pipeline(&pipe_slot.pipeline);
                     pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                    let is_inst_single = tex_count <= 1 && !has_uniforms && (parts_key == "solid" || parts_key == "textured");
+                    let is_inst_single = tex_count <= 1
+                        && !has_uniforms
+                        && (parts_key == "solid" || parts_key == "textured");
                     if is_inst_single {
                         if let Some(buf) = self.instance_ring.first() {
                             let end = INSTANCE_BYTES.min(buf.size());
@@ -3154,13 +3198,17 @@ impl GpuArena {
             &gpu.query_readback_buffer,
         ) {
             encoder.resolve_query_set(qs, 0..2, resolve_buf, 0);
-            encoder.copy_buffer_to_buffer(resolve_buf, 0, readback_buf, 0, QUERY_RESOLVE_SIZE as u64);
+            encoder.copy_buffer_to_buffer(
+                resolve_buf,
+                0,
+                readback_buf,
+                0,
+                QUERY_RESOLVE_SIZE as u64,
+            );
         }
         Ok(())
     }
 }
-
-
 
 fn build_bind_group_layout(
     device: &wgpu::Device,
@@ -3442,7 +3490,6 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }
 "#;
-
 
 const YUV420P_WGSL: &str = r#"
 struct VsIn {

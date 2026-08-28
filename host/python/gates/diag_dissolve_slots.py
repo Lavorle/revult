@@ -10,7 +10,6 @@ from renpy.pygame.surface import Surface
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 
 base = os.environ.get("RENPY_HOST_BASE") or "/mnt/nvme1n1p2/revult"

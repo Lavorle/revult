@@ -357,7 +357,13 @@ impl GpuState {
             &self.query_readback_buffer,
         ) {
             encoder.resolve_query_set(qs, 0..2, resolve_buf, 0);
-            encoder.copy_buffer_to_buffer(resolve_buf, 0, readback_buf, 0, crate::arena::QUERY_RESOLVE_SIZE as u64);
+            encoder.copy_buffer_to_buffer(
+                resolve_buf,
+                0,
+                readback_buf,
+                0,
+                crate::arena::QUERY_RESOLVE_SIZE as u64,
+            );
         }
         self.queue.submit(Some(encoder.finish()));
         // Read back GPU timestamps if supported

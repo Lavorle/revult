@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 # Full renpy.config stub BEFORE any draw that might log
 import renpy

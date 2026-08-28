@@ -14,7 +14,6 @@ import os
 import sys
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path

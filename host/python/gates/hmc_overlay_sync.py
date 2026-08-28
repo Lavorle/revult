@@ -14,7 +14,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 
 TEMP_OVERLAY_RE = re.compile(r"^\..+\.tmp\.[A-Za-z0-9]{8}$", re.DOTALL)

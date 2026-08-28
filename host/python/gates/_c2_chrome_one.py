@@ -6,7 +6,6 @@ import renpy_host
 from renpy.wgpu.draw import WgpuDraw
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 base = Path(os.environ.get("RENPY_HOST_BASE","/mnt/nvme1n1p2/revult"))
 GUI = base/"host/playtests/HuangmeiC/game/gui"

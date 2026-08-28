@@ -1,8 +1,8 @@
 //! Shared host runtime state (window, GPU, timers, arena, audio, video clocks).
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use crate::arena::GpuArena;
@@ -82,7 +82,11 @@ impl VideoClock {
 
     pub fn bind_audio(&mut self, rate: u32) {
         self.master = ClockMaster::AudioSample { rate };
-        log::info!("[renpy-host] video_clock bind_audio rate={} master=AudioSample drift_ms={}", rate, self.drift_ms);
+        log::info!(
+            "[renpy-host] video_clock bind_audio rate={} master=AudioSample drift_ms={}",
+            rate,
+            self.drift_ms
+        );
     }
 }
 
@@ -142,7 +146,9 @@ pub struct HostState {
 // wide init churn; later `host_state()` / `PythonRuntime::bootstrap()` can
 impl HostState {
     pub fn new() -> Self {
-        log::info!("[renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init");
+        log::info!(
+            "[renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init"
+        );
         Self {
             window: None,
             gpu: None,
@@ -189,8 +195,6 @@ pub fn host_state() -> &'static Mutex<HostState> {
     STATE.get_or_init(|| Mutex::new(HostState::new()))
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,14 +213,22 @@ mod tests {
             repeated: 0,
         };
         let pos = c.pos_ms(1100);
-        assert!((pos - 0.1).abs() < 1e-6, "wall pos should be 0.1, got {}", pos);
+        assert!(
+            (pos - 0.1).abs() < 1e-6,
+            "wall pos should be 0.1, got {}",
+            pos
+        );
         let pos2 = c.pos_ms(1500);
         assert!((pos2 - 0.5).abs() < 1e-6, "wall pos 0.5, got {}", pos2);
         // pause test
         c.paused = true;
         c.pause_started_ms = Some(1500);
         let pos_paused = c.pos_ms(1600);
-        assert!((pos_paused - 0.5).abs() < 1e-6, "paused should freeze at 0.5, got {}", pos_paused);
+        assert!(
+            (pos_paused - 0.5).abs() < 1e-6,
+            "paused should freeze at 0.5, got {}",
+            pos_paused
+        );
     }
 
     #[test]
@@ -230,11 +242,19 @@ mod tests {
         // sample clock 0 => pos 0
         crate::audio::GLOBAL_SAMPLE_CLOCK.store(0, Ordering::Relaxed);
         let pos = c.pos_ms(999999);
-        assert!((pos - 0.0).abs() < 1e-6, "audio pos at 0 frames should be 0, got {}", pos);
+        assert!(
+            (pos - 0.0).abs() < 1e-6,
+            "audio pos at 0 frames should be 0, got {}",
+            pos
+        );
         // 48000 frames => 1 sec
         crate::audio::GLOBAL_SAMPLE_CLOCK.store(48000, Ordering::Relaxed);
         let pos2 = c.pos_ms(0);
-        assert!((pos2 - 1.0).abs() < 1e-6, "48000 frames at 48000 rate => 1.0 sec, got {}", pos2);
+        assert!(
+            (pos2 - 1.0).abs() < 1e-6,
+            "48000 frames at 48000 rate => 1.0 sec, got {}",
+            pos2
+        );
         crate::audio::GLOBAL_SAMPLE_CLOCK.store(0, Ordering::Relaxed);
     }
 
@@ -264,12 +284,25 @@ mod tests {
             let drift = (wall_ms - audio_ms) as f32;
             // monotonic check: delta <40ms
             let delta = (drift - prev_drift).abs();
-            assert!(delta < 40.0, "drift jump at frame {}: prev {} cur {} delta {}", i, prev_drift, drift, delta);
+            assert!(
+                delta < 40.0,
+                "drift jump at frame {}: prev {} cur {} delta {}",
+                i,
+                prev_drift,
+                drift,
+                delta
+            );
             prev_drift = drift;
             // also ensure pos_ms returns audio time
             let pos = c.pos_ms(now_ms);
             let expected = frames as f64 / 48000.0;
-            assert!((pos - expected).abs() < 1e-6, "pos mismatch at frame {}: got {} expected {}", i, pos, expected);
+            assert!(
+                (pos - expected).abs() < 1e-6,
+                "pos mismatch at frame {}: got {} expected {}",
+                i,
+                pos,
+                expected
+            );
         }
         crate::audio::GLOBAL_SAMPLE_CLOCK.store(0, Ordering::Relaxed);
     }

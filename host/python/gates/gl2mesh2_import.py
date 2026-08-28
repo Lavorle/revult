@@ -3,7 +3,6 @@ import sys
 import traceback
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 base = Path(os.environ.get("RENPY_HOST_BASE") or "/mnt/nvme1n1p2/revult")
 sys.path.insert(0, str(base/"host/python/gates"))
 import bootstrap as boot

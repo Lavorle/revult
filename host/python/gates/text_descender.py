@@ -14,7 +14,6 @@ import json
 import sys
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 # Allow `python3 host/python/gates/text_descender.py` from repo root.
 _HERE = Path(__file__).resolve().parent

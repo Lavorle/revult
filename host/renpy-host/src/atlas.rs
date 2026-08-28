@@ -179,7 +179,9 @@ impl AtlasTexture {
                 }
                 // 2K满驱逐路径
                 self.evict_lru();
-                if self.cursor_y + need_h > self.size && self.glyph_slots.len() < ATLAS_MAX_GLYPHS / 2 {
+                if self.cursor_y + need_h > self.size
+                    && self.glyph_slots.len() < ATLAS_MAX_GLYPHS / 2
+                {
                     self.cursor_x = 0;
                     self.cursor_y = 0;
                     self.row_h = 0;

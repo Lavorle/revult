@@ -11,7 +11,6 @@ from pathlib import Path
 
 import renpy_host
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 # 2x1: left red, right blue (opaque).
 pix = bytes([255, 0, 0, 255, 0, 0, 255, 255])

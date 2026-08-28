@@ -5,7 +5,6 @@ import threading
 import time
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 # Poison like the old run_the_question.sh
 os.environ["RENPY_SKIP_MAIN_MENU"] = "0"

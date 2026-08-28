@@ -1,0 +1,593 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running `host/target/debug/renpy-host`
+[2026-08-28T00:00:24Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:24Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:24Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:24Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:24Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:24Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:24Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:24Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	No valid vk_loader_settings.json file found, no loader settings will be active
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Searching for implicit layer manifest files
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   In following locations:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.config/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.config/kdedefaults/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /etc/xdg/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/kde-settings/kde-profile/default/xdg/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /etc/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/flatpak/exports/share/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /var/lib/flatpak/exports/share/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/local/share/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/implicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   Found the following files:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /etc/vulkan/implicit_layer.d/nvidia_layers.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/vulkan/implicit_layer.d/steamoverlay_i386.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/vulkan/implicit_layer.d/steamoverlay_x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/vulkan/implicit_layer.d/steamfossilize_i386.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/vulkan/implicit_layer.d/steamfossilize_x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/implicit_layer.d/MangoHud.x86.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/implicit_layer.d/VkLayer_FROG_gamescope_wsi.x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/implicit_layer.d/renderdoc_capture.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /etc/vulkan/implicit_layer.d/nvidia_layers.json (file version 1.0.1)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /home/Laouver/.local/share/vulkan/implicit_layer.d/steamoverlay_i386.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /home/Laouver/.local/share/vulkan/implicit_layer.d/steamoverlay_x86_64.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /home/Laouver/.local/share/vulkan/implicit_layer.d/steamfossilize_i386.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /home/Laouver/.local/share/vulkan/implicit_layer.d/steamfossilize_x86_64.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /usr/share/vulkan/implicit_layer.d/MangoHud.x86_64.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /usr/share/vulkan/implicit_layer.d/MangoHud.x86.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /usr/share/vulkan/implicit_layer.d/VkLayer_FROG_gamescope_wsi.x86_64.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /usr/share/vulkan/implicit_layer.d/renderdoc_capture.json (file version 1.1.2)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Searching for explicit layer manifest files
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   In following locations:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.config/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.config/kdedefaults/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /etc/xdg/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/kde-settings/kde-profile/default/xdg/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /etc/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/flatpak/exports/share/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /var/lib/flatpak/exports/share/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/local/share/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/explicit_layer.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   Found the following files:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/explicit_layer.d/VkLayer_MESA_overlay.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json (file version 1.2.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found manifest file /usr/share/vulkan/explicit_layer.d/VkLayer_MESA_overlay.json (file version 1.0.0)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Searching for driver manifest files
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   In following locations:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.config/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.config/kdedefaults/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /etc/xdg/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/kde-settings/kde-profile/default/xdg/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /etc/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /home/Laouver/.local/share/flatpak/exports/share/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /var/lib/flatpak/exports/share/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/local/share/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   Found the following files:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /etc/vulkan/icd.d/nvidia_icd.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/intel_hasvk_icd.x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/intel_icd.x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/nouveau_icd.x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/radeon_icd.x86_64.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/intel_hasvk_icd.i686.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/intel_icd.i686.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/lvp_icd.i686.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/nouveau_icd.i686.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	      /usr/share/vulkan/icd.d/radeon_icd.i686.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /etc/vulkan/icd.d/nvidia_icd.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z ERROR wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	libGLX_nvidia.so.0: cannot open shared object file: No such file or directory
+[2026-08-28T00:00:24Z ERROR wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z ERROR wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	loader_icd_scan: Failed loading library associated with ICD JSON libGLX_nvidia.so.0. Ignoring this JSON
+[2026-08-28T00:00:24Z ERROR wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/intel_hasvk_icd.x86_64.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/intel_icd.x86_64.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/lvp_icd.x86_64.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/nouveau_icd.x86_64.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/radeon_icd.x86_64.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/intel_hasvk_icd.i686.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	loader_parse_icd_manifest: Driver library architecture doesn't match the current running architecture, skipping this driver
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/intel_icd.i686.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	loader_parse_icd_manifest: Driver library architecture doesn't match the current running architecture, skipping this driver
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/lvp_icd.i686.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	loader_parse_icd_manifest: Driver library architecture doesn't match the current running architecture, skipping this driver
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/nouveau_icd.i686.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	loader_parse_icd_manifest: Driver library architecture doesn't match the current running architecture, skipping this driver
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Found ICD manifest file /usr/share/vulkan/icd.d/radeon_icd.i686.json, version 1.0.1
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	loader_parse_icd_manifest: Driver library architecture doesn't match the current running architecture, skipping this driver
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Insert instance layer "VK_LAYER_KHRONOS_validation" (/usr/lib64/libVkLayer_khronos_validation.so)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Insert instance layer "VK_LAYER_MESA_device_select" (/usr/lib64/libVkLayer_MESA_device_select.so)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	vkCreateInstance layer callstack setup to:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   <Application>
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     ||
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   <Loader>
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     ||
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   VK_LAYER_MESA_device_select
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Type: Implicit
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Enabled By: Implicit Layer
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	               Disable Env Var:  NODEVICE_SELECT
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Manifest: /usr/share/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Library:  /usr/lib64/libVkLayer_MESA_device_select.so
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     ||
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   VK_LAYER_KHRONOS_validation
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Type: Explicit
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Enabled By: By the Application
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Manifest: /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Library:  /usr/lib64/libVkLayer_khronos_validation.so
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     ||
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   <Drivers>
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] VALIDATION [WARNING-CreateInstance-status-message (0x23dfd876)]
+    	vkCreateInstance(): Khronos Validation Layer Active:
+        Current Enables: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT.
+        Current Disables: None.
+    
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	linux_read_sorted_physical_devices:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Original order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Sorted order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	linux_read_sorted_physical_devices:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Original order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Sorted order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	linux_read_sorted_physical_devices:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Original order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Sorted order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	linux_read_sorted_physical_devices:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Original order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Sorted order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] Enabling debug utils
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	linux_read_sorted_physical_devices:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Original order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Sorted order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	linux_read_sorted_physical_devices:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Original order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Sorted order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	linux_read_sorted_physical_devices:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Original order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Sorted order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	linux_read_sorted_physical_devices:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Original order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     Sorted order:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [0] AMD Radeon R7 200 Series (RADV OLAND)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           [1] llvmpipe (LLVM 22.1.8, 256 bits)  
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Removing driver /usr/lib64/libvulkan_nouveau.so due to not having any physical devices
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Removing driver /usr/lib64/libvulkan_intel.so due to not having any physical devices
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Removing driver /usr/lib64/libvulkan_intel_hasvk.so due to not having any physical devices
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:24Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Inserted device layer "VK_LAYER_KHRONOS_validation" (/usr/lib64/libVkLayer_khronos_validation.so)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	Failed to find vkGetDeviceProcAddr in layer "/usr/lib64/libVkLayer_MESA_device_select.so"
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	vkCreateDevice layer callstack setup to:
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   <Application>
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     ||
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   <Loader>
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     ||
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   VK_LAYER_KHRONOS_validation
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Type: Explicit
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Enabled By: By the Application
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Manifest: /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	           Library:  /usr/lib64/libVkLayer_khronos_validation.so
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	     ||
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	   <Device>
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] GENERAL [Loader Message (0x0)]
+    	       Using "AMD Radeon R7 200 Series (RADV OLAND)" with driver: "/usr/lib64/libvulkan_radeon.so"
+[2026-08-28T00:00:24Z INFO  wgpu_hal::vulkan::instance] 	objects: (type: INSTANCE, hndl: 0x556446ed9bd0, name: ?)
+[2026-08-28T00:00:24Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:24Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:24Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:24Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:24Z INFO  renpy_host] starting Python gate mode=smoke
+[2026-08-28T00:00:24Z INFO  renpy_host::python] [python-smoke] ticks 49 -> 49; renpy_host OK
+[2026-08-28T00:00:26Z INFO  renpy_host] smoke deadline reached (1671 frames); exiting
+[2026-08-28T00:00:26Z INFO  renpy_host] product pump done: frames=1671 elapsed=2.000829463s
+OK: no libSDL*
+== all Phase 1 host gates passed ==

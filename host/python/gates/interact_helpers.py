@@ -20,7 +20,6 @@ import time
 import traceback
 from typing import Any
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 
 # SDL / host keycodes used by default dismiss / button_select bindings.

@@ -206,7 +206,9 @@ impl AudioEngine {
         self.running.store(true, Ordering::Relaxed);
         info!(
             "[renpy-host] cpal audio started rate={} channels={} sample_clock={}",
-            sample_rate, channels, GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed)
+            sample_rate,
+            channels,
+            GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed)
         );
         Ok(())
     }

@@ -1,0 +1,12 @@
+{
+  "frames": 1800,
+  "total_time_ms": 836.1475893400473,
+  "avg_frame_time_ms": 0.46452643852224845,
+  "min_frame_time_ms": 0.3,
+  "max_frame_time_ms": 0.8,
+  "total_time_sec": 0.8361475893400473,
+  "one_percent_low_fps": 537.8,
+  "render_pass_duration_ns": 4813,
+  "benchmark_render_pass_total_ns": 8663400,
+  "render_pass_cpu_proxy": false
+}

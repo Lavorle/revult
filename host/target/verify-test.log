@@ -1,0 +1,105 @@
+   Compiling renpy-host v0.1.0 (/mnt/nvme1n1p2/revult/host/renpy-host)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.41s
+     Running unittests src/lib.rs (host/target/debug/deps/renpy_host-8cee7ad829380b8e)
+
+running 36 tests
+test arena::yuv_tests::test_yuv420p_plane_split_sizes ... ok
+test atlas::tests::test_atlas_oversized_fallback ... ok
+test atlas::tests::test_atlas_alloc_and_lru ... ok
+test atlas::tests::test_atlas_evict_lru ... ok
+test audio_mixer::tests::probe_ext_lowercases_and_defaults ... ok
+test audio_mixer::tests::push_decoded_to_ring_passthrough ... ok
+test audio_mixer::tests::default_is_stereo_48k_40ms ... ok
+test audio_mixer::tests::from_env_clamps_and_maps_to_1_2_6 ... ok
+test config::tests::env_bool_truthy_variants ... ok
+test config::tests::from_env_reads_typed_fields ... ok
+test shader::tests::test_shader_composer_atomic_parts_rejected ... ok
+test shader::tests::test_shader_composer_deterministic_key ... ok
+test shader::tests::test_shader_composer_uniform_conflict ... ok
+test shader::tests::test_shader_composer_invalid_syntax_error ... ok
+test shader::tests::test_shader_composer_unknown_part ... ok
+test shader::tests::test_shader_composer_default_texture ... ok
+test shader::tests::test_shader_composer_default_solid ... ok
+test arena::yuv_tests::test_nv12_wgsl_naga_valid ... ok
+test state::tests::test_clock_master_bind_audio_switches_master ... ok
+test state::tests::test_clock_master_drift_probe_monotonic ... ok
+test tests::test_nanosecond_benchmark_calculation_and_zero_count_safety ... ok
+test state::tests::test_clock_master_wall_pos_ms_unchanged ... ok
+test video::tests::test_decode_pool_clamp ... ok
+test arena::yuv_tests::test_yuv420p_wgsl_naga_valid ... ok
+test video::tests::test_decode_pool_spawn_stub_does_not_panic ... ok
+test video::tests::test_seek_index_push ... ok
+test video::tests::test_staging_ring_default_cap ... ok
+test video::tests::test_staging_video_integration_probe ... ok
+test video::tests::test_video_decoder_decode_chunk_stub ... ok
+test video::tests::test_video_decoder_new ... ok
+test video::tests::test_yuv_kind_display ... ok
+test shader::tests::test_shader_composer_texture_limit_exceeded ... ok
+test shader::tests::test_shader_composer_duplicate_parts_and_ordering ... ok
+test shader::tests::test_shader_composer_matrixcolor_uniforms ... ok
+test shader::tests::test_shader_composer_empty_fallback ... ok
+test shader::tests::test_text_sdf_wgsl_validates ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (host/target/debug/deps/renpy_host-dffc54832785b745)
+
+running 33 tests
+test atlas::tests::test_atlas_alloc_and_lru ... ok
+test arena::yuv_tests::test_yuv420p_plane_split_sizes ... ok
+test atlas::tests::test_atlas_oversized_fallback ... ok
+test audio_mixer::tests::from_env_clamps_and_maps_to_1_2_6 ... ok
+test audio_mixer::tests::probe_ext_lowercases_and_defaults ... ok
+test atlas::tests::test_atlas_evict_lru ... ok
+test audio_mixer::tests::default_is_stereo_48k_40ms ... ok
+test audio_mixer::tests::push_decoded_to_ring_passthrough ... ok
+test shader::tests::test_shader_composer_atomic_parts_rejected ... ok
+test shader::tests::test_shader_composer_deterministic_key ... ok
+test shader::tests::test_shader_composer_invalid_syntax_error ... ok
+test shader::tests::test_shader_composer_texture_limit_exceeded ... ok
+test shader::tests::test_shader_composer_unknown_part ... ok
+test shader::tests::test_shader_composer_uniform_conflict ... ok
+test state::tests::test_clock_master_bind_audio_switches_master ... ok
+test state::tests::test_clock_master_drift_probe_monotonic ... ok
+test state::tests::test_clock_master_wall_pos_ms_unchanged ... ok
+test video::tests::test_decode_pool_clamp ... ok
+test video::tests::test_staging_ring_default_cap ... ok
+test video::tests::test_staging_video_integration_probe ... ok
+test video::tests::test_video_decoder_decode_chunk_stub ... ok
+test video::tests::test_video_decoder_new ... ok
+test video::tests::test_yuv_kind_display ... ok
+test shader::tests::test_shader_composer_default_solid ... ok
+test shader::tests::test_shader_composer_duplicate_parts_and_ordering ... ok
+test arena::yuv_tests::test_nv12_wgsl_naga_valid ... ok
+test arena::yuv_tests::test_yuv420p_wgsl_naga_valid ... ok
+test video::tests::test_decode_pool_spawn_stub_does_not_panic ... ok
+test video::tests::test_seek_index_push ... ok
+test shader::tests::test_shader_composer_matrixcolor_uniforms ... ok
+test shader::tests::test_shader_composer_empty_fallback ... ok
+test shader::tests::test_shader_composer_default_texture ... ok
+test shader::tests::test_text_sdf_wgsl_validates ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/host_tests.rs (host/target/debug/deps/host_tests-edddff0e38da4e90)
+
+running 9 tests
+test test_benchmark_duration_div_safety ... ok
+test test_event_queue_push_poll_clear ... ok
+test test_timer_wheel_operations ... ok
+test test_native_shader_composer_conflicts_and_atomics ... ok
+test test_zero_sdl_static_dependency_check ... ok
+test test_host_state_defaults_and_allocation ... ok
+test test_shader_part_registry_custom_part ... ok
+test test_native_shader_composer_matrixcolor ... ok
+test test_native_shader_composer_basic ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests renpy_host
+
+running 1 test
+test renpy-host/src/audio_mixer.rs - audio_mixer::probe_symphonia (line 101) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -16,7 +16,6 @@ Also samples game RT after a present-side empty frame for contrast.
 import os
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy_host
 

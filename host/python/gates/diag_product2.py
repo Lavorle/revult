@@ -3,7 +3,6 @@ import sys
 import traceback
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 out = open("/tmp/diag_product2.txt", "w")  # noqa: SIM115
 def log(m):
     out.write(str(m) + "\n"); out.flush()

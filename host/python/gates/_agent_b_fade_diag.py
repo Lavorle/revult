@@ -4,7 +4,6 @@ import struct
 import zlib
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy_host
 

@@ -11,7 +11,6 @@ import time
 import traceback
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 def _base():
     return Path(os.environ.get("RENPY_HOST_BASE") or "/mnt/nvme1n1p2/revult")

@@ -2,7 +2,6 @@ import os
 import sys
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 base = Path(os.environ.get("RENPY_HOST_BASE") or "/mnt/nvme1n1p2/revult")
 sys.path.insert(0, str(base/"host/python/gates"))
 import bootstrap as boot
@@ -23,7 +22,7 @@ try:
     for a in ("vertices","points","triangles","attribute","get_points"):
         print(" ", a, hasattr(m,a), getattr(m,a,None) if hasattr(m,a) and a!="vertices" else "...")
 except Exception as e:
-    import traceback; traceback.print_exc()  # noqa: I001
+    import traceback; traceback.print_exc()
     print("Mesh2 FAIL", e)
 
 # Render a Model
@@ -37,7 +36,7 @@ try:
     rv = renpy.display.render.render(mod, 179, 64, 0, 0)
     print("Model render", type(rv), "mesh", type(getattr(rv,"mesh",None)), "children", len(rv.children), "shaders", rv.shaders)
 except Exception as e:
-    import traceback; traceback.print_exc()  # noqa: I001
+    import traceback; traceback.print_exc()
     print("Model FAIL", e)
 
 # Render dissolve_transform after show
@@ -59,7 +58,7 @@ try:
     print("after state shader", getattr(st,"shader",None), "u_anim", getattr(st,"u_animation",None),
           "child", type(getattr(dt,"child",None)).__name__ if getattr(dt,"child",None) else None)
 except Exception as e:
-    import traceback; traceback.print_exc()  # noqa: I001
+    import traceback; traceback.print_exc()
     print("dt FAIL", e)
 
 out = base/"host/target/gate-mesh2_host_smoke.txt"

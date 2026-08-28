@@ -11,7 +11,6 @@ HarfBuzz shape warming included; Pillow fallback remains valid.
 """
 
 import os
-from pathlib import Path
 
 import renpy_host
 from golden_mae import compare_or_bootstrap, gate_result_path, golden_dir, write_raw_rgba, try_write_png

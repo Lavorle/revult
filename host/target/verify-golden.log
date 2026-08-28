@@ -1,0 +1,593 @@
+=== Building Host for Golden Suite Validation ===
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+=== Executing Tier 2 Golden Visual Regression Gates (parent_runner) ===
+--- Running Golden Gate via parent_runner: g01 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:03Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:03Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:03Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:03Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:03Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:03Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:03Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:03Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:03Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:03Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:03Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:03Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:03Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:03Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:03Z INFO  renpy_host] starting Python gate mode=g01
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline solid id=4 tex_count=0 uniforms=false
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline textured id=5 tex_count=1 uniforms=false
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline dissolve id=6 tex_count=2 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline imagedissolve id=7 tex_count=3 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline blur id=8 tex_count=1 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline matrixcolor id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline alpha_mask id=10 tex_count=2 uniforms=false
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline mask id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline live2d_mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline live2d_colors id=14 tex_count=1 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline live2d_flip id=15 tex_count=1 uniforms=false
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline yuv420p id=16 tex_count=3 uniforms=false
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline nv12 id=17 tex_count=2 uniforms=false
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline text_sdf id=18 tex_count=1 uniforms=true
+[2026-08-28T00:00:03Z INFO  renpy_host::arena] created pipeline stencil_clip id=19 tex_count=0 uniforms=false
+[G01_solid_image] 1280x720 MAE_mean=0.000004 max_delta=1 mismatches=3312 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:03Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:03Z INFO  renpy_host] product pump done: frames=1 elapsed=342.129516ms
+PASS: g01 rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g01.json [G01_solid_image] 1280x720 MAE_mean=0.000004 max_delta=1 mismatches=3312 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g02 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:04Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:04Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:04Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:04Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:04Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:04Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:04Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:04Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:04Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:04Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:04Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:04Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:04Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:04Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:04Z INFO  renpy_host] starting Python gate mode=g02
+/home/Laouver/.local/lib/python3.14/site-packages/PIL/ImageFont.py:231: UserWarning: Raqm layout was requested, but Raqm is not available. Falling back to basic layout.
+  warnings.warn(
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline solid id=5 tex_count=0 uniforms=false
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline textured id=6 tex_count=1 uniforms=false
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline dissolve id=7 tex_count=2 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline imagedissolve id=8 tex_count=3 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline blur id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline matrixcolor id=10 tex_count=1 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline alpha_mask id=11 tex_count=2 uniforms=false
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline live2d_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=14 tex_count=2 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline live2d_colors id=15 tex_count=1 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline live2d_flip id=16 tex_count=1 uniforms=false
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline yuv420p id=17 tex_count=3 uniforms=false
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline nv12 id=18 tex_count=2 uniforms=false
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline text_sdf id=19 tex_count=1 uniforms=true
+[2026-08-28T00:00:04Z INFO  renpy_host::arena] created pipeline stencil_clip id=20 tex_count=0 uniforms=false
+[G02_text] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:04Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:04Z INFO  renpy_host] product pump done: frames=1 elapsed=608.113291ms
+PASS: g02 rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g02.json [G02_text] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g03 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:04Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:04Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:04Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:04Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:05Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:05Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:05Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:05Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:05Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:05Z INFO  renpy_host] starting Python gate mode=g03
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline solid id=4 tex_count=0 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline textured id=5 tex_count=1 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline dissolve id=6 tex_count=2 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline imagedissolve id=7 tex_count=3 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline blur id=8 tex_count=1 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline matrixcolor id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline alpha_mask id=10 tex_count=2 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline mask id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline live2d_mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline live2d_colors id=14 tex_count=1 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline live2d_flip id=15 tex_count=1 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline yuv420p id=16 tex_count=3 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline nv12 id=17 tex_count=2 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline text_sdf id=18 tex_count=1 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline stencil_clip id=19 tex_count=0 uniforms=false
+[G03_dissolve] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:05Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:05Z INFO  renpy_host] product pump done: frames=1 elapsed=376.177176ms
+PASS: g03 rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g03.json [G03_dissolve] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g04 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:05Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:05Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:05Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:05Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:05Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:05Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:05Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:05Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:05Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:05Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:05Z INFO  renpy_host] starting Python gate mode=g04
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline solid id=3 tex_count=0 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline textured id=4 tex_count=1 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline dissolve id=5 tex_count=2 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline imagedissolve id=6 tex_count=3 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline blur id=7 tex_count=1 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline matrixcolor id=8 tex_count=1 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline alpha_mask id=9 tex_count=2 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline mask id=10 tex_count=2 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline live2d_mask id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline live2d_colors id=13 tex_count=1 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline live2d_flip id=14 tex_count=1 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline yuv420p id=15 tex_count=3 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline nv12 id=16 tex_count=2 uniforms=false
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline text_sdf id=17 tex_count=1 uniforms=true
+[2026-08-28T00:00:05Z INFO  renpy_host::arena] created pipeline stencil_clip id=18 tex_count=0 uniforms=false
+[G04_blur] 1280x720 MAE_mean=0.000136 max_delta=1 mismatches=127986 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:06Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:06Z INFO  renpy_host] product pump done: frames=1 elapsed=399.382717ms
+PASS: g04 rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g04.json [G04_blur] 1280x720 MAE_mean=0.000136 max_delta=1 mismatches=127986 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g05 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:06Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:06Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:06Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:06Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:06Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:06Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:06Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:06Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:06Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:06Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:06Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:06Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:06Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:06Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:06Z INFO  renpy_host] starting Python gate mode=g05
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline solid id=3 tex_count=0 uniforms=false
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline textured id=4 tex_count=1 uniforms=false
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline dissolve id=5 tex_count=2 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline imagedissolve id=6 tex_count=3 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline blur id=7 tex_count=1 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline matrixcolor id=8 tex_count=1 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline alpha_mask id=9 tex_count=2 uniforms=false
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline mask id=10 tex_count=2 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline live2d_mask id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline live2d_colors id=13 tex_count=1 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline live2d_flip id=14 tex_count=1 uniforms=false
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline yuv420p id=15 tex_count=3 uniforms=false
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline nv12 id=16 tex_count=2 uniforms=false
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline text_sdf id=17 tex_count=1 uniforms=true
+[2026-08-28T00:00:06Z INFO  renpy_host::arena] created pipeline stencil_clip id=18 tex_count=0 uniforms=false
+[G05_movie] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:06Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:06Z INFO  renpy_host] product pump done: frames=1 elapsed=401.628827ms
+PASS: g05 rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g05.json [G05_movie] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True clock_pos=0.1360
+--- Running Golden Gate via parent_runner: g06 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:07Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:07Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:07Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:07Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:07Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:07Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:07Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:07Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:07Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:07Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:07Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:07Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:07Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:07Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:07Z INFO  renpy_host] starting Python gate mode=g06
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline solid id=9 tex_count=0 uniforms=false
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline textured id=10 tex_count=1 uniforms=false
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline dissolve id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline imagedissolve id=12 tex_count=3 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline blur id=13 tex_count=1 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline matrixcolor id=14 tex_count=1 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline alpha_mask id=15 tex_count=2 uniforms=false
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline mask id=16 tex_count=2 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline live2d_mask id=17 tex_count=2 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=18 tex_count=2 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline live2d_colors id=19 tex_count=1 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline live2d_flip id=20 tex_count=1 uniforms=false
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline yuv420p id=21 tex_count=3 uniforms=false
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline nv12 id=22 tex_count=2 uniforms=false
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline text_sdf id=23 tex_count=1 uniforms=true
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created pipeline stencil_clip id=24 tex_count=0 uniforms=false
+[2026-08-28T00:00:07Z INFO  renpy_host::arena] created render texture id=25 128x128 (live=1)
+[G06_live2d] 1280x720 MAE_mean=0.000000 max_delta=1 mismatches=56 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:07Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:07Z INFO  renpy_host] product pump done: frames=1 elapsed=402.965187ms
+PASS: g06 rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g06.json [G06_live2d] 1280x720 MAE_mean=0.000000 max_delta=1 mismatches=56 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g07 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:07Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:07Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:07Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:07Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:07Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:07Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:07Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:07Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:08Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:08Z INFO  renpy_host] starting Python gate mode=g07
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline solid id=4 tex_count=0 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline textured id=5 tex_count=1 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline dissolve id=6 tex_count=2 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline imagedissolve id=7 tex_count=3 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline blur id=8 tex_count=1 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline matrixcolor id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline alpha_mask id=10 tex_count=2 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline mask id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline live2d_mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline live2d_colors id=14 tex_count=1 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline live2d_flip id=15 tex_count=1 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline yuv420p id=16 tex_count=3 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline nv12 id=17 tex_count=2 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline text_sdf id=18 tex_count=1 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline stencil_clip id=19 tex_count=0 uniforms=false
+[G07_model] 1280x720 MAE_mean=0.000001 max_delta=1 mismatches=630 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:08Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:08Z INFO  renpy_host] product pump done: frames=1 elapsed=405.164849ms
+PASS: g07 rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g07.json [G07_model] 1280x720 MAE_mean=0.000001 max_delta=1 mismatches=630 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g08 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:08Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:08Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:08Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:08Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:08Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:08Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:08Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:08Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:08Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:08Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:08Z INFO  renpy_host] starting Python gate mode=g08
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline solid id=4 tex_count=0 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline textured id=5 tex_count=1 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline dissolve id=6 tex_count=2 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline imagedissolve id=7 tex_count=3 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline blur id=8 tex_count=1 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline matrixcolor id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline alpha_mask id=10 tex_count=2 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline mask id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline live2d_mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline live2d_colors id=14 tex_count=1 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline live2d_flip id=15 tex_count=1 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline yuv420p id=16 tex_count=3 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline nv12 id=17 tex_count=2 uniforms=false
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline text_sdf id=18 tex_count=1 uniforms=true
+[2026-08-28T00:00:08Z INFO  renpy_host::arena] created pipeline stencil_clip id=19 tex_count=0 uniforms=false
+[G08_mask] 1280x720 MAE_mean=0.000006 max_delta=1 mismatches=5544 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:08Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:08Z INFO  renpy_host] product pump done: frames=1 elapsed=268.319533ms
+PASS: g08 rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g08.json [G08_mask] 1280x720 MAE_mean=0.000006 max_delta=1 mismatches=5544 dimension_match=True limits=(0.007843,16) ok=True
+=== M3 T4 Incremental Goldens (CJK vertical / Arabic / rot-clip / fog-mask) ===
+--- Running Golden Gate via parent_runner: g02_cjk_vertical ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:09Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:09Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:09Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:09Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:09Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:09Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:09Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:09Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:09Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:09Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:09Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:09Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:09Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:09Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:09Z INFO  renpy_host] starting Python gate mode=g02_cjk_vertical
+/home/Laouver/.local/lib/python3.14/site-packages/PIL/ImageFont.py:231: UserWarning: Raqm layout was requested, but Raqm is not available. Falling back to basic layout.
+  warnings.warn(
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline solid id=5 tex_count=0 uniforms=false
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline textured id=6 tex_count=1 uniforms=false
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline dissolve id=7 tex_count=2 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline imagedissolve id=8 tex_count=3 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline blur id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline matrixcolor id=10 tex_count=1 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline alpha_mask id=11 tex_count=2 uniforms=false
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline live2d_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=14 tex_count=2 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline live2d_colors id=15 tex_count=1 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline live2d_flip id=16 tex_count=1 uniforms=false
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline yuv420p id=17 tex_count=3 uniforms=false
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline nv12 id=18 tex_count=2 uniforms=false
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline text_sdf id=19 tex_count=1 uniforms=true
+[2026-08-28T00:00:09Z INFO  renpy_host::arena] created pipeline stencil_clip id=20 tex_count=0 uniforms=false
+[G02_cjk_vertical] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:09Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:09Z INFO  renpy_host] product pump done: frames=1 elapsed=620.953582ms
+PASS: g02_cjk_vertical rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g02_cjk_vertical.json [G02_cjk_vertical] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g02_arabic ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:10Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:10Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:10Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:10Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:10Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:10Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:10Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:10Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:10Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:10Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:10Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:10Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:10Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:10Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:10Z INFO  renpy_host] starting Python gate mode=g02_arabic
+/home/Laouver/.local/lib/python3.14/site-packages/PIL/ImageFont.py:231: UserWarning: Raqm layout was requested, but Raqm is not available. Falling back to basic layout.
+  warnings.warn(
+[g02_arabic] hb_shape glyphs=4 HAS_HB=False
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline solid id=7 tex_count=0 uniforms=false
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline textured id=8 tex_count=1 uniforms=false
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline dissolve id=9 tex_count=2 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline imagedissolve id=10 tex_count=3 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline blur id=11 tex_count=1 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline matrixcolor id=12 tex_count=1 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline alpha_mask id=13 tex_count=2 uniforms=false
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline mask id=14 tex_count=2 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline live2d_mask id=15 tex_count=2 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=16 tex_count=2 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline live2d_colors id=17 tex_count=1 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline live2d_flip id=18 tex_count=1 uniforms=false
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline yuv420p id=19 tex_count=3 uniforms=false
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline nv12 id=20 tex_count=2 uniforms=false
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline text_sdf id=21 tex_count=1 uniforms=true
+[2026-08-28T00:00:10Z INFO  renpy_host::arena] created pipeline stencil_clip id=22 tex_count=0 uniforms=false
+[G02_arabic] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:10Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:10Z INFO  renpy_host] product pump done: frames=1 elapsed=671.456703ms
+PASS: g02_arabic rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g02_arabic.json [G02_arabic] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g03_rot_clip ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:11Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:11Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:11Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:11Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:11Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:11Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:11Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:11Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:11Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:11Z INFO  renpy_host] starting Python gate mode=g03_rot_clip
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline solid id=5 tex_count=0 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline textured id=6 tex_count=1 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline dissolve id=7 tex_count=2 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline imagedissolve id=8 tex_count=3 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline blur id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline matrixcolor id=10 tex_count=1 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline alpha_mask id=11 tex_count=2 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline live2d_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=14 tex_count=2 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline live2d_colors id=15 tex_count=1 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline live2d_flip id=16 tex_count=1 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline yuv420p id=17 tex_count=3 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline nv12 id=18 tex_count=2 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline text_sdf id=19 tex_count=1 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline stencil_clip id=20 tex_count=0 uniforms=false
+[G03_rot_clip] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:11Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:11Z INFO  renpy_host] product pump done: frames=1 elapsed=386.811562ms
+PASS: g03_rot_clip rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g03_rot_clip.json [G03_rot_clip] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: g03_fog_mask ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:11Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:11Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:11Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:11Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:11Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:11Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:11Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:11Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:11Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:11Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:11Z INFO  renpy_host] starting Python gate mode=g03_fog_mask
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline solid id=6 tex_count=0 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline textured id=7 tex_count=1 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline dissolve id=8 tex_count=2 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline imagedissolve id=9 tex_count=3 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline blur id=10 tex_count=1 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline matrixcolor id=11 tex_count=1 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline alpha_mask id=12 tex_count=2 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline live2d_mask id=14 tex_count=2 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=15 tex_count=2 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline live2d_colors id=16 tex_count=1 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline live2d_flip id=17 tex_count=1 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline yuv420p id=18 tex_count=3 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline nv12 id=19 tex_count=2 uniforms=false
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline text_sdf id=20 tex_count=1 uniforms=true
+[2026-08-28T00:00:11Z INFO  renpy_host::arena] created pipeline stencil_clip id=21 tex_count=0 uniforms=false
+[G03_fog_mask] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:12Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:12Z INFO  renpy_host] product pump done: frames=1 elapsed=444.80339ms
+PASS: g03_fog_mask rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/g03_fog_mask.json [G03_fog_mask] 1280x720 MAE_mean=0.000000 max_delta=0 mismatches=0 dimension_match=True limits=(0.007843,16) ok=True
+=== Optional Composer Combo Gates (parent_runner; non-blocking) ===
+--- Running Golden Gate via parent_runner: composer_combo_matrixcolor ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:12Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:12Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:12Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:12Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:12Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:12Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:12Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:12Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:12Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:12Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:12Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:12Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:12Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:12Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:12Z INFO  renpy_host] starting Python gate mode=composer_combo_matrixcolor
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline composed:e4b1878e1364d7cb id=1 tex_count=1 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline solid id=4 tex_count=0 uniforms=false
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline textured id=5 tex_count=1 uniforms=false
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline dissolve id=6 tex_count=2 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline imagedissolve id=7 tex_count=3 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline blur id=8 tex_count=1 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline matrixcolor id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline alpha_mask id=10 tex_count=2 uniforms=false
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline mask id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline live2d_mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline live2d_colors id=14 tex_count=1 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline live2d_flip id=15 tex_count=1 uniforms=false
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline yuv420p id=16 tex_count=3 uniforms=false
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline nv12 id=17 tex_count=2 uniforms=false
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline text_sdf id=18 tex_count=1 uniforms=true
+[2026-08-28T00:00:12Z INFO  renpy_host::arena] created pipeline stencil_clip id=19 tex_count=0 uniforms=false
+[composer_texture_matrixcolor] 1280x720 MAE_mean=0.000000 max_delta=1 mismatches=294 dimension_match=True limits=(0.007843,16) ok=True
+gate=composer_combo_matrixcolor
+ok=True
+key=composed:e4b1878e1364d7cb pipeline=1 tex_count=1 layout=matrixcolor16 parts=['renpy.matrixcolor', 'renpy.texture'] has_uniforms=True
+rt=1280x720
+mean_chroma=2.52 samples=115200
+[composer_texture_matrixcolor] 1280x720 MAE_mean=0.000000 max_delta=1 mismatches=294 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:13Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:13Z INFO  renpy_host] product pump done: frames=1 elapsed=365.520196ms
+PASS: composer_combo_matrixcolor rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/composer_combo_matrixcolor.json gate=composer_combo_matrixcolorok=Truekey=composed:e4b1878e1364d7cb pipeline=1 tex_count=1 layout=matrixcolor16 parts=['renpy.matrixcolor', 'renpy.texture'] has_uniforms=Truert=1280x720mean_chroma=2.52 samples=115200[composer_texture_matrixcolor] 1280x720 MAE_mean=0.000000 max_delta=1 mismatches=294 dimension_match=True limits=(0.007843,16) ok=True
+--- Running Golden Gate via parent_runner: composer_combo_alpha ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target/debug/renpy-host`
+[2026-08-28T00:00:13Z INFO  renpy_host] renpy-host Phase 2 starting
+[2026-08-28T00:00:13Z INFO  renpy_host] video backend=cli DecodePool StagingRing backend=Vulkan workers=2 cap_bytes=67108864
+[2026-08-28T00:00:13Z INFO  renpy_host] video probe DecodePool workers=2 cap_bytes=67108864 ffmpeg-host=false backend=Vulkan StagingRing backend=Vulkan
+[2026-08-28T00:00:13Z INFO  renpy_host::python] host base dir: /mnt/nvme1n1p2/revult
+[2026-08-28T00:00:13Z INFO  renpy_host::python] CPython 3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)] embedded; renpy_host + host_pygame registered
+[2026-08-28T00:00:13Z INFO  renpy_host::state] [renpy-host] clock probe drift_ms=0 sample_clock=0 master=AudioSample HostState init
+[2026-08-28T00:00:13Z INFO  renpy_host::audio_mixer] [renpy-host] AudioMixer from_env channels=2 rate=48000 buffer_ms=40 raw_env=2
+[2026-08-28T00:00:13Z INFO  renpy_host::audio] [renpy-host] AudioMixer init channels=2 rate=48000 buffer_ms=40 cap_samples=192000 sample_clock=0
+[2026-08-28T00:00:13Z INFO  renpy_host::gpu] adapter: name=AMD Radeon R7 200 Series (RADV OLAND) vendor=4098 device=26131 backend=Vulkan
+[2026-08-28T00:00:13Z INFO  renpy_host::gpu] timestamp_query supported=true
+[2026-08-28T00:00:13Z INFO  renpy_host::gpu] PresentMode selected=mailbox supported=["mailbox", "fifo", "immediate"] desired_maximum_frame_latency=1
+[2026-08-28T00:00:13Z INFO  renpy_host::gpu] surface configured 1280x720 format=Rgba8Unorm present_mode=mailbox latency=1
+[2026-08-28T00:00:13Z INFO  renpy_host::gpu] timestamp period=37.037037
+[2026-08-28T00:00:13Z INFO  renpy_host] [renpy-host] wgpu adapter backend=Vulkan name="AMD Radeon R7 200 Series (RADV OLAND)"
+[2026-08-28T00:00:13Z INFO  renpy_host] starting Python gate mode=composer_combo_alpha
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline composed:7ac7a6d2c2c261dc id=1 tex_count=1 uniforms=false
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline solid id=4 tex_count=0 uniforms=false
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline textured id=5 tex_count=1 uniforms=false
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline dissolve id=6 tex_count=2 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline imagedissolve id=7 tex_count=3 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline blur id=8 tex_count=1 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline matrixcolor id=9 tex_count=1 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline alpha_mask id=10 tex_count=2 uniforms=false
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline mask id=11 tex_count=2 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline live2d_mask id=12 tex_count=2 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline live2d_inverted_mask id=13 tex_count=2 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline live2d_colors id=14 tex_count=1 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline live2d_flip id=15 tex_count=1 uniforms=false
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline yuv420p id=16 tex_count=3 uniforms=false
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline nv12 id=17 tex_count=2 uniforms=false
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline text_sdf id=18 tex_count=1 uniforms=true
+[2026-08-28T00:00:13Z INFO  renpy_host::arena] created pipeline stencil_clip id=19 tex_count=0 uniforms=false
+[composer_texture_alpha] 1280x720 MAE_mean=0.000003 max_delta=1 mismatches=2856 dimension_match=True limits=(0.007843,16) ok=True
+gate=composer_combo_alpha
+ok=True
+renpy.alpha composition_mode=vertex_color_alpha
+renpy.alpha host_pipeline_key=None
+renpy.alpha is_mergeable=False
+key=composed:7ac7a6d2c2c261dc pipeline=1 tex_count=1 layout=none parts=['renpy.texture'] has_uniforms=False
+texture_only_key_match=composed:7ac7a6d2c2c261dc
+vertex_fold rgba=(0.5,0.5,0.5,0.5)
+alpha_policy=vertex_color_fold (not fragment merge, not uniforms)
+rt=1280x720
+mean_rgb=34.68
+[composer_texture_alpha] 1280x720 MAE_mean=0.000003 max_delta=1 mismatches=2856 dimension_match=True limits=(0.007843,16) ok=True
+[2026-08-28T00:00:13Z INFO  renpy_host] event loop exit code=0
+[2026-08-28T00:00:13Z INFO  renpy_host] product pump done: frames=1 elapsed=308.686002ms
+PASS: composer_combo_alpha rc=0 envelope=/mnt/nvme1n1p2/revult/host/target/envelopes/composer_combo_alpha.json gate=composer_combo_alphaok=Truerenpy.alpha composition_mode=vertex_color_alpharenpy.alpha host_pipeline_key=Nonerenpy.alpha is_mergeable=Falsekey=composed:7ac7a6d2c2c261dc pipeline=1 tex_count=1 layout=none parts=['renpy.texture'] has_uniforms=Falsetexture_only_key_match=composed:7ac7a6d2c2c261dcvertex_fold rgba=(0.5,0.5,0.5,0.5)alpha_policy=vertex_color_fold (not fragment merge, not uniforms)rt=1280x720mean_rgb=34.68[composer_texture_alpha] 1280x720 MAE_mean=0.000003 max_delta=1 mismatches=2856 dimension_match=True limits=(0.007843,16) ok=True
+=== Verifying Strict Fail-Closed Behavior on Corrupted Baseline ===
+CORRUPTION_DETECTION: PASS (Strictly caught mismatch with MAE=0.750000, status=FAIL)
+[non_existent_gate_name_xyz] FAIL-CLOSED: baseline missing at /mnt/nvme1n1p2/revult/testcases/wgpu_golden/non_existent_gate_name_xyz/baseline.rgba (pure golden comparator never writes baseline implicitly) ok=False
+MISSING_BASELINE_DETECTION: PASS (Strictly rejected missing baseline)
+=== Tier 2 Golden Suite Summary ===
+Mandatory passed: 12 / 12 (G01-G08 + 4 incremental)
+Mandatory failed: 0
+Optional passed:  2 / 2
+Optional failed:  0
+Envelopes dir: /mnt/nvme1n1p2/revult/host/target/envelopes
+总计 12
+drwxr-xr-x 1 Laouver Laouver 4096  8月28日 08:00 .
+drwxr-xr-x 1 Laouver Laouver 8192  8月28日 08:00 ..
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 composer_combo_alpha.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 composer_combo_matrixcolor.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g01.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g02_arabic.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g02_cjk_vertical.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g02.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g03_fog_mask.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g03.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g03_rot_clip.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g04.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g05.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g06.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g07.json
+-rw-r--r-- 1 Laouver Laouver  339  8月28日 08:00 g08.json
+Tier 2 Golden Suite: ALL MANDATORY GATES PASSED (parent_runner envelopes)

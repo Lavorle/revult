@@ -8,7 +8,6 @@ Loaded via py.run; host run_file injects RENPY_HOST_BASE.
 import os
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy_host
 

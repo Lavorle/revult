@@ -7,7 +7,6 @@ import renpy_host
 
 from renpy.wgpu.draw import HostTexture, WgpuDraw
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 base = Path(os.environ.get("RENPY_HOST_BASE", "."))
 out = base / "host" / "target" / "gate-screenshot_host_probe.txt"

@@ -26,7 +26,6 @@ from golden_mae import compare_or_bootstrap, gate_result_path
 # Required import per spec: `from host.python.gates._harness import gate_harness` (gates/ on
 # sys.path when run via renpy_host). The try-wrapper also supports
 # `python -m host.python.gates.composer_combo_alpha` / namespace import.
-from host.python.gates._harness import gate_harness
 
 # How to rewrite with harness (not yet switched — example only):
 # ------------------------------------------------------------------

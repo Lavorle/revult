@@ -17,7 +17,6 @@ import os
 import sys
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 _base = os.environ.get("RENPY_HOST_BASE") or str(Path.cwd())
 out = Path(_base) / "host" / "target" / "gate-transform_final_render.txt"

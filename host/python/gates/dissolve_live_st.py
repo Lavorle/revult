@@ -24,7 +24,6 @@ from pathlib import Path
 import renpy_host  # type: ignore
 
 # --- harness (thin wrapper, original logic preserved) ---
-from host.python.gates._harness import gate_harness, parametrized_gate  # type: ignore
 
 
 _base = Path(os.environ.get("RENPY_HOST_BASE") or str(Path.cwd()))

@@ -11,7 +11,6 @@ Gate name: shader_break  (RENPY_HOST_GATE=shader_break)
 import os
 from pathlib import Path
 
-from host.python.gates._harness import gate_harness, parametrized_gate
 
 import renpy
 

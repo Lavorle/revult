@@ -613,8 +613,12 @@ class Decoder(Protocol):
 
 
 class _BaseDecoder:
-    """Shared decode/ingest/publish cadence behind the Decoder Protocol."""
+    """Abstract base for video decoders — subclasses must override :meth:`_read_one` and :meth:`is_done`.
 
+    Concrete decoders: :class:`PipeReader` (Popen stdout queue) and
+    :class:`FilePoller` (temp .rgba file poll). Both are fully implemented;
+    the base intentionally raises ``NotImplementedError`` for missing overrides.
+    """
     def __init__(
         self,
         *,

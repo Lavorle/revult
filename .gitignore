@@ -216,7 +216,10 @@ renpy/uguu/uguu.pyi
 /.omc/
 /.omx/
 /.commandcode/
+/.agents/
+/host/benchmark.json
 /omx_wiki/
 /,
 host/renpy-host/src_old/
 host/renpy-host/src_old2/
+

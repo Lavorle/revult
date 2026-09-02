@@ -354,7 +354,7 @@ impl ShaderPartRegistry {
             vec![],
             vec![ShaderHook {
                 priority: 400,
-                body: "let dims = vec2<f32>(textureDimensions(t_color));\nlet texel = vec2<f32>(1.0 / max(dims.x, 1.0), 1.0 / max(dims.y, 1.0));\nlet blur_log2 = u.data0.x;\nlet radius = max(exp2(blur_log2), 0.5) * max(v.color.a, 0.01);\nvar acc = vec4<f32>(0.0, 0.0, 0.0, 0.0);\nvar norm = 0.0;\nacc = acc + textureSample(t_color, s_color, v.uv) * 1.0;\nnorm = norm + 1.0;\nacc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(radius, 0.0) * texel) * 0.6;\nnorm = norm + 0.6;\nacc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(-radius, 0.0) * texel) * 0.6;\nnorm = norm + 0.6;\nacc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, radius) * texel) * 0.6;\nnorm = norm + 0.6;\nacc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, -radius) * texel) * 0.6;\nnorm = norm + 0.6;\nlet blur_tex = acc / max(norm, 0.0001);\ncolor = blur_tex * vec4<f32>(v.color.r, v.color.g, v.color.b, 1.0);".into(),
+                body: "let dims = vec2<f32>(textureDimensions(t_color));\nlet texel = vec2<f32>(1.0 / max(dims.x, 1.0), 1.0 / max(dims.y, 1.0));\nlet blur_log2 = u.data0.x;\nlet radius = max(exp2(blur_log2), 0.5) * max(v.color.a, 0.01);\nlet r_tex = radius * texel;\nlet c_center = textureSample(t_color, s_color, v.uv);\nlet c_r = textureSample(t_color, s_color, v.uv + vec2<f32>(r_tex.x, 0.0));\nlet c_l = textureSample(t_color, s_color, v.uv - vec2<f32>(r_tex.x, 0.0));\nlet c_d = textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, r_tex.y));\nlet c_u = textureSample(t_color, s_color, v.uv - vec2<f32>(0.0, r_tex.y));\nlet c_cross = c_r + c_l + c_d + c_u;\nlet blur_tex = c_center * 0.29411765 + c_cross * 0.17647059;\ncolor = blur_tex * vec4<f32>(v.color.rgb, 1.0);".into(),
             }],
             false,
             false,
@@ -382,7 +382,6 @@ impl ShaderPartRegistry {
             true,
         ));
 
-        // renpy.dissolve (2-tex)
         // renpy.dissolve (2-tex) - atomic part
         self.register_part(ShaderPart::new(
             "renpy.dissolve",
@@ -408,6 +407,72 @@ impl ShaderPartRegistry {
                 body: "let c0 = textureSample(t_color, s_color, v.uv);\nlet c1 = textureSample(t_tex1, s_color, v.uv);\nlet c2 = textureSample(t_tex2, s_color, v.uv);\nlet dissolve_t = clamp(u.data0.x, 0.0, 1.0);\nlet ramp = clamp((c2.r - dissolve_t) * 10.0, 0.0, 1.0);\ncolor = mix(c1, c0, ramp);".into(),
             }],
             true,
+            false,
+        ));
+
+        // renpy.alpha_mask (2-tex) - atomic part
+        self.register_part(ShaderPart::new(
+            "renpy.alpha_mask",
+            2,
+            UNIFORM_NONE,
+            vec![],
+            vec![],
+            true,
+            false,
+        ));
+
+        // renpy.mask (2-tex) - atomic part
+        self.register_part(ShaderPart::new(
+            "renpy.mask",
+            2,
+            UNIFORM_PARAMS16,
+            vec![],
+            vec![],
+            true,
+            false,
+        ));
+
+        // live2d.mask (2-tex) - atomic part
+        self.register_part(ShaderPart::new(
+            "live2d.mask",
+            2,
+            UNIFORM_PARAMS16,
+            vec![],
+            vec![],
+            true,
+            false,
+        ));
+
+        // live2d.inverted_mask (2-tex) - atomic part
+        self.register_part(ShaderPart::new(
+            "live2d.inverted_mask",
+            2,
+            UNIFORM_PARAMS16,
+            vec![],
+            vec![],
+            true,
+            false,
+        ));
+
+        // live2d.colors (1-tex) - atomic part
+        self.register_part(ShaderPart::new(
+            "live2d.colors",
+            1,
+            UNIFORM_PARAMS16,
+            vec![],
+            vec![],
+            true,
+            false,
+        ));
+
+        // live2d.flip_texture (1-tex)
+        self.register_part(ShaderPart::new(
+            "live2d.flip_texture",
+            1,
+            UNIFORM_NONE,
+            vec![],
+            vec![],
+            false,
             false,
         ));
 
@@ -948,6 +1013,22 @@ mod tests {
     }
 
     #[test]
+    fn test_shader_composer_blur_optimized() {
+        let composer = NativeShaderComposer::new();
+        let composed = composer
+            .compose(&["renpy.blur".to_string()], true)
+            .expect("blur composed");
+        assert_eq!(composed.tex_count, 1);
+        assert_eq!(composed.uniform_layout_id, UNIFORM_PARAMS16);
+        assert!(composed.has_uniforms);
+        assert!(composed.wgsl_source.contains("0.29411765"));
+        assert!(composed.wgsl_source.contains("0.17647059"));
+        assert!(!composed.wgsl_source.contains("norm = norm"));
+        validate_wgsl_syntax(&composed.wgsl_source).expect("composed blur syntax");
+        validate_wgsl_with_naga(&composed.wgsl_source).expect("composed blur naga");
+    }
+
+    #[test]
     fn test_shader_composer_atomic_parts_rejected() {
         let composer = NativeShaderComposer::new();
         let err_dissolve = composer
@@ -958,6 +1039,22 @@ mod tests {
             .unwrap_err();
         match err_dissolve {
             ShaderError::AtomicPart(name) => assert_eq!(name, "renpy.dissolve"),
+            other => panic!("Expected AtomicPart, got {other:?}"),
+        }
+
+        let err_imagedissolve = composer
+            .compose(&["renpy.imagedissolve".to_string()], true)
+            .unwrap_err();
+        match err_imagedissolve {
+            ShaderError::AtomicPart(name) => assert_eq!(name, "renpy.imagedissolve"),
+            other => panic!("Expected AtomicPart, got {other:?}"),
+        }
+
+        let err_alpha_mask = composer
+            .compose(&["renpy.alpha_mask".to_string()], true)
+            .unwrap_err();
+        match err_alpha_mask {
+            ShaderError::AtomicPart(name) => assert_eq!(name, "renpy.alpha_mask"),
             other => panic!("Expected AtomicPart, got {other:?}"),
         }
     }

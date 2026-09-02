@@ -145,20 +145,19 @@ impl Default for DrawCmd {
     }
 }
 
-/// Bind-group cache key for draws (pipeline + textures [+ uniform ring slot]).
-/// Continuous UI is dominated by solid/textured cmds; create_bind_group per
-/// DrawCmd was the main host encode CPU cost on dense prefs (~120 presents/s).
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// Bind-group cache key for draws (pipeline + textures).
+/// Uniform buffer offset is dynamic (256B aligned stride), so bind groups are decoupled
+/// from uniform values and fully reusable across frames.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct BgCacheKey {
     pipeline: u64,
     texture: u64,
     texture1: u64,
     texture2: u64,
-    /// Uniform ring slot index; u32::MAX means no uniforms / unused slot.
-    ubuf_slot: u32,
 }
-const UNIFORM_BYTES: u64 = 64; // 16 f32
-const UNIFORM_RING_INITIAL: usize = RING_INIT;
+pub const UNIFORM_BYTES: u64 = 64; // 16 f32
+pub const UNIFORM_STRIDE: u64 = 256; // 256-byte aligned stride for Vega 20 / GFX906 and Vulkan minUniformBufferOffsetAlignment
+pub const UNIFORM_RING_INITIAL: usize = RING_INIT;
 
 /// Generic LRU slot map: HashMap + insertion-order queue + capacity.
 /// Used for sample textures and meshes to deduplicate FIFO logic.
@@ -335,12 +334,13 @@ pub struct GpuArena {
     /// Product encode_pass Clears once, then Loads on subsequent presents so
     /// skipped draw cmds (missing mesh/tex) do not flash arena-clear holes.
     game_rt_needs_clear: bool,
-    /// Bind group cache (pipeline + textures [+ ubuf slot]).
+    /// Bind group cache (pipeline + textures).
     /// Avoids create_bind_group per DrawCmd — dominant CPU cost on dense prefs.
     bg_cache: HashMap<BgCacheKey, wgpu::BindGroup>,
-    /// Ring of reusable 64-byte uniform buffers (write_buffer, not create each draw).
-    uniform_ring: Vec<wgpu::Buffer>,
-    /// Next free slot in uniform_ring for the current encode_pass.
+    /// Single contiguous dynamic uniform buffer with 256-byte aligned stride.
+    uniform_buffer: Option<wgpu::Buffer>,
+    uniform_slots_capacity: usize,
+    /// Next free slot in uniform_buffer for the current encode_pass.
     uniform_ring_next: usize,
     /// Instance ring for grouped textured/solid quads (M1 Wave32 Phase 1a).
     /// Grow-only ring of 48-byte instance records (rect_off, rect_size, uv_off, uv_size, color).
@@ -426,7 +426,8 @@ impl GpuArena {
             color_format: SWAPCHAIN_FORMAT,
             game_rt_needs_clear: true,
             bg_cache: HashMap::new(),
-            uniform_ring: Vec::new(),
+            uniform_buffer: None,
+            uniform_slots_capacity: 0,
             uniform_ring_next: 0,
             instance_ring: Vec::new(),
             instance_ring_next: 0,
@@ -2481,7 +2482,7 @@ impl GpuArena {
             for c in &cmds {
                 // Grouped instanced cmds use mesh==0 placeholder until encode lazily creates unit quad.
                 // Do not count that as missing — encode will allocate.
-                if c.instance_count > 1 && c.mesh == 0 {
+                if (!c.instance_data.is_empty() || c.instance_count > 1) && c.mesh == 0 {
                     // Check textures only; mesh will be provided by ensure_unit_quad in encode
                     // Fall through to texture checks below without mesh guard
                 } else if !self.meshes.contains_key(&c.mesh) {
@@ -2775,15 +2776,24 @@ impl GpuArena {
             .retain(|k, _| k.texture != id && k.texture1 != id && k.texture2 != id);
     }
 
-    fn ensure_uniform_ring(&mut self, device: &wgpu::Device, need: usize) {
-        while self.uniform_ring.len() < need {
+    fn ensure_uniform_ring(&mut self, device: &wgpu::Device, need_slots: usize) {
+        let capacity_slots = need_slots.max(UNIFORM_RING_INITIAL).next_power_of_two();
+        let required_bytes = (capacity_slots as u64) * UNIFORM_STRIDE;
+        let needs_alloc = match &self.uniform_buffer {
+            None => true,
+            Some(buf) => buf.size() < required_bytes,
+        };
+        if needs_alloc {
             let buf = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("draw-uniforms-ring"),
-                size: UNIFORM_BYTES,
+                label: Some("draw-uniforms-dynamic-ring"),
+                size: required_bytes,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.uniform_ring.push(buf);
+            self.uniform_buffer = Some(buf);
+            self.uniform_slots_capacity = capacity_slots;
+            // Cached bind groups for uniform pipelines point to the old buffer; clear cache on grow.
+            self.bg_cache.clear();
         }
     }
 
@@ -2895,7 +2905,7 @@ impl GpuArena {
             // compute total bytes needed for grouped instances
             let mut grouped_instances: usize = 0;
             for c in cmds {
-                if c.instance_count > 1 {
+                if !c.instance_data.is_empty() {
                     if self
                         .pipelines
                         .get(&c.pipeline)
@@ -2925,7 +2935,7 @@ impl GpuArena {
                 gpu.queue.write_buffer(buf, 0, cast_f32(&identity));
                 // upload grouped instance data at recorded offsets
                 for c in cmds {
-                    if c.instance_count > 1 && !c.instance_data.is_empty() {
+                    if !c.instance_data.is_empty() {
                         let is_inst = self
                             .pipelines
                             .get(&c.pipeline)
@@ -2991,6 +3001,11 @@ impl GpuArena {
                 occlusion_query_set: None,
             });
 
+            let mut last_pipeline: Option<u64> = None;
+            let mut last_mesh: Option<u64> = None;
+            let mut last_bg_state: Option<(BgCacheKey, Option<u32>)> = None;
+            let mut last_inst_vbo_bound: bool = false;
+
             for cmd in cmds {
                 let (tex_count, has_uniforms, parts_key) = match self.pipelines.get(&cmd.pipeline) {
                     Some(p) => (p.tex_count, p.has_uniforms, p.parts_key.clone()),
@@ -2999,7 +3014,7 @@ impl GpuArena {
                 let is_instance = tex_count <= 1
                     && !has_uniforms
                     && (parts_key == "solid" || parts_key == "textured");
-                let is_grouped = is_instance && cmd.instance_count > 1;
+                let is_grouped = is_instance && !cmd.instance_data.is_empty();
                 if !is_grouped {
                     let Some(_mesh_check) = self.meshes.get(&cmd.mesh) else {
                         continue;
@@ -3045,20 +3060,22 @@ impl GpuArena {
                     continue;
                 }
 
-                // Uniform slot: write into ring buffer; key includes slot so
-                // distinct uniform values do not incorrectly share a bind group.
-                // For non-uniform pipes, ubuf_slot = MAX and BG is fully reusable.
-                let ubuf_slot: u32 = if has_uniforms {
+                // Dynamic uniform ring buffer: write 64-byte payload into contiguous
+                // uniform buffer at 256-byte aligned stride (Vega 20 / GFX906 hardware alignment).
+                let dynamic_offset: Option<u32> = if has_uniforms {
                     let slot = self.uniform_ring_next;
-                    if slot >= self.uniform_ring.len() {
+                    if slot >= self.uniform_slots_capacity {
                         continue;
                     }
-                    gpu.queue
-                        .write_buffer(&self.uniform_ring[slot], 0, cast_f32(&cmd.uniforms));
+                    let byte_offset = (slot as u64) * UNIFORM_STRIDE;
+                    if let Some(buf) = &self.uniform_buffer {
+                        gpu.queue
+                            .write_buffer(buf, byte_offset, cast_f32(&cmd.uniforms));
+                    }
                     self.uniform_ring_next = slot + 1;
-                    slot as u32
+                    Some(byte_offset as u32)
                 } else {
-                    u32::MAX
+                    None
                 };
 
                 let key = BgCacheKey {
@@ -3066,7 +3083,6 @@ impl GpuArena {
                     texture: tex0_id.unwrap_or(0),
                     texture1: tex1_id.unwrap_or(0),
                     texture2: tex2_id.unwrap_or(0),
-                    ubuf_slot,
                 };
 
                 if !self.bg_cache.contains_key(&key) {
@@ -3114,7 +3130,11 @@ impl GpuArena {
                         };
                         entries.push(wgpu::BindGroupEntry {
                             binding,
-                            resource: self.uniform_ring[ubuf_slot as usize].as_entire_binding(),
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: self.uniform_buffer.as_ref().unwrap(),
+                                offset: 0,
+                                size: std::num::NonZeroU64::new(UNIFORM_BYTES),
+                            }),
                         });
                     }
                     let layout = &self.pipelines.get(&cmd.pipeline).unwrap().bind_group_layout;
@@ -3141,9 +3161,14 @@ impl GpuArena {
                         Some(p) => p,
                         None => continue,
                     };
-                    let bg = self.bg_cache.get(&key).unwrap();
-                    pass.set_pipeline(&pipe_slot.pipeline);
-                    pass.set_vertex_buffer(0, unit_mesh.vertex.slice(..));
+                    if last_pipeline != Some(cmd.pipeline) {
+                        pass.set_pipeline(&pipe_slot.pipeline);
+                        last_pipeline = Some(cmd.pipeline);
+                    }
+                    if last_mesh != Some(unit_id) {
+                        pass.set_vertex_buffer(0, unit_mesh.vertex.slice(..));
+                        last_mesh = Some(unit_id);
+                    }
                     if let Some(buf) = self.instance_ring.first() {
                         let off = cmd.instance_offset;
                         let need = (cmd.instance_count as u64).saturating_mul(INSTANCE_BYTES);
@@ -3154,7 +3179,17 @@ impl GpuArena {
                             pass.set_vertex_buffer(1, buf.slice(0..INSTANCE_BYTES.min(buf.size())));
                         }
                     }
-                    pass.set_bind_group(0, bg, &[]);
+                    last_inst_vbo_bound = false;
+
+                    if last_bg_state != Some((key, dynamic_offset)) {
+                        let bg = self.bg_cache.get(&key).unwrap();
+                        if let Some(offset) = dynamic_offset {
+                            pass.set_bind_group(0, bg, &[offset]);
+                        } else {
+                            pass.set_bind_group(0, bg, &[]);
+                        }
+                        last_bg_state = Some((key, dynamic_offset));
+                    }
                     if let Some(ibo) = &unit_mesh.index {
                         pass.set_index_buffer(ibo.slice(..), wgpu::IndexFormat::Uint32);
                         pass.draw_indexed(0..6, 0, 0..cmd.instance_count);
@@ -3170,19 +3205,37 @@ impl GpuArena {
                         Some(p) => p,
                         None => continue,
                     };
-                    let bg = self.bg_cache.get(&key).unwrap();
-                    pass.set_pipeline(&pipe_slot.pipeline);
-                    pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+                    if last_pipeline != Some(cmd.pipeline) {
+                        pass.set_pipeline(&pipe_slot.pipeline);
+                        last_pipeline = Some(cmd.pipeline);
+                    }
+                    if last_mesh != Some(cmd.mesh) {
+                        pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+                        last_mesh = Some(cmd.mesh);
+                    }
                     let is_inst_single = tex_count <= 1
                         && !has_uniforms
                         && (parts_key == "solid" || parts_key == "textured");
                     if is_inst_single {
-                        if let Some(buf) = self.instance_ring.first() {
-                            let end = INSTANCE_BYTES.min(buf.size());
-                            pass.set_vertex_buffer(1, buf.slice(0..end));
+                        if !last_inst_vbo_bound {
+                            if let Some(buf) = self.instance_ring.first() {
+                                let end = INSTANCE_BYTES.min(buf.size());
+                                pass.set_vertex_buffer(1, buf.slice(0..end));
+                                last_inst_vbo_bound = true;
+                            }
                         }
+                    } else {
+                        last_inst_vbo_bound = false;
                     }
-                    pass.set_bind_group(0, bg, &[]);
+                    if last_bg_state != Some((key, dynamic_offset)) {
+                        let bg = self.bg_cache.get(&key).unwrap();
+                        if let Some(offset) = dynamic_offset {
+                            pass.set_bind_group(0, bg, &[offset]);
+                        } else {
+                            pass.set_bind_group(0, bg, &[]);
+                        }
+                        last_bg_state = Some((key, dynamic_offset));
+                    }
                     if let Some(ibo) = &mesh.index {
                         pass.set_index_buffer(ibo.slice(..), wgpu::IndexFormat::Uint32);
                         pass.draw_indexed(0..mesh.index_count, 0, 0..1);
@@ -3272,8 +3325,8 @@ fn build_bind_group_layout(
             visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: std::num::NonZeroU64::new(64),
+                has_dynamic_offset: true,
+                min_binding_size: std::num::NonZeroU64::new(UNIFORM_BYTES),
             },
             count: None,
         });
@@ -3627,6 +3680,12 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
 /// uniforms: data0.x = offset, data0.y = multiplier,
 ///           data0.z = channel (0 = alpha / stock ImageDissolve after red→alpha
 ///                              matrixcolor bake; >0.5 = red / product alias
+/// renpy.imagedissolve (GL2 parity) + HuangmeiC image_dissolve alias:
+/// tex0 = control image, tex1 = old/bottom, tex2 = new/top
+/// a = clamp((ctrl + offset) * multiplier, 0, 1); mix(bottom, top, a)
+/// uniforms: data0.x = offset, data0.y = multiplier,
+///           data0.z = channel (0 = alpha / stock ImageDissolve after red→alpha
+///                              matrixcolor bake; >0.5 = red / product alias
 ///                              dissolve_transform which samples rule.r)
 const IMAGEDISSOLVE_WGSL: &str = r#"
 struct VsIn {
@@ -3665,12 +3724,14 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
     let mult = u.data0.y;
     // uniform-level select: same for all lanes in a wave.
     let use_red = u.data0.z > 0.5;
+
+    // Vector memory clause: group all 3 texture fetches concurrently into IMAGE_SAMPLE clause
     let control = textureSample(t_control, s_color, v.uv);
-    let ctrl = select(control.a, control.r, use_red);
-    // scalar-only compute; ctrl VGPR dies before bottom/top samples.
-    let a = clamp((ctrl + off) * mult, 0.0, 1.0);
     let bottom = textureSample(t_bottom, s_color, v.uv);
     let top = textureSample(t_top, s_color, v.uv);
+
+    let ctrl = select(control.a, control.r, use_red);
+    let a = clamp((ctrl + off) * mult, 0.0, 1.0);
     let c = mix(bottom, top, a) * v.color;
     let out_a = clamp(c.a, 0.0, 1.0);
     return vec4<f32>(c.rgb * out_a, out_a);
@@ -3678,6 +3739,7 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
 "#;
 
 /// Approximate renpy.blur: multi-tap gaussian with radius from u.data0.x = blur_log2.
+/// Pre-normalized 5-tap weights (W_center = 0.29411765, W_cross = 0.17647059) eliminate dynamic VALU loops.
 const BLUR_WGSL: &str = r#"
 struct VsIn {
     @location(0) pos: vec2<f32>,
@@ -3715,23 +3777,22 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
     let blur_log2 = u.data0.x;
     // radius in texels ≈ 2^blur_log2; vertex color.a as extra scale
     let radius = max(exp2(blur_log2), 0.5) * max(v.color.a, 0.01);
-    var acc = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-    var norm = 0.0;
-    // 5-tap cross gaussian approx (no array constructors — naga-safe)
-    acc = acc + textureSample(t_color, s_color, v.uv) * 1.0;
-    norm = norm + 1.0;
-    acc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(radius, 0.0) * texel) * 0.6;
-    norm = norm + 0.6;
-    acc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(-radius, 0.0) * texel) * 0.6;
-    norm = norm + 0.6;
-    acc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, radius) * texel) * 0.6;
-    norm = norm + 0.6;
-    acc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, -radius) * texel) * 0.6;
-    norm = norm + 0.6;
-    let tex = acc / max(norm, 0.0001);
-    let c = tex * vec4<f32>(v.color.r, v.color.g, v.color.b, 1.0);
+    let r_tex = radius * texel;
+
+    // Grouped 5-tap texture fetch clause: contiguous IMAGE_SAMPLE instructions
+    let c_center = textureSample(t_color, s_color, v.uv);
+    let c_r      = textureSample(t_color, s_color, v.uv + vec2<f32>(r_tex.x, 0.0));
+    let c_l      = textureSample(t_color, s_color, v.uv - vec2<f32>(r_tex.x, 0.0));
+    let c_d      = textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, r_tex.y));
+    let c_u      = textureSample(t_color, s_color, v.uv - vec2<f32>(0.0, r_tex.y));
+
+    // Factored accumulation with pre-normalized 5-tap Gaussian weights
+    // (W_center = 1.0/3.4 ≈ 0.29411765, W_cross = 0.6/3.4 ≈ 0.17647059)
+    let c_cross = c_r + c_l + c_d + c_u;
+    let tex = c_center * 0.29411765 + c_cross * 0.17647059;
+    let c = tex * vec4<f32>(v.color.rgb, 1.0);
     let a = c.a;
-    return vec4<f32>(c.r * a, c.g * a, c.b * a, a);
+    return vec4<f32>(c.rgb * a, a);
 }
 "#;
 
@@ -3771,7 +3832,7 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
     let m = mat4x4<f32>(u.col0, u.col1, u.col2, u.col3);
     let c = m * tex;
     let a = clamp(c.a, 0.0, 1.0);
-    return vec4<f32>(c.r * a, c.g * a, c.b * a, a);
+    return vec4<f32>(c.rgb * a, a);
 }
 "#;
 
@@ -3947,6 +4008,7 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
 "#;
 
 /// live2d.colors: multiply then screen blend; data0=u_multiply, data1=u_screen.
+/// Algebraically optimized to fused multiply-add: mult_rgb * (1.0 - screen.rgb) + screen.rgb * tex.a
 const LIVE2D_COLORS_WGSL: &str = r#"
 struct VsIn {
     @location(0) pos: vec2<f32>,
@@ -3978,12 +4040,10 @@ fn vs_main(v: VsIn) -> VsOut {
 }
 @fragment
 fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
-    var c = textureSample(t_color, s_color, v.uv) * v.color;
-    // gl_FragColor.rgb = rgb * multiply.rgb
-    c = vec4<f32>(c.rgb * u.multiply.rgb, c.a);
-    // screen: (rgb + screen.rgb * a) - (rgb * screen.rgb)
-    let rgb = (c.rgb + u.screen.rgb * c.a) - (c.rgb * u.screen.rgb);
-    let a = clamp(c.a, 0.0, 1.0);
+    let tex = textureSample(t_color, s_color, v.uv) * v.color;
+    let mult_rgb = tex.rgb * u.multiply.rgb;
+    let rgb = mult_rgb * (vec3<f32>(1.0, 1.0, 1.0) - u.screen.rgb) + u.screen.rgb * tex.a;
+    let a = clamp(tex.a, 0.0, 1.0);
     return vec4<f32>(rgb * a, a);
 }
 "#;
@@ -4021,19 +4081,53 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
 
 #[cfg(test)]
 mod yuv_tests {
-    use super::{NV12_WGSL, YUV420P_WGSL};
-    #[test]
-    fn test_yuv420p_wgsl_naga_valid() {
-        let res = naga::front::wgsl::parse_str(YUV420P_WGSL);
-        assert!(res.is_ok(), "YUV420P WGSL parse failed: {:?}", res.err());
+    use super::{
+        ALPHA_MASK_WGSL, BLUR_WGSL, CLIP_STENCIL_WGSL, DISSOLVE_WGSL, IMAGEDISSOLVE_WGSL,
+        LIVE2D_COLORS_WGSL, LIVE2D_FLIP_WGSL, LIVE2D_INVERTED_MASK_WGSL, LIVE2D_MASK_WGSL,
+        MASK_WGSL, MATRIXCOLOR_WGSL, NV12_WGSL, SOLID_WGSL, TEXTURED_WGSL, TEXT_SDF_WGSL,
+        YUV420P_WGSL,
+    };
+
+    fn assert_wgsl_naga_valid(name: &str, source: &str) {
+        let res = naga::front::wgsl::parse_str(source);
+        assert!(res.is_ok(), "{name} WGSL parse failed: {:?}", res.err());
         let module = res.unwrap();
-        let info = naga::valid::Validator::new(
+        naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::all(),
         )
         .validate(&module)
-        .expect("YUV420P WGSL validation failed");
-        let _ = info;
+        .unwrap_or_else(|e| panic!("{name} WGSL naga validation failed: {e}"));
+    }
+
+    #[test]
+    fn test_all_prebaked_wgsl_naga_valid() {
+        assert_wgsl_naga_valid("SOLID_WGSL", SOLID_WGSL);
+        assert_wgsl_naga_valid("TEXTURED_WGSL", TEXTURED_WGSL);
+        assert_wgsl_naga_valid("DISSOLVE_WGSL", DISSOLVE_WGSL);
+        assert_wgsl_naga_valid("IMAGEDISSOLVE_WGSL", IMAGEDISSOLVE_WGSL);
+        assert_wgsl_naga_valid("BLUR_WGSL", BLUR_WGSL);
+        assert_wgsl_naga_valid("MATRIXCOLOR_WGSL", MATRIXCOLOR_WGSL);
+        assert_wgsl_naga_valid("ALPHA_MASK_WGSL", ALPHA_MASK_WGSL);
+        assert_wgsl_naga_valid("MASK_WGSL", MASK_WGSL);
+        assert_wgsl_naga_valid("LIVE2D_MASK_WGSL", LIVE2D_MASK_WGSL);
+        assert_wgsl_naga_valid("LIVE2D_INVERTED_MASK_WGSL", LIVE2D_INVERTED_MASK_WGSL);
+        assert_wgsl_naga_valid("LIVE2D_COLORS_WGSL", LIVE2D_COLORS_WGSL);
+        assert_wgsl_naga_valid("LIVE2D_FLIP_WGSL", LIVE2D_FLIP_WGSL);
+        assert_wgsl_naga_valid("TEXT_SDF_WGSL", TEXT_SDF_WGSL);
+        assert_wgsl_naga_valid("CLIP_STENCIL_WGSL", CLIP_STENCIL_WGSL);
+        assert_wgsl_naga_valid("YUV420P_WGSL", YUV420P_WGSL);
+        assert_wgsl_naga_valid("NV12_WGSL", NV12_WGSL);
+
+        assert!(BLUR_WGSL.contains("0.29411765"));
+        assert!(BLUR_WGSL.contains("0.17647059"));
+        assert!(!BLUR_WGSL.contains("norm = norm"));
+        assert!(LIVE2D_COLORS_WGSL.contains("mult_rgb"));
+    }
+
+    #[test]
+    fn test_yuv420p_wgsl_naga_valid() {
+        assert_wgsl_naga_valid("YUV420P_WGSL", YUV420P_WGSL);
         assert!(YUV420P_WGSL.contains("1.402"));
         assert!(YUV420P_WGSL.contains("t_y"));
         assert!(YUV420P_WGSL.contains("t_u"));
@@ -4042,15 +4136,7 @@ mod yuv_tests {
     }
     #[test]
     fn test_nv12_wgsl_naga_valid() {
-        let res = naga::front::wgsl::parse_str(NV12_WGSL);
-        assert!(res.is_ok(), "NV12 WGSL parse failed: {:?}", res.err());
-        let module = res.unwrap();
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .expect("NV12 WGSL validation failed");
+        assert_wgsl_naga_valid("NV12_WGSL", NV12_WGSL);
         assert!(NV12_WGSL.contains("t_y"));
         assert!(NV12_WGSL.contains("t_uv"));
     }
@@ -4063,5 +4149,42 @@ mod yuv_tests {
         let uv = (w / 2) * (h / 2);
         assert_eq!(y, 2073600);
         assert_eq!(uv, 518400);
+    }
+
+    #[test]
+    fn test_uniform_stride_and_alignment_constants() {
+        use super::{UNIFORM_BYTES, UNIFORM_RING_INITIAL, UNIFORM_STRIDE};
+        assert_eq!(UNIFORM_BYTES, 64, "Shader uniform payload must be 64 bytes (16 f32)");
+        assert_eq!(UNIFORM_STRIDE, 256, "Uniform stride must satisfy 256B alignment for Vega 20 / GFX906");
+        assert_eq!(UNIFORM_STRIDE % 256, 0, "Uniform stride must be a multiple of 256");
+        assert!(UNIFORM_BYTES <= UNIFORM_STRIDE, "Uniform payload must fit within stride");
+        assert!(UNIFORM_RING_INITIAL >= 256, "Initial uniform ring capacity must be at least 256 slots");
+    }
+
+    #[test]
+    fn test_bg_cache_key_decoupling() {
+        use super::BgCacheKey;
+        // Two draws with same pipeline and textures share the same cache key
+        let key1 = BgCacheKey {
+            pipeline: 10,
+            texture: 20,
+            texture1: 0,
+            texture2: 0,
+        };
+        let key2 = BgCacheKey {
+            pipeline: 10,
+            texture: 20,
+            texture1: 0,
+            texture2: 0,
+        };
+        assert_eq!(key1, key2, "BindGroup cache keys must match regardless of dynamic uniform values");
+
+        let key3 = BgCacheKey {
+            pipeline: 10,
+            texture: 21,
+            texture1: 0,
+            texture2: 0,
+        };
+        assert_ne!(key1, key3, "Different textures must produce distinct cache keys");
     }
 }

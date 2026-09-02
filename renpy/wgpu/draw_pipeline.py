@@ -150,6 +150,22 @@ class PipelineMixin:
         for name in ordered:
             if composition_mode(name):
                 continue
+            if not has_texture and name not in ("solid", "renpy.solid"):
+                ir = None
+                try:
+                    from renpy.wgpu.shaders import get_snippet_ir
+                    ir = get_snippet_ir(name)
+                except Exception:
+                    pass
+                if ir and ir.get("tex_count", 0) > 0:
+                    continue
+                if name in (
+                    "renpy.dissolve", "renpy.imagedissolve", "renpy.blur",
+                    "renpy.matrixcolor", "renpy.texture", "renpy.alpha_mask",
+                    "renpy.mask", "texture", "ftl", "renpy.ftl",
+                    "live2d.colors", "live2d.flip_texture"
+                ):
+                    continue
             key = host_pipeline_key(name)
             if key and key in key_to_pipe and key_to_pipe[key]:
                 return int(key_to_pipe[key])
@@ -157,7 +173,7 @@ class PipelineMixin:
             if name in ("solid", "renpy.solid"):
                 return int(self._solid_pipe)
             if name in ("texture", "renpy.texture", "ftl", "renpy.ftl"):
-                return int(self._tex_pipe)
+                return int(self._tex_pipe if has_texture else self._solid_pipe)
 
         return int(self._tex_pipe if has_texture else self._solid_pipe)
 

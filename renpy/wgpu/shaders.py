@@ -338,28 +338,22 @@ color = m * color;
 """
 
 _BLUR_FS = """\
-// renpy.blur — 5-tap cross gaussian; radius from u.data0.x = blur_log2
+// renpy.blur — 5-tap cross gaussian with pre-normalized weights; radius from u.data0.x = blur_log2
 // Mergeable alone. Composer must refuse co-merge with matrixcolor (layout
 // conflict: params16 vs matrixcolor16) — enforced at composer, not IR.
 let dims = vec2<f32>(textureDimensions(t_color));
 let texel = vec2<f32>(1.0 / max(dims.x, 1.0), 1.0 / max(dims.y, 1.0));
 let blur_log2 = u.data0.x;
 let radius = max(exp2(blur_log2), 0.5) * max(v.color.a, 0.01);
-var acc = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-var norm = 0.0;
-acc = acc + textureSample(t_color, s_color, v.uv) * 1.0;
-norm = norm + 1.0;
-acc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(radius, 0.0) * texel) * 0.6;
-norm = norm + 0.6;
-acc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(-radius, 0.0) * texel) * 0.6;
-norm = norm + 0.6;
-acc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, radius) * texel) * 0.6;
-norm = norm + 0.6;
-acc = acc + textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, -radius) * texel) * 0.6;
-norm = norm + 0.6;
-// Use blur_tex (not tex) so co-merge with renpy.texture's `let tex` is legal WGSL.
-let blur_tex = acc / max(norm, 0.0001);
-color = blur_tex * vec4<f32>(v.color.r, v.color.g, v.color.b, 1.0);
+let r_tex = radius * texel;
+let c_center = textureSample(t_color, s_color, v.uv);
+let c_r = textureSample(t_color, s_color, v.uv + vec2<f32>(r_tex.x, 0.0));
+let c_l = textureSample(t_color, s_color, v.uv - vec2<f32>(r_tex.x, 0.0));
+let c_d = textureSample(t_color, s_color, v.uv + vec2<f32>(0.0, r_tex.y));
+let c_u = textureSample(t_color, s_color, v.uv - vec2<f32>(0.0, r_tex.y));
+let c_cross = c_r + c_l + c_d + c_u;
+let blur_tex = c_center * 0.29411765 + c_cross * 0.17647059;
+color = blur_tex * vec4<f32>(v.color.rgb, 1.0);
 """
 
 
@@ -442,6 +436,7 @@ def register_builtin_core():
         vertex_hooks=[],
         fragment_hooks=[],  # atomic: prebaked pipeline only
         atomic=True,
+        pipeline="dissolve_pipeline",
     )
     register_wgsl_shader(
         "renpy.imagedissolve",
@@ -453,6 +448,7 @@ def register_builtin_core():
         vertex_hooks=[],
         fragment_hooks=[],  # atomic: prebaked pipeline only
         atomic=True,
+        pipeline="imagedissolve_pipeline",
     )
     register_wgsl_shader(
         "renpy.blur",
@@ -464,6 +460,7 @@ def register_builtin_core():
         vertex_hooks=[],
         fragment_hooks=[(400, _BLUR_FS)],
         atomic=False,  # mergeable alone; co-merge w/ matrixcolor forbidden at composer
+        pipeline="blur_pipeline",
     )
     register_wgsl_shader(
         "renpy.matrixcolor",
@@ -475,20 +472,92 @@ def register_builtin_core():
         vertex_hooks=[],
         fragment_hooks=[(350, _MATRIXCOLOR_FS)],
         atomic=False,
+        pipeline="matrixcolor_pipeline",
     )
-    # renpy.alpha_mask: src * mask.r (dual tex). data0 unused; binds tex0=src, tex1=mask.
-    register_wgsl_shader("renpy.alpha_mask", priority=400, kind="alpha_mask")
+    # renpy.alpha_mask: src * mask.r (dual tex).
+    register_wgsl_shader(
+        "renpy.alpha_mask",
+        priority=400,
+        kind="alpha_mask",
+        tex_count=2,
+        uniform_layout_id=_UNIFORM_LAYOUT_NONE,
+        resources=["t_src", "s_color", "t_mask"],
+        vertex_hooks=[],
+        fragment_hooks=[],
+        atomic=True,
+        pipeline="alpha_mask_pipeline",
+    )
     # renpy.mask: src * (mask.a * mult + offset). data0.x=mult, data0.y=offset (uniform-level).
-    register_wgsl_shader("renpy.mask", priority=400, kind="mask")
-    register_wgsl_shader("live2d.mask", priority=200, kind="live2d_mask")
-    register_wgsl_shader("live2d.inverted_mask", priority=200, kind="live2d_inverted_mask")
-    register_wgsl_shader("live2d.colors", priority=250, kind="live2d_colors")
-    register_wgsl_shader("live2d.flip_texture", priority=250, kind="live2d_flip")
+    register_wgsl_shader(
+        "renpy.mask",
+        priority=400,
+        kind="mask",
+        tex_count=2,
+        uniform_layout_id=_UNIFORM_LAYOUT_PARAMS16,
+        resources=["t_src", "s_color", "t_mask"],
+        vertex_hooks=[],
+        fragment_hooks=[],
+        atomic=True,
+        pipeline="mask_pipeline",
+    )
+    register_wgsl_shader(
+        "live2d.mask",
+        priority=200,
+        kind="live2d_mask",
+        tex_count=2,
+        uniform_layout_id=_UNIFORM_LAYOUT_PARAMS16,
+        resources=["t_src", "s_color", "t_mask"],
+        vertex_hooks=[],
+        fragment_hooks=[],
+        atomic=True,
+        pipeline="live2d_mask_pipeline",
+    )
+    register_wgsl_shader(
+        "live2d.inverted_mask",
+        priority=200,
+        kind="live2d_inverted_mask",
+        tex_count=2,
+        uniform_layout_id=_UNIFORM_LAYOUT_PARAMS16,
+        resources=["t_src", "s_color", "t_mask"],
+        vertex_hooks=[],
+        fragment_hooks=[],
+        atomic=True,
+        pipeline="live2d_inverted_mask_pipeline",
+    )
+    register_wgsl_shader(
+        "live2d.colors",
+        priority=250,
+        kind="live2d_colors",
+        tex_count=1,
+        uniform_layout_id=_UNIFORM_LAYOUT_PARAMS16,
+        resources=["t_color", "s_color"],
+        vertex_hooks=[],
+        fragment_hooks=[],
+        atomic=True,
+        pipeline="live2d_colors_pipeline",
+    )
+    register_wgsl_shader(
+        "live2d.flip_texture",
+        priority=250,
+        kind="live2d_flip",
+        tex_count=1,
+        uniform_layout_id=_UNIFORM_LAYOUT_NONE,
+        resources=["t_color", "s_color"],
+        vertex_hooks=[],
+        fragment_hooks=[],
+        atomic=False,
+        pipeline="live2d_flip_pipeline",
+    )
     register_wgsl_shader(
         "renpy.text_sdf",
+        priority=500,
+        kind="text_sdf",
         tex_count=1,
-        uniform_layout_id="params16",
+        uniform_layout_id=_UNIFORM_LAYOUT_PARAMS16,
+        resources=["t_atlas", "s_atlas"],
+        vertex_hooks=[],
         fragment_hooks=[(500, "// SDF handled by pipeline")],
+        atomic=False,
         pipeline="text_sdf_pipeline",
     )
 

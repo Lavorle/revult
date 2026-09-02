@@ -83,6 +83,92 @@ class TestWgpuComposerIntegration(unittest.TestCase):
         self.assertEqual(layout_id, "matrixcolor16")
         self.assertIn("@fragment", wgsl_code)
 
+    def test_pipeline_map_honesty(self):
+        from renpy.wgpu.shaders import assert_pipeline_map_honest
+        problems = assert_pipeline_map_honest()
+        self.assertEqual(problems, [], f"assert_pipeline_map_honest reported violations: {problems}")
+
+    def test_snippet_ir_registrations_completeness(self):
+        from renpy.wgpu.shaders import get_snippet_ir, is_atomic, is_mergeable
+
+        # blur
+        blur_ir = get_snippet_ir("renpy.blur")
+        self.assertIsNotNone(blur_ir)
+        self.assertEqual(blur_ir["tex_count"], 1)
+        self.assertEqual(blur_ir["uniform_layout_id"], "params16")
+        self.assertFalse(blur_ir["atomic"])
+        self.assertTrue(is_mergeable("renpy.blur"))
+        self.assertIn("0.29411765", blur_ir["fragment_hooks"][0]["body"])
+        self.assertIn("0.17647059", blur_ir["fragment_hooks"][0]["body"])
+        self.assertNotIn("norm = norm", blur_ir["fragment_hooks"][0]["body"])
+
+        # matrixcolor
+        mc_ir = get_snippet_ir("renpy.matrixcolor")
+        self.assertIsNotNone(mc_ir)
+        self.assertEqual(mc_ir["tex_count"], 1)
+        self.assertEqual(mc_ir["uniform_layout_id"], "matrixcolor16")
+        self.assertFalse(mc_ir["atomic"])
+        self.assertTrue(is_mergeable("renpy.matrixcolor"))
+
+        # dissolve & imagedissolve (atomic transitions)
+        dissolve_ir = get_snippet_ir("renpy.dissolve")
+        self.assertIsNotNone(dissolve_ir)
+        self.assertEqual(dissolve_ir["tex_count"], 2)
+        self.assertEqual(dissolve_ir["uniform_layout_id"], "params16")
+        self.assertTrue(dissolve_ir["atomic"])
+        self.assertTrue(is_atomic("renpy.dissolve"))
+
+        idissolve_ir = get_snippet_ir("renpy.imagedissolve")
+        self.assertIsNotNone(idissolve_ir)
+        self.assertEqual(idissolve_ir["tex_count"], 3)
+        self.assertEqual(idissolve_ir["uniform_layout_id"], "params16")
+        self.assertTrue(idissolve_ir["atomic"])
+        self.assertTrue(is_atomic("renpy.imagedissolve"))
+
+        # alpha_mask & mask
+        alpha_mask_ir = get_snippet_ir("renpy.alpha_mask")
+        self.assertIsNotNone(alpha_mask_ir)
+        self.assertEqual(alpha_mask_ir["tex_count"], 2)
+        self.assertEqual(alpha_mask_ir["uniform_layout_id"], "none")
+        self.assertTrue(alpha_mask_ir["atomic"])
+
+        mask_ir = get_snippet_ir("renpy.mask")
+        self.assertIsNotNone(mask_ir)
+        self.assertEqual(mask_ir["tex_count"], 2)
+        self.assertEqual(mask_ir["uniform_layout_id"], "params16")
+        self.assertTrue(mask_ir["atomic"])
+
+        # live2d.*
+        l2d_mask = get_snippet_ir("live2d.mask")
+        self.assertIsNotNone(l2d_mask)
+        self.assertEqual(l2d_mask["tex_count"], 2)
+        self.assertEqual(l2d_mask["uniform_layout_id"], "params16")
+        self.assertTrue(l2d_mask["atomic"])
+
+        l2d_inv = get_snippet_ir("live2d.inverted_mask")
+        self.assertIsNotNone(l2d_inv)
+        self.assertEqual(l2d_inv["tex_count"], 2)
+        self.assertEqual(l2d_inv["uniform_layout_id"], "params16")
+        self.assertTrue(l2d_inv["atomic"])
+
+        l2d_colors = get_snippet_ir("live2d.colors")
+        self.assertIsNotNone(l2d_colors)
+        self.assertEqual(l2d_colors["tex_count"], 1)
+        self.assertEqual(l2d_colors["uniform_layout_id"], "params16")
+        self.assertTrue(l2d_colors["atomic"])
+
+        l2d_flip = get_snippet_ir("live2d.flip_texture")
+        self.assertIsNotNone(l2d_flip)
+        self.assertEqual(l2d_flip["tex_count"], 1)
+        self.assertEqual(l2d_flip["uniform_layout_id"], "none")
+
+        # text_sdf
+        sdf_ir = get_snippet_ir("renpy.text_sdf")
+        self.assertIsNotNone(sdf_ir)
+        self.assertEqual(sdf_ir["tex_count"], 1)
+        self.assertEqual(sdf_ir["uniform_layout_id"], "params16")
+        self.assertEqual(sdf_ir["pipeline"], "text_sdf_pipeline")
+
 
 if __name__ == "__main__":
     unittest.main()

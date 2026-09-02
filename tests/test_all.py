@@ -3,10 +3,12 @@ from pathlib import Path
 import sys
 
 repo_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "tests"))
 
 import test_parent_runner
 import test_golden_mae
+import test_instance_batching
 
 
 class TestParentRunner(unittest.TestCase):
@@ -44,6 +46,32 @@ class TestGoldenMae(unittest.TestCase):
 
     def test_compare_or_bootstrap_pure_function(self):
         test_golden_mae.test_compare_or_bootstrap_pure_function()
+
+
+class TestInstanceBatching(unittest.TestCase):
+    def test_instance_group_add_and_pack(self):
+        test_instance_batching.test_instance_group_add_and_pack()
+
+    def test_instance_group_add_packed(self):
+        test_instance_batching.test_instance_group_add_packed()
+
+    def test_instance_group_invalid_input_resilience(self):
+        test_instance_batching.test_instance_group_invalid_input_resilience()
+
+    def test_instance_group_10x_collapsing(self):
+        test_instance_batching.test_instance_group_10x_collapsing()
+
+    def test_instance_group_multi_key_batching(self):
+        test_instance_batching.test_instance_group_multi_key_batching()
+
+    def test_instance_group_stack_push_pop(self):
+        test_instance_batching.test_instance_group_stack_push_pop()
+
+    def test_instance_group_flush_fallback(self):
+        test_instance_batching.test_instance_group_flush_fallback()
+
+    def test_get_frame_stats_fallback_and_types(self):
+        test_instance_batching.test_get_frame_stats_fallback_and_types()
 
 
 if __name__ == "__main__":

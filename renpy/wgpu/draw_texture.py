@@ -74,6 +74,19 @@ class TextureMixin:
         store.evict_some(max(1, int(cap) // 8), area_fn=lambda e: int(e[0]) * int(e[1]),
                          keep_below=256 * 256)
 
+    def _forget_handle_pixels(self, handle):
+        try:
+            h = int(handle or 0)
+            if h > 0:
+                store = getattr(self, "_handle_pixels", None)
+                if store is not None and hasattr(store, "pop"):
+                    store.pop(h, None)
+                remap = getattr(self, "_handle_remap", None)
+                if remap is not None and hasattr(remap, "pop"):
+                    remap.pop(h, None)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _log_once(self, key: str, exc: Exception) -> None:
         _host_draw_fail(key, exc)
 

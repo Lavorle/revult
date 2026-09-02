@@ -272,6 +272,7 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         self.draw_per_sec = 60.0
         self.fullscreen = False
         self.texture_cache = {}
+        self._transient_tex = {}
         # Movie / transient uploads: id(surf) → (handle, w, h, fingerprint).
         # Stock get_movie_texture always passes transient=True on a stable
         # channel Surface; without reuse, each frame allocates a full-size

@@ -62,6 +62,11 @@ def get_host():
     Returns ``renpy_host`` when the extension is importable (product run),
     or ``None`` when linting without the native host (hermetic gates).
     """
+    import sys
+
+    h = sys.modules.get("renpy_host")
+    if h is not None:
+        return h
     return renpy_host
 
 
@@ -95,12 +100,6 @@ class _InstanceGroup:
 
     def add(self, pipeline, texture, texture1, texture2, x0, y0, x1, y1, u0, v0, u1, v1, color):
         """Add one quad instance for grouping. Computes 12 floats and appends."""
-        key = (int(pipeline) if pipeline is not None else 0, texture, texture1, texture2)
-        lst = self.map.get(key)
-        if lst is None:
-            lst = []
-            self.map[key] = lst
-        # rect off/size in NDC
         try:
             rox = float(x0)
             roy = float(y0)
@@ -118,6 +117,11 @@ class _InstanceGroup:
             ca = float(c[3]) if len(c) > 3 else 1.0
         except Exception:
             return
+        key = (int(pipeline) if pipeline is not None else 0, texture, texture1, texture2)
+        lst = self.map.get(key)
+        if lst is None:
+            lst = []
+            self.map[key] = lst
         lst.extend([rox, roy, rsx, rsy, uox, voy, usx, vsy, cr, cg, cb, ca])
 
     def add_packed(self, key, rect_off, rect_size, uv_off, uv_size, color):

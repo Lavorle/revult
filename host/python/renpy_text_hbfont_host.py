@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from renpy_text_ftfont_host import FTFace as HBFace  # noqa: F401
 from renpy_text_ftfont_host import FTFont as _FTFont
+from renpy_text_ftfont_host import FreetypeError, init  # noqa: F401
+
 
 
 class HBFont(_FTFont):

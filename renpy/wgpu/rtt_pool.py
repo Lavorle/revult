@@ -105,6 +105,7 @@ class RttPoolMixin:
         if free:
             handle = int(free.pop())
             self._rtt_curr_frame.append((handle, w, h))
+            return handle
         live_same = [t for t in self._rtt_curr_frame if t[1] == w and t[2] == h]
         if len(live_same) >= self._rtt_pool_cap:
             # Reuse oldest live RTT of this size (overwrite). Safe for bake

@@ -1969,7 +1969,7 @@ fn inject_text(text: String) {
 // --- Phase 2 GPU FFI -------------------------------------------------------
 
 #[pyfunction]
-fn create_texture_rgba(width: u32, height: u32, rgba: Vec<u8>) -> PyResult<u64> {
+fn create_texture_rgba(width: u32, height: u32, rgba: &[u8]) -> PyResult<u64> {
     with_host_state_mut(|st| {
         let gpu = st
             .gpu
@@ -1979,7 +1979,7 @@ fn create_texture_rgba(width: u32, height: u32, rgba: Vec<u8>) -> PyResult<u64> 
         st.arena.set_color_format(gpu.surface_format);
         let result = st
             .arena
-            .create_texture_rgba(&gpu.device, &gpu.queue, width, height, &rgba);
+            .create_texture_rgba(&gpu.device, &gpu.queue, width, height, rgba);
         st.gpu = Some(gpu);
         result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
     })
@@ -1988,13 +1988,13 @@ fn create_texture_rgba(width: u32, height: u32, rgba: Vec<u8>) -> PyResult<u64> 
 /// Update an existing texture in place (video frame path). `rgba` must be
 /// width*height*4 tight RGBA matching the texture created via create_texture_rgba.
 #[pyfunction]
-fn write_texture_rgba(id: u64, rgba: Vec<u8>) -> PyResult<()> {
+fn write_texture_rgba(id: u64, rgba: &[u8]) -> PyResult<()> {
     with_host_state_mut(|st| {
         let gpu = st
             .gpu
             .take()
             .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
-        let result = st.arena.write_texture_rgba(&gpu.queue, id, &rgba);
+        let result = st.arena.write_texture_rgba(&gpu.queue, id, rgba);
         st.gpu = Some(gpu);
         result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
     })
@@ -2024,7 +2024,7 @@ fn destroy_atlas(id: u64) {
 
 #[pyfunction]
 #[pyo3(signature = (id, x, y, w, h, rgba))]
-fn write_atlas_subrect(id: u64, x: u32, y: u32, w: u32, h: u32, rgba: Vec<u8>) -> PyResult<()> {
+fn write_atlas_subrect(id: u64, x: u32, y: u32, w: u32, h: u32, rgba: &[u8]) -> PyResult<()> {
     with_host_state_mut(|st| {
         let gpu = st
             .gpu
@@ -2032,7 +2032,7 @@ fn write_atlas_subrect(id: u64, x: u32, y: u32, w: u32, h: u32, rgba: Vec<u8>) -
             .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
         let result = st
             .arena
-            .write_atlas_subrect(&gpu.queue, id, x, y, w, h, &rgba);
+            .write_atlas_subrect(&gpu.queue, id, x, y, w, h, rgba);
         st.gpu = Some(gpu);
         result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
     })
@@ -2042,9 +2042,9 @@ fn write_atlas_subrect(id: u64, x: u32, y: u32, w: u32, h: u32, rgba: Vec<u8>) -
 fn create_texture_yuv420p(
     width: u32,
     height: u32,
-    y: Vec<u8>,
-    u: Vec<u8>,
-    v: Vec<u8>,
+    y: &[u8],
+    u: &[u8],
+    v: &[u8],
 ) -> PyResult<(u64, u64, u64)> {
     with_host_state_mut(|st| {
         let gpu = st
@@ -2054,7 +2054,7 @@ fn create_texture_yuv420p(
         st.arena.set_color_format(gpu.surface_format);
         let result =
             st.arena
-                .create_texture_yuv420p(&gpu.device, &gpu.queue, width, height, &y, &u, &v);
+                .create_texture_yuv420p(&gpu.device, &gpu.queue, width, height, y, u, v);
         st.gpu = Some(gpu);
         result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
     })
@@ -2064,11 +2064,11 @@ fn create_texture_yuv420p(
 #[pyo3(signature = (y_id, y, u_id, u, v_id, v))]
 fn write_texture_yuv420p(
     y_id: u64,
-    y: Vec<u8>,
+    y: &[u8],
     u_id: u64,
-    u: Vec<u8>,
+    u: &[u8],
     v_id: u64,
-    v: Vec<u8>,
+    v: &[u8],
 ) -> PyResult<()> {
     with_host_state_mut(|st| {
         let gpu = st
@@ -2077,14 +2077,14 @@ fn write_texture_yuv420p(
             .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
         let result = st
             .arena
-            .write_texture_yuv420p(&gpu.queue, y_id, &y, u_id, &u, v_id, &v);
+            .write_texture_yuv420p(&gpu.queue, y_id, y, u_id, u, v_id, v);
         st.gpu = Some(gpu);
         result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
     })
 }
 
 #[pyfunction]
-fn create_texture_nv12(width: u32, height: u32, y: Vec<u8>, uv: Vec<u8>) -> PyResult<(u64, u64)> {
+fn create_texture_nv12(width: u32, height: u32, y: &[u8], uv: &[u8]) -> PyResult<(u64, u64)> {
     with_host_state_mut(|st| {
         let gpu = st
             .gpu
@@ -2093,7 +2093,7 @@ fn create_texture_nv12(width: u32, height: u32, y: Vec<u8>, uv: Vec<u8>) -> PyRe
         st.arena.set_color_format(gpu.surface_format);
         let result = st
             .arena
-            .create_texture_nv12(&gpu.device, &gpu.queue, width, height, &y, &uv);
+            .create_texture_nv12(&gpu.device, &gpu.queue, width, height, y, uv);
         st.gpu = Some(gpu);
         result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
     })
@@ -2101,7 +2101,7 @@ fn create_texture_nv12(width: u32, height: u32, y: Vec<u8>, uv: Vec<u8>) -> PyRe
 
 #[pyfunction]
 #[pyo3(signature = (y_id, y, uv_id, uv))]
-fn write_texture_nv12(y_id: u64, y: Vec<u8>, uv_id: u64, uv: Vec<u8>) -> PyResult<()> {
+fn write_texture_nv12(y_id: u64, y: &[u8], uv_id: u64, uv: &[u8]) -> PyResult<()> {
     with_host_state_mut(|st| {
         let gpu = st
             .gpu
@@ -2109,7 +2109,7 @@ fn write_texture_nv12(y_id: u64, y: Vec<u8>, uv_id: u64, uv: Vec<u8>) -> PyResul
             .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
         let result = st
             .arena
-            .write_texture_nv12(&gpu.queue, y_id, &y, uv_id, &uv);
+            .write_texture_nv12(&gpu.queue, y_id, y, uv_id, uv);
         st.gpu = Some(gpu);
         result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
     })
@@ -2311,81 +2311,85 @@ fn draw_instances(
 }
 
 #[pyfunction]
-fn end_frame_present() -> PyResult<()> {
-    with_host_state_mut(|st| {
-        let mut gpu = st
-            .gpu
-            .take()
-            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
-        let result = st.arena.end_frame_present(&mut gpu);
-        st.gpu = Some(gpu);
-        st.frames = st.frames.saturating_add(1);
-        match result {
-            Ok(presented_swapchain) => {
-                // Only swapchain presents take product ownership (not RTT-only active_target).
-                if presented_swapchain {
-                    st.last_product_present = true;
-                    st.product_presents = st.product_presents.saturating_add(1);
-                    // Feel AC-F SSOT: record wall-clock inter-product-present gaps
-                    // on the host present path (not probe-thread sleep sampling).
-                    let now = Instant::now();
-                    if let Some(prev) = st.last_product_present_at {
-                        let gap_ms = prev.elapsed().as_secs_f64() * 1000.0;
-                        // Clamp pathological first gaps / long pauses out of ring
-                        // only when > 5s so freeze stalls still remain visible.
-                        if gap_ms.is_finite() && gap_ms >= 0.0 && gap_ms < 5000.0 {
-                            st.inter_present_gaps_ms.push(gap_ms as f32);
-                            const CAP: usize = 512;
-                            if st.inter_present_gaps_ms.len() > CAP {
-                                let drop = st.inter_present_gaps_ms.len() - CAP;
-                                st.inter_present_gaps_ms.drain(0..drop);
+fn end_frame_present(py: Python<'_>) -> PyResult<()> {
+    py.detach(|| {
+        with_host_state_mut(|st| {
+            let mut gpu = st
+                .gpu
+                .take()
+                .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+            let result = st.arena.end_frame_present(&mut gpu);
+            st.gpu = Some(gpu);
+            st.frames = st.frames.saturating_add(1);
+            match result {
+                Ok(presented_swapchain) => {
+                    // Only swapchain presents take product ownership (not RTT-only active_target).
+                    if presented_swapchain {
+                        st.last_product_present = true;
+                        st.product_presents = st.product_presents.saturating_add(1);
+                        // Feel AC-F SSOT: record wall-clock inter-product-present gaps
+                        // on the host present path (not probe-thread sleep sampling).
+                        let now = Instant::now();
+                        if let Some(prev) = st.last_product_present_at {
+                            let gap_ms = prev.elapsed().as_secs_f64() * 1000.0;
+                            // Clamp pathological first gaps / long pauses out of ring
+                            // only when > 5s so freeze stalls still remain visible.
+                            if gap_ms.is_finite() && gap_ms >= 0.0 && gap_ms < 5000.0 {
+                                st.inter_present_gaps_ms.push(gap_ms as f32);
+                                const CAP: usize = 512;
+                                if st.inter_present_gaps_ms.len() > CAP {
+                                    let drop = st.inter_present_gaps_ms.len() - CAP;
+                                    st.inter_present_gaps_ms.drain(0..drop);
+                                }
                             }
                         }
+                        st.last_product_present_at = Some(now);
                     }
-                    st.last_product_present_at = Some(now);
+                    Ok(())
                 }
-                Ok(())
+                Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
             }
-            Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
-        }
+        })
     })
 }
 
 /// Re-present last product cmds (Movie-only / cadence fast path).
 /// Returns True when the swapchain was presented (gap accounting applied).
 #[pyfunction]
-fn re_present_last_product() -> PyResult<bool> {
-    with_host_state_mut(|st| {
-        let mut gpu = st
-            .gpu
-            .take()
-            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
-        let result = st.arena.re_present_last_product(&mut gpu);
-        st.gpu = Some(gpu);
-        st.frames = st.frames.saturating_add(1);
-        match result {
-            Ok(presented_swapchain) => {
-                if presented_swapchain {
-                    st.last_product_present = true;
-                    st.product_presents = st.product_presents.saturating_add(1);
-                    let now = Instant::now();
-                    if let Some(prev) = st.last_product_present_at {
-                        let gap_ms = prev.elapsed().as_secs_f64() * 1000.0;
-                        if gap_ms.is_finite() && gap_ms >= 0.0 && gap_ms < 5000.0 {
-                            st.inter_present_gaps_ms.push(gap_ms as f32);
-                            const CAP: usize = 512;
-                            if st.inter_present_gaps_ms.len() > CAP {
-                                let drop = st.inter_present_gaps_ms.len() - CAP;
-                                st.inter_present_gaps_ms.drain(0..drop);
+fn re_present_last_product(py: Python<'_>) -> PyResult<bool> {
+    py.detach(|| {
+        with_host_state_mut(|st| {
+            let mut gpu = st
+                .gpu
+                .take()
+                .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+            let result = st.arena.re_present_last_product(&mut gpu);
+            st.gpu = Some(gpu);
+            st.frames = st.frames.saturating_add(1);
+            match result {
+                Ok(presented_swapchain) => {
+                    if presented_swapchain {
+                        st.last_product_present = true;
+                        st.product_presents = st.product_presents.saturating_add(1);
+                        let now = Instant::now();
+                        if let Some(prev) = st.last_product_present_at {
+                            let gap_ms = prev.elapsed().as_secs_f64() * 1000.0;
+                            if gap_ms.is_finite() && gap_ms >= 0.0 && gap_ms < 5000.0 {
+                                st.inter_present_gaps_ms.push(gap_ms as f32);
+                                const CAP: usize = 512;
+                                if st.inter_present_gaps_ms.len() > CAP {
+                                    let drop = st.inter_present_gaps_ms.len() - CAP;
+                                    st.inter_present_gaps_ms.drain(0..drop);
+                                }
                             }
                         }
+                        st.last_product_present_at = Some(now);
                     }
-                    st.last_product_present_at = Some(now);
+                    Ok(presented_swapchain)
                 }
-                Ok(presented_swapchain)
+                Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
             }
-            Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
-        }
+        })
     })
 }
 

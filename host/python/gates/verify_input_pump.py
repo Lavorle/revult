@@ -85,8 +85,8 @@ def run():
                 break
             drained += 1
         if i % 10 == 0:
-            log("iter=%d drained=%d ticks=%s" % (i, drained, renpy_host.get_ticks_ms()-t0))  # noqa: UP031
-    log("pre-main inject loop done injects=%d" % injects)  # noqa: UP031
+            log("iter=%d drained=%d ticks=%s" % (i, drained, renpy_host.get_ticks_ms()-t0))
+    log("pre-main inject loop done injects=%d" % injects)
 
     # Enter main briefly - HostStop after short watchdog via request_quit timer
     import threading

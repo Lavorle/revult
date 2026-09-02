@@ -84,7 +84,7 @@ try:
     img2.blit(tex, 0, 0)  # full 1280 tex, reverse scale-down
     root2.blit(img2, 0, 0)
     dest = draw._reverse_dest_size(img2, tex, (VW, VH))
-    lines.append("B dest=%s (expect full %dx%d)" % (dest, VW, VH))  # noqa: UP031
+    lines.append("B dest=%s (expect full %dx%d)" % (dest, VW, VH))
     if dest != (VW, VH):
         ok=False; lines.append("FAIL B dest")
     draw.draw_screen(root2, flip=True)

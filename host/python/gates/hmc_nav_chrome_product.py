@@ -39,7 +39,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_nav_chrome_product.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_nav_chrome_product.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -460,7 +460,7 @@ def run():
             try:
                 if bool(getattr(renpy.store, "main_menu", False)):
                     state["main_menu"] = True
-                    rec("main_menu at tick=%d" % i)  # noqa: UP031
+                    rec("main_menu at tick=%d" % i)
                     break
             except Exception:
                 pass

@@ -9,10 +9,10 @@ from pathlib import Path
 
 def _log(m):
     print("[alive_diag] "+m, flush=True)
-    open("/tmp/hmc_alive_diag.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_alive_diag.log","a").write(m+"\n")
 
 def main():
-    open("/tmp/hmc_alive_diag.log","w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_alive_diag.log","w").write("start\n")
     base = Path("/mnt/nvme1n1p2/revult")
     game = base/"host/playtests/HuangmeiC"
     os.environ["RENPY_HOST_BASE"]=str(base)

@@ -14,7 +14,7 @@ def _log(m):
         sys.__stdout__.write(f"[c2_probe] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/c2_confirm_probe.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/c2_confirm_probe.log","a").write(m+"\n")
 
 def _quit():
     try:
@@ -124,7 +124,7 @@ def _walk_ht(node, budget=None, acc=None):
     try:
         ts=getattr(node,"textures",None)
         if ts:
-            for t in ts: kids.append(t)  # noqa: PERF402
+            for t in ts: kids.append(t)
     except Exception: pass
     for k in kids:
         _walk_ht(k, budget, acc)
@@ -235,12 +235,12 @@ def run():
     def injector():
         for i in range(400):
             try:
-                if bool(getattr(renpy.store,"main_menu",False)):  # noqa: F823
-                    _log("main_menu tick=%d"%i); break  # noqa: UP031
+                if bool(getattr(renpy.store,"main_menu",False)):
+                    _log("main_menu tick=%d"%i); break
             except Exception: pass
             time.sleep(0.05)
         time.sleep(2.0)
-        open("/tmp/c2_confirm_probe.log","w").write("")  # noqa: SIM115
+        open("/tmp/c2_confirm_probe.log","w").write("")
         # Match hmc_nav_confirm_diag sequence
         _log("=== A confirm alone ===")
         _show_confirm(); time.sleep(0.5)

@@ -15,7 +15,7 @@ def _log(m):
         sys.__stdout__.write(f"[dc_spatial] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_dc_spatial.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_spatial.log","a").write(m+"\n")
 
 def _quit():
     try:
@@ -157,7 +157,7 @@ def _walk_bg(node, budget=None, acc=None, depth=0):
     try:
         ts=getattr(node,"textures",None)
         if ts:
-            for t in ts: kids.append(t)  # noqa: PERF402
+            for t in ts: kids.append(t)
     except Exception: pass
     for k in kids: _walk_bg(k, budget, acc, depth+1)
     return acc
@@ -228,7 +228,7 @@ def main():
         if p not in sys.path: sys.path.insert(0,p)
     # install ourselves as gate by writing into gates path and using product path
     # simpler: run like phase0 gate
-    open("/tmp/hmc_dc_spatial.log","w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_spatial.log","w").write("start\n")
     import bootstrap as boot
     for name,call in (
         ("import_renpy",boot.stage_import_renpy),

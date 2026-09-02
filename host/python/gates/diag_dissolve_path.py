@@ -75,7 +75,7 @@ try:
     root.uniforms={"u_renpy_dissolve":0.5}
     root.blit(old,0,0); root.blit(new,0,0)
 
-    rec("pre is_diss=%s complete=%s mesh=%s kids=%d"%(draw._is_dissolve_node(root), draw._dissolve_complete(root), root.mesh, len(root.children)))  # noqa: UP031
+    rec("pre is_diss=%s complete=%s mesh=%s kids=%d"%(draw._is_dissolve_node(root), draw._dissolve_complete(root), root.mesh, len(root.children)))
     draw.draw_screen(root, flip=True)
     rw,rh,rgba=renpy_host.read_game_rt_rgba()
     n=rw*rh; step=max(1,n//20000); rs=gs=bs=cnt=0

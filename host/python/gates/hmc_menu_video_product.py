@@ -306,7 +306,7 @@ try:
         # playable-prefix clock is armed. A single unique sample means freeze.
         uniq_idx = sorted(set(idx_samples)) if idx_samples else []
         log(
-            "frame_index_samples n=%d unique=%d min=%s max=%s"  # noqa: UP031
+            "frame_index_samples n=%d unique=%d min=%s max=%s"
             % (
                 len(idx_samples),
                 len(uniq_idx),
@@ -321,7 +321,7 @@ try:
                 f"(unique={uniq_idx}) — menu video is frozen"
             )
         else:
-            log("PASS frame_index advances during wait (unique=%d)" % len(uniq_idx))  # noqa: UP031
+            log("PASS frame_index advances during wait (unique=%d)" % len(uniq_idx))
 
         ch = rps._channels.get(CH, {})
         frames = ch.get("frames") or []
@@ -331,7 +331,7 @@ try:
             try:
                 pc_n = int(rps.path_cache_frame_count(path))
                 if pc_n > nframes:
-                    log("channel nframes=%d path_cache_frame_count=%d (use path cache)" % (nframes, pc_n))  # noqa: UP031
+                    log("channel nframes=%d path_cache_frame_count=%d (use path cache)" % (nframes, pc_n))
                     nframes = pc_n
             except Exception:
                 pass
@@ -342,16 +342,16 @@ try:
         frame_h = ch.get("frame_h")
         media_path = ch.get("media_path")
         log(
-            "nframes=%d decode_fps=%.3f decode=%sx%s layout_meta=%sx%s media_path=%s"  # noqa: UP031
+            "nframes=%d decode_fps=%.3f decode=%sx%s layout_meta=%sx%s media_path=%s"
             % (nframes, decode_fps, decode_w, decode_h, frame_w, frame_h, media_path)
         )
 
         # --- AC3: frame_count >= 360 ---
         if nframes < 360:
             ok = False
-            log("FAIL frame_count=%d < 360 (AC3 temporal parity)" % nframes)  # noqa: UP031
+            log("FAIL frame_count=%d < 360 (AC3 temporal parity)" % nframes)
         else:
-            log("PASS frame_count=%d >= 360" % nframes)  # noqa: UP031
+            log("PASS frame_count=%d >= 360" % nframes)
 
         # --- decode_fps >= 29 ---
         if decode_fps < 29.0:
@@ -428,7 +428,7 @@ try:
             if expect_layout:
                 if size != (layout_w, layout_h):
                     ok = False
-                    log("FAIL layout size %s != (%d, %d) (present=1a)" % (size, layout_w, layout_h))  # noqa: UP031
+                    log("FAIL layout size %s != (%d, %d) (present=1a)" % (size, layout_w, layout_h))
                 else:
                     log(f"PASS layout size {size} (present=1a)")
             else:
@@ -436,13 +436,13 @@ try:
                 # operator forced layout without 1a. Accept decode OR layout.
                 if size == (decode_w_e, decode_h_e) or size == (layout_w, layout_h):
                     log(
-                        "PASS present size %s (present=1b decode=%dx%d layout=%dx%d)"  # noqa: UP031
+                        "PASS present size %s (present=1b decode=%dx%d layout=%dx%d)"
                         % (size, decode_w_e, decode_h_e, layout_w, layout_h)
                     )
                 else:
                     ok = False
                     log(
-                        "FAIL present size %s not decode (%d,%d) or layout (%d,%d)"  # noqa: UP031
+                        "FAIL present size %s not decode (%d,%d) or layout (%d,%d)"
                         % (size, decode_w_e, decode_h_e, layout_w, layout_h)
                     )
 
@@ -467,17 +467,17 @@ try:
             if _has_helper("empty_movie_presents"):
                 try:
                     empty_presents = int(rps.empty_movie_presents())
-                    log("empty_movie_presents=%d" % empty_presents)  # noqa: UP031
+                    log("empty_movie_presents=%d" % empty_presents)
                 except Exception as e:
                     warn(f"empty_movie_presents raised: {e}")
             elif "empty_movie_presents" in ch0:
                 empty_presents = int(ch0.get("empty_movie_presents") or 0)
-                log("ch.empty_movie_presents=%d" % empty_presents)  # noqa: UP031
+                log("ch.empty_movie_presents=%d" % empty_presents)
             else:
                 # Best available: video_ready True + read non-None + non-black.
                 empty_presents = 0 if (ready and surf is not None and (r + g + b) >= 5.0) else 1
                 log(
-                    "empty_movie_presents inferred=%d "  # noqa: UP031
+                    "empty_movie_presents inferred=%d "
                     "(no counter helper; ready+non-None+non-black)"
                     % empty_presents
                 )
@@ -502,7 +502,7 @@ try:
             try:
                 pc_n = int(rps.path_cache_frame_count(path))
                 path_cache_hit = pc_n >= 360
-                log("path_cache_frame_count(before stop)=%d" % pc_n)  # noqa: UP031
+                log("path_cache_frame_count(before stop)=%d" % pc_n)
             except Exception as e:
                 warn(f"path_cache_frame_count raised: {e}")
 
@@ -512,7 +512,7 @@ try:
         # (Option B′) should retain by path if implemented.
         post_stop_ch = rps._channels.get(CH, {})
         post_stop_frames = post_stop_ch.get("frames") or []
-        log("after_stop channel_nframes=%d" % len(post_stop_frames))  # noqa: UP031
+        log("after_stop channel_nframes=%d" % len(post_stop_frames))
 
         survived = False
         if _has_helper("path_cache_has_frames"):
@@ -525,7 +525,7 @@ try:
             try:
                 pc_n2 = int(rps.path_cache_frame_count(path))
                 survived = pc_n2 >= max(1, frames_before_stop)
-                log("path_cache_frame_count(after stop)=%d" % pc_n2)  # noqa: UP031
+                log("path_cache_frame_count(after stop)=%d" % pc_n2)
             except Exception as e:
                 warn(f"path_cache_frame_count after stop raised: {e}")
         else:
@@ -542,20 +542,20 @@ try:
         t_replay = time.monotonic() - t_replay0
         ch2 = rps._channels.get(CH, {})
         nframes2 = len(ch2.get("frames") or [])
-        log("second_play wall_s=%.3f nframes=%d" % (t_replay, nframes2))  # noqa: UP031
+        log("second_play wall_s=%.3f nframes=%d" % (t_replay, nframes2))
 
         if _has_helper("path_cache_has_frames") or _has_helper("path_cache_frame_count"):
             if not survived and nframes2 < 360:
                 ok = False
                 log(
-                    "FAIL path cache did not survive stop→play "  # noqa: UP031
+                    "FAIL path cache did not survive stop→play "
                     "(survived=%s nframes2=%d)" % (survived, nframes2)
                 )
             elif not survived and nframes2 >= 360:
                 # Frames re-decoded; cache miss.
                 ok = False
                 log(
-                    "FAIL path cache miss on stop→play "  # noqa: UP031
+                    "FAIL path cache miss on stop→play "
                     "(re-decoded nframes2=%d wall=%.3f)" % (nframes2, t_replay)
                 )
             else:
@@ -565,7 +565,7 @@ try:
             # first play did real ffmpeg work. Without helpers, only WARN.
             if nframes2 >= 360 and t_replay < max(0.05, t_play * 0.25):
                 log(
-                    "PASS stop→play likely cache hit "  # noqa: UP031
+                    "PASS stop→play likely cache hit "
                     "(nframes2=%d wall=%.3f << first %.3f)" % (nframes2, t_replay, t_play)
                 )
             elif nframes2 >= 360:
@@ -576,7 +576,7 @@ try:
             else:
                 ok = False
                 log(
-                    "FAIL second play nframes=%d < 360 after stop→play" % nframes2  # noqa: UP031
+                    "FAIL second play nframes=%d < 360 after stop→play" % nframes2
                 )
 
         # Second play first index still near 0 (clock re-arms on play; allow a
@@ -604,7 +604,7 @@ except Exception as e:
     log(traceback.format_exc())
 
 if warns:
-    log("warn_count=%d" % len(warns))  # noqa: UP031
+    log("warn_count=%d" % len(warns))
 lines.append(f"ok={ok}")
 out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 # Companion JSON for runners that only parse .json (txt remains authoritative).

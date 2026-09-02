@@ -21,7 +21,7 @@ def _log(m):
         sys.__stdout__.write(f"[hmc_p0] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_phase0_class_labels.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_phase0_class_labels.log","a").write(m+"\n")
 
 def _quit():
     try:
@@ -348,9 +348,8 @@ def main():
     for p in (str(base/"host"/"python"/"gates"), str(base/"host"/"python")):
         if p not in sys.path:
             sys.path.insert(0,p)
-    open("/tmp/hmc_phase0_class_labels.log","w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_phase0_class_labels.log","w").write("start\n")
     import bootstrap as boot
-    import renpy_host  # noqa: F401
     for name,call in (
         ("import_renpy",boot.stage_import_renpy),
         ("import_all",boot.stage_import_all),

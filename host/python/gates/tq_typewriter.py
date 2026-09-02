@@ -307,7 +307,7 @@ def main():
             samples.append(m)
             _log(
                 lines,
-                "st_frac=%.2f expected_w=%d ink_cols=%d coverage=%.3f "  # noqa: UP031
+                "st_frac=%.2f expected_w=%d ink_cols=%d coverage=%.3f "
                 "L/M/R=%d/%d/%d max_ink_x=%d empty=%s"
                 % (
                     frac,
@@ -397,7 +397,7 @@ def main():
             )
             _log(
                 lines,
-                "identity_reverse mid_w=%d coverage=%.3f max_ink_x=%d stretch_ok=%s"  # noqa: UP031
+                "identity_reverse mid_w=%d coverage=%.3f max_ink_x=%d stretch_ok=%s"
                 % (mid_w, m2["coverage"], m2["max_ink_x"], stretch_ok),
             )
         except Exception as e:

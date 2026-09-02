@@ -15,7 +15,7 @@ def _log(m):
         sys.__stdout__.write(f"[hmc_confirm_diag] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_nav_confirm_diag.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_nav_confirm_diag.log","a").write(m+"\n")
 
 def _quit():
     try:
@@ -186,7 +186,7 @@ def run():
         for i in range(400):
             try:
                 if bool(getattr(renpy.store,"main_menu",False)):
-                    _log("main_menu tick=%d"%i); break  # noqa: UP031
+                    _log("main_menu tick=%d"%i); break
             except Exception: pass
             time.sleep(0.05)
         time.sleep(2.0)

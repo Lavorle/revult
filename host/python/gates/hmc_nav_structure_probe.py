@@ -47,7 +47,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_nav_structure_probe.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_nav_structure_probe.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -806,38 +806,38 @@ def _structure_ok(name, struct, rt):
     if n_tex < fl["tex"]:
         if rt_structure_rescue:
             reasons.append(
-                "SOFT host_tex<%d (got host=%d int=%d) rescued_by_rt_palette"  # noqa: UP031
+                "SOFT host_tex<%d (got host=%d int=%d) rescued_by_rt_palette"
                 % (fl["tex"], n_host, n_int)
             )
         else:
             ok = False
             reasons.append(
-                "host_tex<%d (got host=%d int=%d total=%d)"  # noqa: UP031
+                "host_tex<%d (got host=%d int=%d total=%d)"
                 % (fl["tex"], n_host, n_int, n_tex)
             )
     if n_handles < fl["handles"]:
         if rt_structure_rescue:
             reasons.append(
-                "SOFT unique_handles<%d (got %d) rescued_by_rt_palette"  # noqa: UP031
+                "SOFT unique_handles<%d (got %d) rescued_by_rt_palette"
                 % (fl["handles"], n_handles)
             )
         else:
             ok = False
-            reasons.append("unique_handles<%d (got %d)" % (fl["handles"], n_handles))  # noqa: UP031
+            reasons.append("unique_handles<%d (got %d)" % (fl["handles"], n_handles))
     if fl["rev_or_mp"] and (n_rev + n_mp) < fl["rev_or_mp"]:
         ok = False
-        reasons.append("no_frame_multipiece_or_reverse (rev=%d mp=%d)" % (n_rev, n_mp))  # noqa: UP031
+        reasons.append("no_frame_multipiece_or_reverse (rev=%d mp=%d)" % (n_rev, n_mp))
     if fl["text"] and n_text < fl["text"]:
         # Soft fail for text — product text may be atlas-baked differently; mark soft
-        reasons.append("SOFT text_ish<%d (got %d)" % (fl["text"], n_text))  # noqa: UP031
+        reasons.append("SOFT text_ish<%d (got %d)" % (fl["text"], n_text))
     if fl["bar"] and n_bar < fl["bar"]:
-        reasons.append("SOFT bar_ish<%d (got %d)" % (fl["bar"], n_bar))  # noqa: UP031
+        reasons.append("SOFT bar_ish<%d (got %d)" % (fl["bar"], n_bar))
 
     # Prefs white-pill heuristic: high white_frac + low reverse pieces → hollow
     if name == "preferences" and rt.get("white_frac", 0) > 0.35 and n_rev < 2:
         ok = False
         reasons.append(
-            "white_pill_suspect white_frac=%.3f rev=%d" % (rt.get("white_frac", 0), n_rev)  # noqa: UP031
+            "white_pill_suspect white_frac=%.3f rev=%d" % (rt.get("white_frac", 0), n_rev)
         )
 
     soft_only = [r for r in reasons if r.startswith("SOFT ")]
@@ -942,7 +942,7 @@ def run():
             try:
                 if bool(getattr(renpy.store, "main_menu", False)):
                     state["main_menu"] = True
-                    rec("main_menu at tick=%d" % i)  # noqa: UP031
+                    rec("main_menu at tick=%d" % i)
                     break
             except Exception:
                 pass
@@ -1178,7 +1178,7 @@ def run():
                 entry["force_soft_fail"] = []
 
                 rec(
-                    "PRODUCT struct host_tex=%d handles=%d rev=%d mp=%d text_ish=%d bar_ish=%d mesh=%d src=%s"  # noqa: UP031
+                    "PRODUCT struct host_tex=%d handles=%d rev=%d mp=%d text_ish=%d bar_ish=%d mesh=%d src=%s"
                     % (
                         int(struct_summary.get("n_host_tex") or 0),
                         int(struct_summary.get("n_unique_handles") or 0),
@@ -1298,7 +1298,7 @@ def run():
         # detail reverse samples (force tree — richest multipiece dump)
         for i, rp in enumerate((st.get("rev_sample") or [])[:4]):
             body.append(
-                "screen.%s.rev[%d] ox=%.0f oy=%.0f size=%s xdx=%.3f ydy=%.3f"  # noqa: UP031
+                "screen.%s.rev[%d] ox=%.0f oy=%.0f size=%s xdx=%.3f ydy=%.3f"
                 % (
                     r["name"],
                     i,

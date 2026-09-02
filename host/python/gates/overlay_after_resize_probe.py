@@ -63,7 +63,7 @@ def work():
             return w,h, (rs/n, gs/n, bs/n) if n else (0,0,0)
 
         w0,h0,m0 = left_stats()
-        result["notes"].append("baseline size=%dx%d left_mean=%s" % (w0,h0,tuple(round(x,1) for x in m0)))  # noqa: UP031
+        result["notes"].append("baseline size=%dx%d left_mean=%s" % (w0,h0,tuple(round(x,1) for x in m0)))
         # enlarge
         renpy_host.request_window_size(1920, 1080)
         for _ in range(30):
@@ -80,7 +80,7 @@ def work():
             renpy_host.pump_once(16)
             time.sleep(0.02)
         w1,h1,m1 = left_stats()
-        result["notes"].append("after size=%dx%d left_mean=%s" % (w1,h1,tuple(round(x,1) for x in m1)))  # noqa: UP031
+        result["notes"].append("after size=%dx%d left_mean=%s" % (w1,h1,tuple(round(x,1) for x in m1)))
         # Overlay dark strip is near-black-ish (mean low); scenic is green/blue higher
         # baseline left should be dark; after should still be dark not scenic green
         dark0 = (m0[0]+m0[1]+m0[2])/3 < 80

@@ -171,14 +171,14 @@ try:
             t0 = renpy_host.get_ticks_ms()
             renpy_host.wait_until(t0 + wait_ms)
             pos = float(rps.get_pos(CH))
-            log("pos_after_wait=%.4f wait_ms=%d" % (pos, wait_ms))  # noqa: UP031
+            log("pos_after_wait=%.4f wait_ms=%d" % (pos, wait_ms))
             surf2 = rps.read_video(CH)
             if surf2 is not None:
                 fp2 = _fingerprint(surf2)
                 ch = rps._channels.get(CH, {})
                 nframes = len(ch.get("frames") or [])
                 idx1 = ch.get("frame_index")
-                log("nframes=%d frame_index=%s→%s" % (nframes, idx0, idx1))  # noqa: UP031
+                log("nframes=%d frame_index=%s→%s" % (nframes, idx0, idx1))
                 if nframes >= 2:
                     # AC-M2b optional: prefer change; if single decode still non-black OK
                     if fp1 != fp2 or (idx0 is not None and idx1 is not None and idx0 != idx1):
@@ -197,18 +197,6 @@ try:
         try:
             import types as _types
 
-            import renpy.display.matrix as _matrix  # noqa: F401
-            import renpy.display.render as _render  # noqa: F401
-            import renpy.style as _style  # noqa: F401
-
-            import renpy.audio.music as _music  # noqa: F401
-            import renpy.config as _config  # noqa: F401
-            import renpy.display.displayable as _displayable  # noqa: F401
-            import renpy.easy as _easy  # noqa: F401
-            import renpy.game as _game  # noqa: F401
-            import renpy.loader as _loader  # noqa: F401
-            import renpy.object as _object  # noqa: F401
-            import renpy.revertable as _revertable  # noqa: F401
             from renpy.display.video import resize_movie
 
             # Minimal product-like preferences for loader calls.

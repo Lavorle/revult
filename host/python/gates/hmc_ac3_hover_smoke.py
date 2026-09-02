@@ -49,7 +49,7 @@ def _log(msg):
     ):
         try:
             Path(p).parent.mkdir(parents=True, exist_ok=True)
-            open(p, "a").write(msg + "\n")  # noqa: SIM115
+            open(p, "a").write(msg + "\n")
         except Exception:
             pass
 
@@ -536,13 +536,13 @@ def _judge_chrome(sample, walk, label, baseline=None):
     dead = int((walk or {}).get("dead") or 0)
     n_dock = len(dock_nodes)
     n_dead_dock = sum(1 for d in dock_nodes if not d.get("alive"))
-    notes.append("dock_tex=%d dead_dock=%d dead_all=%d" % (n_dock, n_dead_dock, dead))  # noqa: UP031
+    notes.append("dock_tex=%d dead_dock=%d dead_all=%d" % (n_dock, n_dead_dock, dead))
 
     # Dead dock handles only fail when RT also shows wipe (avoids false red
     # when walk sees one-frame stale leaves under hover restyle).
     if n_dead_dock >= 4 and dock_nc < 0.40:
         ok = False
-        reasons.append("dock_dead_handles=%d/%d with weak RT" % (n_dead_dock, n_dock))  # noqa: UP031
+        reasons.append("dock_dead_handles=%d/%d with weak RT" % (n_dead_dock, n_dock))
 
     if baseline is not None:
         b_dock = float(((baseline.get("dock") or {}).get("nonclear_frac")) or 0.0)
@@ -574,8 +574,8 @@ def run():
     Path("/tmp/huangmeic-ab").mkdir(parents=True, exist_ok=True)
     # truncate log
     try:
-        open("/tmp/huangmeic-ab/ac3-hover-smoke.log", "w").write("")  # noqa: SIM115
-        open("/tmp/hmc_ac3_hover_smoke.log", "w").write("")  # noqa: SIM115
+        open("/tmp/huangmeic-ab/ac3-hover-smoke.log", "w").write("")
+        open("/tmp/hmc_ac3_hover_smoke.log", "w").write("")
     except Exception:
         pass
 
@@ -676,7 +676,7 @@ def run():
             try:
                 if bool(getattr(renpy.store, "main_menu", False)):
                     state["main_menu"] = True
-                    rec("main_menu at tick=%d" % i)  # noqa: UP031
+                    rec("main_menu at tick=%d" % i)
                     break
             except Exception:
                 pass
@@ -706,7 +706,7 @@ def run():
             sample0["walk"] = walk0
             state["baseline"] = sample0
             rec(
-                "BASELINE ok=%s w=%s h=%s dock_nc=%.3f movie_nc=%.3f logo_nc=%.3f "  # noqa: UP031
+                "BASELINE ok=%s w=%s h=%s dock_nc=%.3f movie_nc=%.3f logo_nc=%.3f "
                 "arena=%s dock_tex=%d movie_like=%d logo_like=%d dead=%d reasons=%s"
                 % (
                     ok0,
@@ -738,14 +738,14 @@ def run():
         rec("FOCUS_LIST raw_n={}".format(len(fl.get("items") or [])))
         for it in (fl.get("items") or [])[:12]:
             rec(f"  focus {it}")
-        rec("TARGETS n=%d" % len(targets))  # noqa: UP031
+        rec("TARGETS n=%d" % len(targets))
         for t in targets:
             rec("  target name={} action={} cx={:.1f} cy={:.1f} via={}".format(*t))
 
         # --- Hover each dock button 3× ---
         for name, action, cx, cy, via in targets:
             for rep in range(3):
-                label = "hover_%s_%d" % (name, rep + 1)  # noqa: UP031
+                label = "hover_%s_%d" % (name, rep + 1)
                 rec("-" * 60)
                 rec(f"PHASE {label} action={action} via={via}")
                 # idle off-dock first (center screen) so transition is real
@@ -784,7 +784,7 @@ def run():
                         sample, walk, label, baseline=state.get("baseline")
                     )
                     rec(
-                        "%s ok=%s dock_nc=%.3f movie_nc=%.3f logo_nc=%.3f "  # noqa: UP031
+                        "%s ok=%s dock_nc=%.3f movie_nc=%.3f logo_nc=%.3f "
                         "arena=%s dock_tex=%d dead=%d reasons=%s"
                         % (
                             label,
@@ -830,7 +830,7 @@ def run():
                     sample, walk, label, baseline=state.get("baseline")
                 )
                 rec(
-                    "%s ok=%s dock_nc=%.3f movie_nc=%.3f dock_tex=%d reasons=%s"  # noqa: UP031
+                    "%s ok=%s dock_nc=%.3f movie_nc=%.3f dock_tex=%d reasons=%s"
                     % (
                         label,
                         ok,
@@ -873,7 +873,7 @@ def run():
                 except Exception:
                     mm = "?"
                 rec(
-                    "focus_%s ok=%s main_menu=%s dock_nc=%.3f movie_nc=%.3f dock_tex=%d reasons=%s"  # noqa: UP031
+                    "focus_%s ok=%s main_menu=%s dock_nc=%.3f movie_nc=%.3f dock_tex=%d reasons=%s"
                     % (
                         name,
                         ok,
@@ -914,7 +914,7 @@ def run():
                 sample, walk, "final", baseline=state.get("baseline")
             )
             rec(
-                "FINAL ok=%s dock_nc=%.3f movie_nc=%.3f logo_nc=%.3f arena=%s "  # noqa: UP031
+                "FINAL ok=%s dock_nc=%.3f movie_nc=%.3f logo_nc=%.3f arena=%s "
                 "dock_tex=%d dead=%d reasons=%s"
                 % (
                     ok,
@@ -944,7 +944,7 @@ def run():
         )
         rec("=" * 72)
         rec(
-            "SUMMARY pass=%s checks=%d failures=%d error=%s"  # noqa: UP031
+            "SUMMARY pass=%s checks=%d failures=%d error=%s"
             % (state["pass"], n_chk, n_fail, state.get("error"))
         )
         for lab, why in state["failures"]:

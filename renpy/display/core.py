@@ -1,3 +1,4 @@
+# SINGLE-TREE probe — collapsed host_build branches to True
 # Copyright 2004-2026 Tom Rothamel <pytom@bishoujo.us>
 #
 # Permission is hereby granted, free of charge, to any person
@@ -1093,7 +1094,7 @@ class Interface:
                 pass
             except Exception:
                 # Host/searchpath races or missing icon must not abort Interface.start.
-                if getattr(renpy, "host_build", False):
+                if True:
                     pass
                 else:
                     raise
@@ -1130,7 +1131,7 @@ class Interface:
         renpy.config.renderer = renderer
 
         # Host MVP: only WgpuDraw (plan dual-tree / no GL coexistence on host).
-        if getattr(renpy, "host_build", False):
+        if True:
             renderers = ["wgpu"]
             renderer = "wgpu"
             renpy.config.renderer = "wgpu"
@@ -1149,11 +1150,11 @@ class Interface:
             renderer = "auto"
 
         # Software renderer is the last hope for PC .
-        if not (renpy.android or renpy.ios or renpy.emscripten or getattr(renpy, "host_build", False)):
+        if not (renpy.android or renpy.ios or renpy.emscripten or True):
             renderers = renderers + ["sw"]
 
         if renderer in renderers:
-            if getattr(renpy, "host_build", False):
+            if True:
                 renderers = [renderer]
             else:
                 renderers = [renderer, "sw"]
@@ -1161,7 +1162,7 @@ class Interface:
         if renderer == "sw":
             renderers = ["sw"]
 
-        if self.safe_mode and not getattr(renpy, "host_build", False):
+        if self.safe_mode and not True:
             renderers = ["sw"]
 
         draw_objects = {}
@@ -1183,7 +1184,7 @@ class Interface:
 
                 return False
 
-        if getattr(renpy, "host_build", False):
+        if True:
             make_draw("wgpu", "renpy.wgpu.draw", "WgpuDraw")
         else:
             make_draw("gl2", "renpy.gl2.gl2draw", "GL2Draw", "gl2")
@@ -1246,7 +1247,7 @@ class Interface:
         # would keep dead HostTexture handles if keep_const_size=True, so after
         # maximize the left overlay draws with invalid IDs and "disappears".
         # Always fully clear im.cache on host resize so textures re-upload.
-        if getattr(renpy, "host_build", False):
+        if True:
             self.kill_textures(keep_const_size=False)
         else:
             self.kill_textures(keep_const_size=not self.display_reset)
@@ -1368,7 +1369,7 @@ class Interface:
 
     def _try_host_re_present_fast(self):
         """Movie/static re-present without full render_screen (WP3 residual)."""
-        if not getattr(renpy, "host_build", False):
+        if not True:
             return False
         try:
             import os as _os
@@ -1586,7 +1587,7 @@ class Interface:
         # without the interact_core process_redraws step. Without it, MultiBox
         # that SL reused via _clear()+re-add still hits a cache-killed or stale
         # Render and drops preferences_layout children (确认设置1/2 black panel).
-        if getattr(renpy, "host_build", False):
+        if True:
             try:
                 renpy.display.render.process_redraws()
             except Exception:
@@ -1963,7 +1964,7 @@ class Interface:
 
                 emscripten.sleep(1)
 
-        elif getattr(renpy, "host_build", False):
+        elif True:
             # Mechanism 1 (plan §4.1.1): never block on pygame.event.wait.
             # Nested host.wait_until pumps winit and returns to this frame.
             # Watchdog/request_quit may set should_exit while PERIODIC events keep
@@ -3170,7 +3171,7 @@ class Interface:
                     # Host residual H3/feel: PERIODIC keeps the host queue non-empty,
                     # so stock peek(ALL_EVENTS) starves product presents during prefs
                     # page switches (400ms+ first_interactive with no draw STALL).
-                    if getattr(renpy, 'host_build', False):
+                    if True:
                         _do_draw = self.force_redraw or renpy.display.draw.should_redraw(
                             needs_redraw, first_pass, can_block
                         )
@@ -3192,7 +3193,7 @@ class Interface:
                         # while Movie keeps needs_redraw hot for present cadence.
                         _fast = False
                         if (
-                            getattr(renpy, "host_build", False)
+                            True
                             and (not first_pass)
                             and (not _force)
                         ):
@@ -3300,7 +3301,7 @@ class Interface:
 
                 # host_build: stamp any still-None transition_time once interact_time
                 # is known (first_pass may have missed mid-interact set_transition).
-                if getattr(renpy, "host_build", False) and self.interact_time is not None:
+                if True and self.interact_time is not None:
                     try:
                         for k, v in list(self.transition_time.items()):
                             if v is None:
@@ -3408,7 +3409,7 @@ class Interface:
                 # interact loop is often on the busy event_poll path (needs_redraw).
                 # event_wait already checks should_exit; poll must too or the
                 # product freezes on the last frame until the outer process is killed.
-                if getattr(renpy, "host_build", False):
+                if True:
                     try:
                         import renpy_host  # type: ignore
 

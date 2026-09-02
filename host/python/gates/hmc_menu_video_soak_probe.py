@@ -40,7 +40,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_menu_video_soak_probe.log", "a").write(str(msg) + chr(10))  # noqa: SIM115
+        open("/tmp/hmc_menu_video_soak_probe.log", "a").write(str(msg) + chr(10))
     except Exception:
         pass
 
@@ -569,7 +569,7 @@ def probe():
     hints = _rank_h(early, late)
     report["h_rank_hints"] = hints
     for i, h in enumerate(hints, 1):
-        lines.append("H%d_rank=%s severity=%s evidence=%s" % (i, h["id"], h["severity_hint"], h["evidence"]))  # noqa: UP031
+        lines.append("H%d_rank=%s severity=%s evidence=%s" % (i, h["id"], h["severity_hint"], h["evidence"]))
         _log("H rank {} {} {}".format(h["id"], h["severity_hint"], h["evidence"]))
 
     report["ok"] = True
@@ -588,7 +588,7 @@ def probe():
 
 
 def main():
-    open("/tmp/hmc_menu_video_soak_probe.log", "w").write("start" + chr(10))  # noqa: SIM115
+    open("/tmp/hmc_menu_video_soak_probe.log", "w").write("start" + chr(10))
     base = _base()
     game = os.environ.get("RENPY_HOST_GAME") or str(base / "host" / "playtests" / "HuangmeiC")
     os.environ["RENPY_HOST_BASE"] = str(base)

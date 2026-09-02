@@ -22,7 +22,7 @@ def _log(m):
         sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_dc_mesh_thrash.log", "a").write(m + "\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_mesh_thrash.log", "a").write(m + "\n")
 
 
 def _quit():
@@ -35,7 +35,7 @@ def _quit():
 
 
 def main():
-    open("/tmp/hmc_dc_mesh_thrash.log", "w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_mesh_thrash.log", "w").write("start\n")
     base = _base()
     out = base / "host" / "target" / "gate-hmc_dc_mesh_thrash.txt"
     lines = []
@@ -85,7 +85,7 @@ def main():
         def _spy_end():
             n_def = len(getattr(draw, "_mesh_deferred_destroy", []) or [])
             n_cache = len(draw._mesh_cache)
-            lines.append("pre_present deferred=%d mesh_cache=%d" % (n_def, n_cache))  # noqa: UP031
+            lines.append("pre_present deferred=%d mesh_cache=%d" % (n_def, n_cache))
             _log(lines[-1])
             return orig_end()
 
@@ -101,7 +101,7 @@ def main():
         o = (y * rw + x) * 4
         r, g, b = rt[o], rt[o + 1], rt[o + 2]
         line = (
-            "panel_px=(%d,%d,%d) mesh_cache=%d deferred_after=%d cap=%d"  # noqa: UP031
+            "panel_px=(%d,%d,%d) mesh_cache=%d deferred_after=%d cap=%d"
             % (
                 r,
                 g,

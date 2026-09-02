@@ -59,9 +59,9 @@ def worker():
             renpy_host.pump_once(16)
             time.sleep(0.03)
         w0, h0, rows0 = sample_profile()
-        lines.append("before size=%dx%d" % (w0, h0))  # noqa: UP031
+        lines.append("before size=%dx%d" % (w0, h0))
         for y, m in rows0:
-            lines.append("  y=%d mean=%s" % (y, tuple(round(v,1) for v in m)))  # noqa: UP031
+            lines.append("  y=%d mean=%s" % (y, tuple(round(v,1) for v in m)))
         dark0 = all(sum(m)/3 < 100 for _, m in rows0)
         lines.append(f"before_dark_all={dark0}")
 
@@ -81,9 +81,9 @@ def worker():
             time.sleep(0.02)
 
         w1, h1, rows1 = sample_profile()
-        lines.append("after size=%dx%d" % (w1, h1))  # noqa: UP031
+        lines.append("after size=%dx%d" % (w1, h1))
         for y, m in rows1:
-            lines.append("  y=%d mean=%s" % (y, tuple(round(v,1) for v in m)))  # noqa: UP031
+            lines.append("  y=%d mean=%s" % (y, tuple(round(v,1) for v in m)))
         dark1 = all(sum(m)/3 < 110 for _, m in rows1)
         lines.append(f"after_dark_all={dark1}")
         size_ok = (w1, h1) != (w0, h0)

@@ -20,7 +20,7 @@ def _log(m):
         sys.__stdout__.write(f"[dc_st] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_dc_single_thread.log", "a").write(m + "\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_single_thread.log", "a").write(m + "\n")
 
 def _quit():
     try:
@@ -347,7 +347,7 @@ def main():
     for p in (str(base / "host" / "python" / "gates"), str(base / "host" / "python")):
         if p not in sys.path:
             sys.path.insert(0, p)
-    open("/tmp/hmc_dc_single_thread.log", "w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_dc_single_thread.log", "w").write("start\n")
     import bootstrap as boot
     for name, call in (
         ("import_renpy", boot.stage_import_renpy),

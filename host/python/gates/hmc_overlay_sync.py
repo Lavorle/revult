@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone regression gate for HuangmeiC host-overlay synchronization."""  # noqa: EXE001
+"""Standalone regression gate for HuangmeiC host-overlay synchronization."""
 
 from __future__ import annotations
 

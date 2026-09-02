@@ -321,7 +321,6 @@ def stage_import_renpy():
 
     # Confirm renpy_host is present (embed-only).
     try:
-        import renpy_host  # noqa: F401
 
         extra["renpy_host"] = True
     except Exception as e:

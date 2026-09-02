@@ -36,7 +36,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_prefs_hover_thrash.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_prefs_hover_thrash.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -461,7 +461,7 @@ def run():
                         _force_product_redraw()
                     rw, rh, rt, meta = _read_rt()
                     if not rw or not rt:
-                        rec("empty rt cycle=%d pt=%d" % (cycle, i))  # noqa: UP031
+                        rec("empty rt cycle=%d pt=%d" % (cycle, i))
                         continue
                     s = _sample_regions(rt, rw, rh)
                     br, info = _is_broken(s)
@@ -470,7 +470,7 @@ def run():
                         page_broken += 1
                         state["broken"] += 1
                         rec(
-                            "BROKEN cycle=%d pt=%d (%d,%d) how=%s info=%s panel=%s"  # noqa: UP031
+                            "BROKEN cycle=%d pt=%d (%d,%d) how=%s info=%s panel=%s"
                             % (
                                 cycle,
                                 i,
@@ -493,13 +493,13 @@ def run():
                             page_broken += 1
                             state["broken"] += 1
                             rec(
-                                "BROKEN unhover cycle=%d pt=%d info=%s"  # noqa: UP031
+                                "BROKEN unhover cycle=%d pt=%d info=%s"
                                 % (cycle, i, info2)
                             )
                 # mid-cycle log
                 if cycle % 2 == 0:
                     rec(
-                        "progress kind=%s cycle=%d page_broken=%d total_broken=%d samples=%d"  # noqa: UP031
+                        "progress kind=%s cycle=%d page_broken=%d total_broken=%d samples=%d"
                         % (kind, cycle, page_broken, state["broken"], state["samples"])
                     )
 
@@ -508,7 +508,7 @@ def run():
                 rec(f"PASS page {kind}")
             else:
                 state["pages_fail"].append(kind)
-                rec("FAIL page %s broken_frames=%d" % (kind, page_broken))  # noqa: UP031
+                rec("FAIL page %s broken_frames=%d" % (kind, page_broken))
 
         state["phase"] = "done"
         ok = (
@@ -517,7 +517,7 @@ def run():
             and len(state["pages_fail"]) == 0
         )
         rec(
-            "summary pages_ok=%s pages_fail=%s broken=%d samples=%d ok=%s"  # noqa: UP031
+            "summary pages_ok=%s pages_fail=%s broken=%d samples=%d ok=%s"
             % (
                 state["pages_ok"],
                 state["pages_fail"],
@@ -529,8 +529,8 @@ def run():
         report = [
             "gate=hmc_prefs_hover_thrash",
             f"ok={ok}",
-            "broken=%d" % state["broken"],  # noqa: UP031
-            "samples=%d" % state["samples"],  # noqa: UP031
+            "broken=%d" % state["broken"],
+            "samples=%d" % state["samples"],
             "pages_ok={}".format(",".join(state["pages_ok"])),
             "pages_fail={}".format(",".join(state["pages_fail"])),
             "phase={}".format(state["phase"]),
@@ -551,7 +551,7 @@ def run():
                 # probe may not have finished
                 try:
                     out.write_text(
-                        "ok=False\nphase=%s\nbroken=%d\n"  # noqa: UP031
+                        "ok=False\nphase=%s\nbroken=%d\n"
                         % (state["phase"], state["broken"])
                     )
                 except Exception:

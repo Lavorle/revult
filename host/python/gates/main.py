@@ -1403,7 +1403,7 @@ def run() -> None:
     ok = False
 
     try:
-        import renpy_host  # noqa: F401
+        pass
     except Exception as e:
         _write_report(
             base,

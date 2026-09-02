@@ -182,7 +182,7 @@ try:
     parent.children = [(ht, 0, 0)]
 
     dw, dh = draw._reverse_dest_size(parent, ht, (1920, 1080))
-    log("reverse_dest=%dx%d expect=1920x1080" % (dw, dh))  # noqa: UP031
+    log("reverse_dest=%dx%d expect=1920x1080" % (dw, dh))
     if dw != 1920 or dh != 1080:
         ok = False
         log("FAIL reverse_dest full 2x under 0.5 not parent box")
@@ -194,7 +194,7 @@ try:
     dw2, dh2 = draw._reverse_dest_size(parent, ht_part, (1920, 1080))
     # child size for partial HostTexture is (w,h)=(400,48) via _node_size path —
     # if resolution fails, may fall back to parent; assert not balloon to full if partial known.
-    log("partial reverse_dest=%dx%d (typewriter must not balloon)" % (dw2, dh2))  # noqa: UP031
+    log("partial reverse_dest=%dx%d (typewriter must not balloon)" % (dw2, dh2))
     # 400*0.5=200, 48*0.5=24 expected when partial detected
     if dw2 == 1920 and dh2 == 1080:
         ok = False
@@ -204,7 +204,7 @@ try:
             log("PASS partial child*scale")
         else:
             ok = False
-            log("FAIL partial dest unexpected %dx%d expect≈200x24" % (dw2, dh2))  # noqa: UP031
+            log("FAIL partial dest unexpected %dx%d expect≈200x24" % (dw2, dh2))
 
     # --- logo@2 reverse dest (main menu automatic oversample) ---------------
     # logo@2.png is 1370×2132; with oversample=2 virtual size is 685×1066 and
@@ -217,7 +217,7 @@ try:
     logo_node.children = [(ht_logo, 0, 0)]
     ldw, ldh = draw._reverse_dest_size(logo_node, ht_logo, (logo_parent_w, logo_parent_h))
     log(
-        "logo@2 reverse_dest=%dx%d expect=%dx%d (not double %dx%d)"  # noqa: UP031
+        "logo@2 reverse_dest=%dx%d expect=%dx%d (not double %dx%d)"
         % (ldw, ldh, logo_parent_w, logo_parent_h, logo_tex_w, logo_tex_h)
     )
     if ldw != logo_parent_w or ldh != logo_parent_h:
@@ -265,7 +265,7 @@ try:
     piece.cached_texture = full_tex
 
     dest_draw = draw._reverse_dest_size(piece, full_tex, (VW, VH))
-    log("pixel reverse_dest=%dx%d expect=%dx%d" % (dest_draw[0], dest_draw[1], VW, VH))  # noqa: UP031
+    log("pixel reverse_dest=%dx%d expect=%dx%d" % (dest_draw[0], dest_draw[1], VW, VH))
     if dest_draw != (VW, VH):
         ok = False
         log("FAIL pixel-path reverse_dest not virtual cover box")

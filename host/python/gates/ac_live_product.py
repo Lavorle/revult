@@ -36,7 +36,7 @@ def _log(msg, lines=None):
     except Exception:
         pass
     try:
-        open("/tmp/ac_live_product.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/ac_live_product.log", "a").write(msg + "\n")
     except Exception:
         pass
     if lines is not None:
@@ -282,13 +282,13 @@ def run():
                     mm = getattr(_renpy.store, "main_menu", None)
                     if i % 5 == 0:
                         rec(
-                            "pulse#%d main_menu=%r mid_count=%s completes=%s"  # noqa: UP031
+                            "pulse#%d main_menu=%r mid_count=%s completes=%s"
                             % (i, mm, state["mid_count"], len(state["completes"]))
                         )
                     if mm is False:
                         state["left_main_menu"] = True
                         state["started"] = True
-                        rec("left main_menu at pulse#%d" % i)  # noqa: UP031
+                        rec("left main_menu at pulse#%d" % i)
                         break
                 except Exception as e:
                     rec(f"status: {e}")

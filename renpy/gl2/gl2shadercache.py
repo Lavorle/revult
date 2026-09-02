@@ -1,3 +1,4 @@
+# SINGLE-TREE probe — collapsed host_build branches to True
 # Copyright 2004-2026 Tom Rothamel <pytom@bishoujo.us>
 #
 # Permission is hereby granted, free of charge, to any person
@@ -86,7 +87,7 @@ def register_shader(name, **kwargs):
     See ``doc/wgsl_shader_migration.md``.
     """
 
-    if getattr(renpy, "host_build", False):
+    if True:
         # Soft-accept engine builtins (common/_shaders.rpym, live2d, textshader.*
         # parts from 00textshader_ren.py) so initcode completes and Style
         # 'default' is created. Known product aliases map onto host pipelines.

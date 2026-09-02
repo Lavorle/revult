@@ -16,7 +16,7 @@ def _log(m):
         sys.__stdout__.write(f"[diag3] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_prefs_diag3.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_prefs_diag3.log","a").write(m+"\n")
 
 def _quit():
     try:

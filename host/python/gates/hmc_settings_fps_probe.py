@@ -32,7 +32,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_settings_fps_probe.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_settings_fps_probe.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -350,7 +350,7 @@ def probe():
 
 
 def main():
-    open("/tmp/hmc_settings_fps_probe.log", "w").write("start\n")  # noqa: SIM115
+    open("/tmp/hmc_settings_fps_probe.log", "w").write("start\n")
     base = _base()
     game = os.environ.get("RENPY_HOST_GAME") or str(base / "host" / "playtests" / "HuangmeiC")
     os.environ["RENPY_HOST_BASE"] = str(base)

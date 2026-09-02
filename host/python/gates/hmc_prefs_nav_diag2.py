@@ -16,7 +16,7 @@ def _log(m):
         sys.__stdout__.write(f"[diag2] {m}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_prefs_diag2.log","a").write(m+"\n")  # noqa: SIM115
+    open("/tmp/hmc_prefs_diag2.log","a").write(m+"\n")
 
 def _quit():
     try:
@@ -59,7 +59,7 @@ def walk_rt(node, depth=0, path="", acc=None, budget=None):
         })
     for i, it in enumerate(kids):
         ch = it[0] if isinstance(it, tuple) else it
-        walk_rt(ch, depth+1, path+"/%d"%i, acc, budget)  # noqa: UP031
+        walk_rt(ch, depth+1, path+"/%d"%i, acc, budget)
     return acc
 
 def run():
@@ -143,7 +143,7 @@ def run():
         iface = renpy.display.interface
         st = getattr(iface, "surftree", None)
         hits = walk_rt(st)
-        _log("surftree hits n=%d" % len(hits))  # noqa: UP031
+        _log("surftree hits n=%d" % len(hits))
         for h in hits:
             if (h.get("shaders") and any("dissolve" in str(s) for s in h["shaders"])) or h.get("u_anim") is not None or (h.get("mesh_t") and h["mesh_t"]!="NoneType") or (h.get("cm_ntex") or 0)>=2:
                 _log(f"HIT {h}")
@@ -163,7 +163,7 @@ def run():
                     for it in v:
                         kids.append(it[0] if isinstance(it,tuple) else it)
             for i,k in enumerate(kids):
-                r=find_sel(k, path+"/%d"%i)  # noqa: UP031
+                r=find_sel(k, path+"/%d"%i)
                 if r: return r
             return None
         raw = getattr(scr,"child",None) or getattr(scr,"raw_child",None)
@@ -208,7 +208,7 @@ def run():
                         (rv.width, rv.height),
                     ))
                     for i,(ch,x,y) in enumerate(getattr(rv,"children",None) or ()):
-                        _log("  ch%d type=%s mesh=%s sh=%s nch=%s size=%s at=%.1f,%.1f" % (  # noqa: UP031
+                        _log("  ch%d type=%s mesh=%s sh=%s nch=%s size=%s at=%.1f,%.1f" % (
                             i, type(ch).__name__,
                             type(getattr(ch,"mesh",None)).__name__ if getattr(ch,"mesh",None) is not None else getattr(ch,"mesh",None),
                             getattr(ch,"shaders",None),
@@ -216,7 +216,7 @@ def run():
                             (getattr(ch,"width",None), getattr(ch,"height",None)),
                             x,y))
                         for j,(gc,gx,gy) in enumerate(list(getattr(ch,"children",None) or ())[:5]):
-                            _log("    gc%d type=%s mesh=%s size=%s" % (  # noqa: UP031
+                            _log("    gc%d type=%s mesh=%s size=%s" % (
                                 j, type(gc).__name__,
                                 type(getattr(gc,"mesh",None)).__name__ if getattr(gc,"mesh",None) is not None else getattr(gc,"mesh",None),
                                 (getattr(gc,"width",None), getattr(gc,"height",None))))
@@ -244,7 +244,7 @@ def run():
                             if a<40: continue
                             n+=1; rs+=r; gs+=g; bs+=b
                             if r>180 and g>140 and b<90: ys+=1
-                    _log("solo_draw tab sound mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d" % (  # noqa: UP031
+                    _log("solo_draw tab sound mean=(%.1f,%.1f,%.1f) yfrac=%.4f n=%d" % (
                         rs/n if n else 0, gs/n if n else 0, bs/n if n else 0,
                         ys/float(n) if n else -1, n))
                 except Exception as e:

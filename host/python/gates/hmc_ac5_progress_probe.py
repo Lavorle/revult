@@ -51,7 +51,7 @@ def _log(msg):
     ):
         try:
             Path(p).parent.mkdir(parents=True, exist_ok=True)
-            open(p, "a").write(msg + "\n")  # noqa: SIM115
+            open(p, "a").write(msg + "\n")
         except Exception:
             pass
 
@@ -353,7 +353,7 @@ def run():
                 if bool(getattr(renpy.store, "main_menu", False)):
                     state["main_menu"] = True
                     state["first_focus_s"] = time.time() - t_wait0
-                    rec("main_menu at tick=%d first_focus_s=%.3f" % (i, state["first_focus_s"]))  # noqa: UP031
+                    rec("main_menu at tick=%d first_focus_s=%.3f" % (i, state["first_focus_s"]))
                     break
             except Exception:
                 pass

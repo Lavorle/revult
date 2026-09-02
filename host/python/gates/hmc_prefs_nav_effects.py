@@ -38,7 +38,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_prefs_nav_effects.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_prefs_nav_effects.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -301,12 +301,12 @@ def _inject_motion(x, y):
     try:
         if hasattr(renpy_host, "inject_mouse"):
             renpy_host.inject_mouse(int(wx), int(wy), 0, False)
-            return "inject_mouse4@%d,%d" % (wx, wy)  # noqa: UP031
+            return "inject_mouse4@%d,%d" % (wx, wy)
     except TypeError:
         # Older 3-arg signature (should not happen on current host).
         try:
             renpy_host.inject_mouse(int(wx), int(wy), 0)
-            return "inject_mouse3@%d,%d" % (wx, wy)  # noqa: UP031
+            return "inject_mouse3@%d,%d" % (wx, wy)
         except Exception as e:
             return f"inject_mouse3_fail:{e}"
     except Exception as e:
@@ -370,7 +370,7 @@ def _force_icon_hover_events(tab_index):
 
     root = getattr(scr, "child", None) or scr
     walk(root)
-    notes.append("buttons_n=%d" % len(buttons))  # noqa: UP031
+    notes.append("buttons_n=%d" % len(buttons))
     # Top nav buttons are the first 7 Buttons with xsize-ish 179; fall back to index.
     nav = []
     for b in buttons:
@@ -400,7 +400,7 @@ def _force_icon_hover_events(tab_index):
     ranked.sort(key=lambda t: -t[0])
     # If many buttons, take high-score ones first then by encounter order of top band.
     candidates = [b for s, b in ranked if s >= 1] or [b for _, b in ranked]
-    notes.append("candidates_n=%d" % len(candidates))  # noqa: UP031
+    notes.append("candidates_n=%d" % len(candidates))
     if tab_index < 0 or tab_index >= len(candidates):
         notes.append("tab_index_oob")
         # still try to hover all non-selected
@@ -430,11 +430,11 @@ def _force_icon_hover_events(tab_index):
         try:
             # Full button focus path (style prefix + transform events).
             b.focus(default=False)
-            notes.append("focus[%d]=ok" % i)  # noqa: UP031
+            notes.append("focus[%d]=ok" % i)
         except Exception as e:
-            notes.append("focus[%d]=%s" % (i, e))  # noqa: UP031
+            notes.append("focus[%d]=%s" % (i, e))
         n = force_hover_on(b)
-        notes.append("set_hover[%d]=%d" % (i, n))  # noqa: UP031
+        notes.append("set_hover[%d]=%d" % (i, n))
         try:
             renpy.display.render.redraw(b, 0)
         except Exception:
@@ -531,7 +531,7 @@ def _walk_shaders(node, depth=0, acc=None, path=""):
             child = item[0]
         else:
             child = item
-        _walk_shaders(child, depth + 1, acc, path + "/%d" % i)  # noqa: UP031
+        _walk_shaders(child, depth + 1, acc, path + "/%d" % i)
     return acc
 
 
@@ -685,7 +685,7 @@ def run():
             lum = (mean[0] + mean[1] + mean[2]) / 3.0
             if settle_i == 0 or settle_i == 19 or yf >= 0.08 or lum > 5.0:
                 rec(
-                    "tab0_selected settle=%d mean=%s yellow_frac=%.4f n=%s lum=%.1f"  # noqa: UP031
+                    "tab0_selected settle=%d mean=%s yellow_frac=%.4f n=%s lum=%.1f"
                     % (
                         settle_i,
                         tuple(round(x, 1) for x in mean),
@@ -710,7 +710,7 @@ def run():
             iface = renpy.display.interface
             st = getattr(iface, "surftree", None)
             hits = _walk_shaders(st)
-            rec("shader_hits n=%d" % len(hits))  # noqa: UP031
+            rec("shader_hits n=%d" % len(hits))
             for h in hits[:40]:
                 rec(
                     "  hit path={} shaders={} keys={} anim={} mc={} mesh={}".format(
@@ -749,7 +749,7 @@ def run():
             t1 = 0
         hx, hy = 462 + t1 * 179 + 90, 47 + 32
         how = _inject_motion(hx, hy)
-        rec("hover inject virtual=(%d,%d) via=%s" % (hx, hy, how))  # noqa: UP031
+        rec("hover inject virtual=(%d,%d) via=%s" % (hx, hy, how))
         try:
             renpy.restart_interaction()
         except Exception:
@@ -778,13 +778,13 @@ def run():
             kinds = {}
             for m in mats:
                 kinds[m["kind"]] = kinds.get(m["kind"], 0) + 1
-            rec("matrix_kinds_after_mouse=%s n=%d" % (kinds, len(mats)))  # noqa: UP031
+            rec("matrix_kinds_after_mouse=%s n=%d" % (kinds, len(mats)))
             for m in mats[:12]:
                 rec("  matrix kind={} c3={}".format(m["kind"], m.get("c3")))
         except Exception as e:
             rec(f"matrix sample: {e}")
 
-        rw2, rh2, rt2, meta2 = _read_rt()  # noqa: RUF059
+        rw2, rh2, rt2, meta2 = _read_rt()
         sx2 = float(rw2) / 1920.0 if rw2 else sx
         sy2 = float(rh2) / 1080.0 if rh2 else sy
         icon_band = _sample_band(
@@ -833,7 +833,7 @@ def run():
                 kinds = {}
                 for m in mats:
                     kinds[m["kind"]] = kinds.get(m["kind"], 0) + 1
-                rec("matrix_kinds_after_force=%s n=%d" % (kinds, len(mats)))  # noqa: UP031
+                rec("matrix_kinds_after_force=%s n=%d" % (kinds, len(mats)))
                 for m in mats[:12]:
                     rec("  matrix kind={} c3={}".format(m["kind"], m.get("c3")))
             except Exception as e:

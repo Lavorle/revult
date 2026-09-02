@@ -38,7 +38,7 @@ def _log(msg):
     except Exception:
         pass
     try:
-        open("/tmp/hmc_ui_trace_matrix.log", "a").write(msg + "\n")  # noqa: SIM115
+        open("/tmp/hmc_ui_trace_matrix.log", "a").write(msg + "\n")
     except Exception:
         pass
 
@@ -543,9 +543,9 @@ def run():
         # Up to ~60s: Movie decode + nested pump can delay store.main_menu.
         for i in range(1200):
             try:
-                if bool(getattr(renpy.store, "main_menu", False)):  # noqa: F823
+                if bool(getattr(renpy.store, "main_menu", False)):
                     state["main_menu"] = True
-                    rec("main_menu at tick=%d" % i)  # noqa: UP031
+                    rec("main_menu at tick=%d" % i)
                     break
             except Exception:
                 pass
@@ -553,7 +553,7 @@ def run():
             try:
                 if _get_screen("main_menu") is not None:
                     state["main_menu"] = True
-                    rec("main_menu screen present at tick=%d" % i)  # noqa: UP031
+                    rec("main_menu screen present at tick=%d" % i)
                     break
             except Exception:
                 pass

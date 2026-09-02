@@ -16,7 +16,7 @@ def _log(msg):
         sys.__stdout__.write(f"[present_diag] {msg}\n"); sys.__stdout__.flush()
     except Exception:
         pass
-    open("/tmp/hmc_present_diag.log","a").write(msg+"\n")  # noqa: SIM115
+    open("/tmp/hmc_present_diag.log","a").write(msg+"\n")
 
 def _request_quit():
     try:
@@ -110,7 +110,7 @@ def _find_dissolve(draw, node, depth=0):
     return None
 
 def run():
-    open("/tmp/hmc_present_diag.log","w").write("start v12\n")  # noqa: SIM115
+    open("/tmp/hmc_present_diag.log","w").write("start v12\n")
     base=_base()
     game=os.environ.get("RENPY_HOST_GAME") or str(base/"host/playtests/HuangmeiC")
     os.environ.update({"RENPY_HOST_BASE":str(base),"RENPY_HOST_BUILD":"1","RENPY_HOST_GAME":game})

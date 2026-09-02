@@ -573,7 +573,7 @@ def main():
     # Leading ok= only; subfields use *_pass / *_ok names that still may contain
     # True/False but grep uses ok=True / ok=False prefix match on first field.
     msg = (
-        "ok=%s textbox_pass=%s namebox_load_ok=%s namebox_draw_pass=%s "  # noqa: UP031
+        "ok=%s textbox_pass=%s namebox_load_ok=%s namebox_draw_pass=%s "
         "namebox_frame_structure_ok=%s namebox_draw_attempted=%s "
         "tb_mid=%s tb_top=%s tb_bottom=%s tb_outside=%s "
         "tb_mean=(%.1f,%.1f,%.1f) tb_luma_var=%.1f "

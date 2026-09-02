@@ -37,8 +37,8 @@ except Exception as e:
 
 # Minimal renpy.display.transform.uniforms so final_render loops them.
 class _TFMod:
-    uniforms = {"u_animation", "u_transition"}  # noqa: RUF012
-    gl_properties = set()  # noqa: RUF012
+    uniforms = {"u_animation", "u_transition"}
+    gl_properties = set()
 
 
 sys.modules.setdefault(

@@ -31,7 +31,12 @@ import threading
 from collections import deque
 from typing import Any, List, Optional
 
-import renpy_host  # type: ignore
+try:
+    import renpy_host  # type: ignore
+except Exception:
+    import types as _types
+
+    renpy_host = _types.ModuleType("renpy_host")  # type: ignore
 
 _channels: dict[int, dict] = {}
 _inited = False
@@ -80,6 +85,46 @@ _HMC_MENU_BASENAME_AT2 = "main_menu@2.webm"
 # Clock arms on ready_playable (≥ MIN_PLAYABLE, default 2), not only ready_full.
 # While growing, read_video clamps the index; full list loops with %.
 _PATH_FRAME_CACHE: dict[str, dict] = {}
+_PATH_CACHE = _PATH_FRAME_CACHE
+
+class _LazyPathCacheLock:
+    """
+    Lazy lock proxy so renpy.import_all() module backup (pickle of module attrs)
+    does not fail on an unpicklable _thread.lock object at import time.
+    """
+
+    def __init__(self) -> None:
+        self._lock: Optional[threading.Lock] = None
+
+    def _get_lock(self) -> threading.Lock:
+        if self._lock is None:
+            self._lock = threading.Lock()
+        return self._lock
+
+    def acquire(self, *args: Any, **kwargs: Any) -> bool:
+        return self._get_lock().acquire(*args, **kwargs)
+
+    def release(self) -> None:
+        return self._get_lock().release()
+
+    def __enter__(self) -> bool:
+        return self._get_lock().__enter__()
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Any:
+        return self._get_lock().__exit__(exc_type, exc_val, exc_tb)
+
+    def __reduce__(self) -> tuple[Any, tuple]:
+        return (_LazyPathCacheLock, ())
+
+
+_PATH_CACHE_LOCK = _LazyPathCacheLock()
+
+
+def _get_path_cache_lock() -> threading.Lock:
+    """Acquire or lazily create the shared path-cache lock."""
+    return _PATH_CACHE_LOCK._get_lock()
+
+
 _WARM_STARTED_PATHS: set[str] = set()
 _warm_menu_once = False
 
@@ -191,7 +236,9 @@ def playing_name(channel):
     return None
 
 
-def pause(channel):
+def pause(channel, value=None):
+    if value is not None and not value:
+        return unpause(channel)
     if channel in _channels:
         _channels[channel]["playing"] = False
         if _channels[channel].get("video"):
@@ -428,14 +475,20 @@ def read_video(channel):
             cache_full = bool(entry.get("ready_full"))
             cache_inflight = bool(entry.get("inflight"))
             cache_target = int(entry.get("target_frames") or _DEFAULT_MAX_FRAMES)
+            cache_gen = int(entry.get("loop_gen") or 0)
         ch_n = int(ch.get("total_decoded") or len(ch.get("play_frames") or ch.get("frames") or []))
+        ch_gen = int(ch.get("loop_gen") or 0)
         # Rebind on growth (prefix decode) OR first full publish OR when the
-        # clock is still waiting for a playable prefix.
+        # clock is still waiting for a playable prefix OR when a loop-wrap
+        # refill started a fresh generation from head.
         if cache_n > ch_n or (cache_full and not ch.get("ready_full")) or (
             not ch.get("clock_armed") and cache_n >= 1
-        ):
+        ) or (cache_gen > ch_gen and cache_n >= 1):
             _bind_channel_from_entry(channel, entry)
             _maybe_arm_clock(channel)
+            if cache_gen > ch_gen and int(ch.get("loop_gen") or 0) >= cache_gen:
+                # Adopted the refill generation: refill kick served.
+                ch.pop("_loop_refill", None)
         # Self-heal continue-fill after warm stage ends while playing.
         if (
             (not cache_full)
@@ -492,7 +545,11 @@ def read_video(channel):
         # buffer (1080p RGBA stream). Re-anchor the presentation clock to the
         # latest available absolute frame so we keep tracking new publishes
         # instead of clamping to the ring tail for many seconds (sticky feel).
-        if (not ready_full) and total > 0 and raw_idx > (total - 1):
+        # Suppressed once a full loop has played: post-wrap refills serve the
+        # prefix at 1x, and yanking would fast-forward through it.
+        if (not ready_full) and total > 0 and raw_idx > (total - 1) and not ch.get(
+            "_looped_once"
+        ):
             try:
                 set_pos = getattr(renpy_host, "video_clock_set_pos", None)
                 if callable(set_pos):
@@ -512,6 +569,24 @@ def read_video(channel):
             except Exception:
                 pass
             ch["_clock_starved"] = False
+        # Seam-crossing wrap detection: a true loop wrap is the wrapped
+        # absolute index DECREASING across the end seam (359 -> 0). A mere
+        # ``abs < base`` is NOT a wrap: while a refill fills faster than the
+        # clock advances, the sliding base legitimately outruns the playhead
+        # and re-kicking there self-excites a refill storm (resets kill the
+        # filling entry, stale publishes yank the channel back to the tail).
+        abs_raw_now = (raw_idx % total) if (total > 0 and ch.get("loop") is not False) else abs_idx
+        prev_abs_raw = ch.get("_last_abs_raw")
+        ch["_last_abs_raw"] = int(abs_raw_now)
+        crossed_seam = (
+            total > 0
+            and prev_abs_raw is not None
+            and int(abs_raw_now) < int(prev_abs_raw)
+            and int(prev_abs_raw) >= int(total) - 8
+        )
+        # Capture pre-clamp: loop wrap landed in the evicted prefix while
+        # the full decode kept only the tail.
+        wrapped_into_evicted = bool(ready_full) and crossed_seam and abs_idx < base
         if abs_idx < base:
             idx = 0
             abs_idx = base
@@ -520,6 +595,32 @@ def read_video(channel):
             abs_idx = base + n - 1
         else:
             idx = abs_idx - base
+        # Restart a staged decode from head so the loop keeps moving. The
+        # clock keeps running and the tail holds until the fresh prefix
+        # arrives and the generation-triggered rebind adopts it.
+        loop_period_s = float(total) / max(1.0, float(fps)) if total > 0 else 0.0
+        kick_floor_ok = (float(pos) - float(ch.get("_last_kick_pos") or -1e9)) > (
+            loop_period_s * 0.5
+        )
+        if (
+            wrapped_into_evicted
+            and ch.get("loop") is not False
+            and not ch.get("_loop_refill")
+            and kick_floor_ok
+            and path
+        ):
+            try:
+                if _reset_entry_for_reloop(path):
+                    ch["_loop_refill"] = True
+                    ch["_looped_once"] = True
+                    ch["_last_kick_pos"] = float(pos)
+                    _start_path_decode(
+                        path,
+                        background=True,
+                        stage_frames=_reloop_kickstart_frames(),
+                    )
+            except Exception:
+                pass
 
     # Present key is absolute so ring-local idx (often n-1 while sliding) does
     # not skip pixel rewrite / GPU upload when the absolute frame advanced.
@@ -725,6 +826,11 @@ def _clear_video_cache(channel: int) -> None:
     ch.pop("_phase0_last_idx", None)
     ch.pop("_phase0_last_t", None)
     ch.pop("_audio_clock_bound", None)
+    ch.pop("loop_gen", None)
+    ch.pop("_loop_refill", None)
+    ch.pop("_looped_once", None)
+    ch.pop("_last_abs_raw", None)
+    ch.pop("_last_kick_pos", None)
 
 
 def _strip_audio_spec(name: Any) -> str:
@@ -1249,6 +1355,9 @@ def _new_path_entry(path: str) -> dict:
         "stage_frames": 0,
         "base_index": 0,
         "total_decoded": 0,
+        # Loop generation: bumped when a fully-decoded entry is reset so a
+        # looping channel can re-decode the evicted prefix from head.
+        "loop_gen": 0,
     }
 
 
@@ -1287,7 +1396,9 @@ def _min_playable_frames() -> int:
     return max(1, n)
 
 
-def _publish_frames(path: str, frames: List[bytes], *, full: bool) -> None:
+def _publish_frames(
+    path: str, frames: List[bytes], *, full: bool, gen: Optional[int] = None
+) -> None:
     """Main-thread-safe publish with byte-cap ring (M2 T3).
 
     Absolute total from frames._abs_total when set; otherwise len(frames).
@@ -1296,8 +1407,20 @@ def _publish_frames(path: str, frames: List[bytes], *, full: bool) -> None:
     ``cap_bytes``), syncs ``seek_index`` ``pts=len*1000/fps`` and
     ``evicted_bytes``, and maintains ``total_decoded``/``base_index``.
     Ring frame-count window still applied for RAM bound when ``RING>0``.
+    ``gen`` is the worker's loop generation: publishes from an older
+    generation than the entry's are dropped so a stale worker cannot yank a
+    refilled channel back to an evicted tail (refill-storm class).
     """
     entry = _get_or_create_entry(path)
+    if gen is not None:
+        with entry["lock"]:
+            egen = int(entry.get("loop_gen") or 0)
+        if int(gen) < egen:
+            _phase0_log(
+                f"T_stale_drop path={path!r} gen={int(gen)} entry_gen={egen} "
+                f"full={int(bool(full))}"
+            )
+            return
     # Snapshot frames for storage (may ring-trim). Do not mutate caller's list
     # here beyond reading _abs_total.
     try:
@@ -1314,8 +1437,9 @@ def _publish_frames(path: str, frames: List[bytes], *, full: bool) -> None:
     # Stale restart publishes (lower total while already ahead) are dropped.
     if prev_total_quick > 0 and int(total) + 1 < prev_total_quick and not full:
         return
-    # Growing + RING>0: trailing window only (RAM bound).
-    if ring > 0 and (not full) and len(src_list) > ring:
+    # Growing + RING>0: trailing window only (RAM bound). Resident loops
+    # keep the full list so ``% total`` never hits an evicted prefix.
+    if ring > 0 and (not full) and len(src_list) > ring and not entry.get("resident"):
         frozen = list(src_list[-ring:])
     elif isinstance(src_list, list):
         frozen = src_list  # share; worker only appends / rare rebind
@@ -1536,7 +1660,45 @@ def _decode_path_worker_impl(path: str) -> None:
         lh = int(entry["layout_h"])
         target = int(entry.get("target_frames") or _DEFAULT_MAX_FRAMES)
         stage = int(entry.get("stage_frames") or target)
+        # Loop generation at worker start: publishes from an older generation
+        # (e.g. a duplicate continue overtaken by a loop-wrap reset) are
+        # dropped in _publish_frames so they cannot yank the channel back to
+        # a stale tail and trigger refill storms.
+        wgen = int(entry.get("loop_gen") or 0)
+        # Full-loop residency: a short loop (e.g. 12 s menu, 360 frames) can
+        # never play 1x from an 8-frame ring — the filling frontier always
+        # outruns the playhead, pinning presentation to the decode frontier
+        # (fast-forward) then holding the tail. When the whole loop fits the
+        # resident allowance (derived from RENPY_HOST_MOVIE_RSS_MB, the same
+        # budget the launcher validates), raise the byte cap once — before
+        # any eviction — so base stays 0 and ``% total`` loops forever with
+        # zero re-decode. Longer content keeps streaming (+refill fallback).
+        try:
+            need_bytes = int(target) * int(dw) * int(dh) * 4
+        except (TypeError, ValueError):
+            need_bytes = 0
+        try:
+            rss_mb = int(os.environ.get("RENPY_HOST_MOVIE_RSS_MB", "4096"))
+        except (TypeError, ValueError):
+            rss_mb = 4096
+        resident_allowance = max(0, (rss_mb - 1024)) * 1024 * 1024
         existing = list(entry.get("frames") or [])
+        if (
+            need_bytes > 0
+            and need_bytes <= resident_allowance
+            and not existing
+            and not entry.get("resident")
+        ):
+            entry["cap_bytes"] = int(need_bytes)
+            entry["resident"] = True
+            with contextlib.suppress(Exception):
+                fb0 = entry.get("frames")
+                if fb0 is not None and hasattr(fb0, "cap_bytes"):
+                    fb0.cap_bytes = int(need_bytes)  # type: ignore[attr-defined]
+            _phase0_log(
+                f"T_resident path={path!r} bytes={need_bytes} "
+                f"allowance={resident_allowance}"
+            )
         try:
             abs_existing = int(entry.get("total_decoded") or 0)
             if abs_existing <= 0:
@@ -1552,7 +1714,8 @@ def _decode_path_worker_impl(path: str) -> None:
     t0 = _time.monotonic()
     _phase0_log(
         f"T_decode_begin path={path!r} w={dw} h={dh} "
-        f"stage={stage} target={target} have={len(existing)} fps={fps}"
+        f"stage={stage} target={target} have={len(existing)} fps={fps} "
+        f"gen={wgen}"
     )
 
     try:
@@ -1581,14 +1744,14 @@ def _decode_path_worker_impl(path: str) -> None:
                 pass
         hit_target = abs_total >= target
         # Stream already rate-limits publishes; always swap ring + total here.
-        _publish_frames(path, frames_so_far, full=hit_target)
+        _publish_frames(path, frames_so_far, full=hit_target, gen=wgen)
 
     # Already at/above stage — nothing to do (another worker may continue).
     if len(frames) >= stage:
         with entry["lock"]:
             entry["inflight"] = False
         if len(frames) >= target:
-            _publish_frames(path, frames, full=True)
+            _publish_frames(path, frames, full=True, gen=wgen)
         _phase0_log(
             f"T_decode_end path={path!r} frames={len(frames)} "
             f"already_staged stage={stage} target={target}"
@@ -1628,7 +1791,7 @@ def _decode_path_worker_impl(path: str) -> None:
             except Exception:
                 f0 = []
             if f0:
-                _publish_frames(path, list(f0), full=False)
+                _publish_frames(path, list(f0), full=False, gen=wgen)
             try:
                 if stage <= 1 and f0:
                     frames = list(f0)
@@ -1733,7 +1896,7 @@ def _decode_path_worker_impl(path: str) -> None:
         setattr(store_frames, "_abs_total", abs_total)
     except Exception:
         pass
-    _publish_frames(path, store_frames, full=is_full)
+    _publish_frames(path, store_frames, full=is_full, gen=wgen)
 
     t_total = _time.monotonic() - t0
     _phase0_log(
@@ -1801,6 +1964,51 @@ def _start_path_decode(
         _decode_path_worker(path)
 
 
+def _reloop_kickstart_frames() -> int:
+    """Prefix budget for a loop-wrap refill (fast resume, then continue)."""
+    try:
+        n = int(os.environ.get("RENPY_HOST_MOVIE_KICKSTART_FRAMES", "8"))
+    except (TypeError, ValueError):
+        n = 8
+    return max(1, n)
+
+
+def _reset_entry_for_reloop(path: str) -> bool:
+    """Reset a fully-decoded entry so the next worker decodes from head.
+
+    A looping channel whose presentation wrapped into the evicted prefix
+    (``abs_idx < base`` with ``ready_full``) calls this once per wrap, then
+    starts a staged worker. The channel keeps its old tail frames until the
+    fresh prefix arrives and the generation-triggered rebind adopts it, so
+    presentation holds the tail instead of freezing on it.
+    """
+    if not path:
+        return False
+    entry = _lookup_path_entry(path)
+    if entry is None:
+        entry = _get_or_create_entry(path)
+    with entry["lock"]:
+        if entry.get("inflight"):
+            return False
+        if not entry.get("ready_full"):
+            return False
+        if int(entry.get("total_decoded") or 0) <= 0:
+            return False
+        entry["frames"] = None
+        entry["base_index"] = 0
+        entry["total_decoded"] = 0
+        entry["ready_partial"] = False
+        entry["ready_playable"] = False
+        entry["ready_full"] = False
+        entry["stage_frames"] = 0
+        entry["loop_gen"] = int(entry.get("loop_gen") or 0) + 1
+        new_gen = int(entry.get("loop_gen") or 0)
+        with contextlib.suppress(Exception):
+            entry["evicted_bytes"] = 0
+    _phase0_log(f"T_loop_refill path={path!r} gen={new_gen}")
+    return True
+
+
 def _wait_entry_partial(entry: dict, timeout: float = 30.0) -> None:
     """Block until ready_partial or ready_full or timeout (play attach)."""
     import time as _time
@@ -1843,6 +2051,14 @@ def _bind_channel_from_entry(channel: int, entry: dict) -> None:
     ch["growing"] = (not ready_full) and ready_playable
     ch["base_index"] = base_index
     ch["total_decoded"] = total_decoded
+    old_gen = int(ch.get("loop_gen") or 0)
+    new_gen = int(entry.get("loop_gen") or 0)
+    ch["loop_gen"] = new_gen
+    if new_gen > old_gen:
+        # Adopted a loop-refill generation via any bind path (growth rebind
+        # or clock-extend): the refill kick is served, allow the next wrap
+        # to kick again.
+        ch.pop("_loop_refill", None)
     # Present size follows 1b (decode) or 1a (layout); read_video overwrites.
     if _present_mode_1b() and not layout_cached:
         ch["frame_w"], ch["frame_h"] = dw, dh
@@ -1965,9 +2181,8 @@ def _maybe_arm_clock(channel: int) -> None:
     # T1: bind audio sample clock as master when channel is playing and clock exists.
     # Only bind once when master is Wall; AudioSample master is set via video_clock_bind_audio.
     try:
-        import renpy_host
         ch2 = _channels.get(channel)
-        if ch2 and ch2.get("playing") and ch2.get("video"):
+        if _inited and ch2 and ch2.get("playing") and ch2.get("video"):
             # Check video_clock exists (pos >=0) and not yet bound
             try:
                 # If drift probe exists, we can infer master; otherwise just attempt bind

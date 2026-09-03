@@ -108,13 +108,11 @@ class TextureMixin:
             return None
         if handle <= 0:
             return ht
-        # State 1: ALIVE probe — single lookup via mesh_alive / texture_alive
+        # State 1: ALIVE probe — single lookup via texture_alive
         try:
             import renpy_host  # type: ignore
 
-            alive_fn = getattr(renpy_host, "mesh_alive", None)
-            if alive_fn is None:
-                alive_fn = getattr(renpy_host, "texture_alive", None)
+            alive_fn = getattr(renpy_host, "texture_alive", None)
             if alive_fn is not None:
                 is_alive = bool(alive_fn(int(handle)))
             else:
@@ -138,9 +136,7 @@ class TextureMixin:
             try:
                 import renpy_host  # type: ignore
 
-                alive_fn = getattr(renpy_host, "mesh_alive", None)
-                if alive_fn is None:
-                    alive_fn = getattr(renpy_host, "texture_alive", None)
+                alive_fn = getattr(renpy_host, "texture_alive", None)
                 if alive_fn is not None:
                     is_alive = bool(alive_fn(int(remapped)))
                 else:

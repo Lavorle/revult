@@ -1,7 +1,7 @@
 """Unit tests for renpy.wgpu.draw_texture._ensure_host_texture_alive 3-state resolver.
 
 Loads draw_texture without constructing WgpuDraw so no GPU/renpy_host init fires.
-renpy_host is replaced by a fake module providing mesh_alive / create_texture_rgba.
+renpy_host is replaced by a fake module providing texture_alive / create_texture_rgba.
 """
 
 import importlib
@@ -11,14 +11,14 @@ import unittest
 
 
 class _RenpyHostFake(types.ModuleType):
-    """Minimal renpy_host fake: tunable mesh_alive + create_texture_rgba."""
+    """Minimal renpy_host fake: tunable texture_alive + create_texture_rgba."""
 
     def __init__(self, alive_map=None, created=None):
         super().__init__("renpy_host")
         self._alive = alive_map if alive_map is not None else {}
         self._created = created if created is not None else []
         self.create_texture_rgba = self._create
-        self.mesh_alive = self._alive_fn
+        self.texture_alive = self._alive_fn
 
     def _alive_fn(self, handle):
         return bool(self._alive.get(int(handle), False))
@@ -96,6 +96,30 @@ class TestHandleResolver(unittest.TestCase):
         self.assertEqual(int(out.texture), new_h)
         self.assertEqual(created[0][1], 8)
         self.assertEqual(created[0][2], 8)
+
+    def test_texture_alive_with_mesh_alive_coexisting(self):
+        # In real renpy_host binary, both mesh_alive and texture_alive exist.
+        # mesh_alive returns False for texture handles; texture_alive returns True.
+        self.fake.mesh_alive = lambda h: False
+        self.fake.texture_alive = lambda h: int(h) == 100
+        touched = []
+        self.fake.touch_texture = lambda h: touched.append(int(h))
+        m, mod = _make_mixin(remap={}, pixels={})
+        ht = mod.HostTexture(100, 8, 8)
+        out = m._ensure_host_texture_alive(ht)
+        self.assertIs(out, ht)
+        self.assertEqual(int(out.handle), 100)
+        self.assertEqual(touched, [100])
+
+    def test_remapped_texture_alive_with_mesh_alive_coexisting(self):
+        # In remapped lookup, texture_alive must be probed even if mesh_alive exists.
+        self.fake.mesh_alive = lambda h: False
+        self.fake.texture_alive = lambda h: int(h) == 200
+        m, mod = _make_mixin(remap={100: 200}, pixels={})
+        ht = mod.HostTexture(100, 8, 8)
+        out = m._ensure_host_texture_alive(ht)
+        self.assertIs(out, ht)
+        self.assertEqual(int(out.handle), 200)
 
 
 if __name__ == "__main__":

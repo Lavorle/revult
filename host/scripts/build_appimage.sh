@@ -261,9 +261,9 @@ chmod +x "$APPDIR/AppRun"
 # 5. Create tar.gz bundle (always)
 mkdir -p "$(dirname "$OUT")"
 echo "Creating tar.gz bundle $OUT"
-tar -C "$STAGE" -czf "$OUT" "renpy-host-${REV}"
+tar -C "$STAGE" --exclude='__pycache__' --exclude='*.pyc' --exclude='soak-history' -czf "$OUT" "renpy-host-${REV}"
 echo "OK: wrote $OUT ($(du -h "$OUT" | cut -f1))"
-tar tzf "$OUT" | head -n 30
+tar tzf "$OUT" | head -n 30 || true  # head closes early (SIGPIPE); not a failure under pipefail+errexit
 # SHA256 sidecar
 sha256sum "$OUT" | tee "${OUT}.sha256"
 echo "SHA256: $(cat "${OUT}.sha256")"

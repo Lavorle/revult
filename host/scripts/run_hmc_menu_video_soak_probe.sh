@@ -76,3 +76,37 @@ echo "--- log tail ---"
 tail -100 /tmp/hmc_menu_video_soak_probe.log 2>/dev/null || true
 echo "--- stderr tail ---"
 tail -50 .omx/tmp/wp0/menu-video-soak-stderr.log 2>/dev/null || true
+echo "--- per-run archive ---"
+# G5 demands two CONSECUTIVE passes, but the artifact files are truncated at
+# every run start (lines 34-35), so without copies the "consecutive" proof is
+# unobservable (run6-class boot-quit leaves an empty file behind). Archive
+# before judging; copies are evidence even on FAIL (stop-rule counting).
+ARCH_DIR="host/target/soak-history"
+mkdir -p "$ARCH_DIR"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+cp host/target/gate-hmc_menu_video_soak_probe.txt "$ARCH_DIR/soak-$STAMP.txt" 2>/dev/null || true
+cp host/target/gate-hmc_menu_video_soak_probe.json "$ARCH_DIR/soak-$STAMP.json" 2>/dev/null || true
+echo "archived: $ARCH_DIR/soak-$STAMP.{txt,json}"
+echo "--- verdict (fail-closed) ---"
+if python3 - <<'PYV'
+import json, sys
+from pathlib import Path
+p = Path("host/target/gate-hmc_menu_video_soak_probe.json")
+try:
+    raw = p.read_text()
+    d = json.loads(raw) if raw.strip() else None
+except Exception as e:
+    print(f"G5-VERDICT: FAIL (unreadable gate json: {e})")
+    sys.exit(1)
+if not d:
+    print("G5-VERDICT: FAIL (empty gate json: game likely quit before writing artifact)")
+    sys.exit(1)
+print("G5-VERDICT:", "ok", d.get("ok"), "measured", d.get("measured"), "pass", d.get("pass"))
+sys.exit(0 if (d.get("ok") is True and d.get("measured") is True and d.get("pass") is True) else 1)
+PYV
+then
+  echo "G5-VERDICT: PASS"
+else
+  echo "G5-VERDICT: FAIL"
+  exit 1
+fi

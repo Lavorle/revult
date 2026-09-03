@@ -680,7 +680,10 @@ class SurftreeMixin:
             "u_renpy_dissolve_offset" in uniforms
             or "u_renpy_dissolve_multiplier" in uniforms
             # Product alias uniforms (HuangmeiC image_dissolve).
-            or ("u_transition" in uniforms and "u_animation" in uniforms)
+            # Either key alone suffices: ATL animates one uniform per
+            # keyframe, and sibling sites (draw_pipeline.py,
+            # draw_walk.py, _extract_host_texture below) all use OR.
+            or ("u_transition" in uniforms or "u_animation" in uniforms)
         ):
             # ImageDissolve stamps offset/multiplier; plain Dissolve uses u_renpy_dissolve.
             if "u_renpy_dissolve" not in uniforms:

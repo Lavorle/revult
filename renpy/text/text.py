@@ -997,19 +997,12 @@ class Layout(object):
             )
 
         # Determine the set of textshaders.
-        # Host (renpy-host / wgpu): GLSL textshader mesh path is soft-stubbed —
-        # no WGSL typewriter atlas. Force blit path so progressive cps
-        # (blits_typewriter + HostTexture.subsurface) remains the product path
-        # even if a game sets config.default_textshader / style.textshader.
-        # Empty get_textshader_set (all glyph.shader is None) is already falsy;
-        # this guard covers non-empty shader sets that would otherwise blank or
-        # garble mid-st dialogue under models=True.
-        if getattr(renpy, "host_build", False):
-            self.textshaders = None
-        elif renpy.display.draw.info.get("models", False):
-            self.textshaders = textsupport.get_textshader_set(all_glyphs)
-        else:
-            self.textshaders = None
+        # Single-tree (renpy-host / wgpu): GLSL textshader mesh path is
+        # soft-stubbed — no WGSL typewriter atlas. Force blit path so
+        # progressive cps (blits_typewriter + HostTexture.subsurface) remains
+        # the product path even if a game sets config.default_textshader /
+        # style.textshader.
+        self.textshaders = None
 
         # Check for glyphs that are being drawn out of bounds, because the font
         # or anti-aliasing or whatever makes them bigger than the bounding box. If

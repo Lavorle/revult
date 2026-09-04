@@ -523,11 +523,10 @@ def before_interact(roots):
     # default_focus (the_question screens.rpy). Stock before_interact then leaves
     # focused=None, so Button.event rejects button_select (Enter/Space/click) and
     # the menu looks total-dead even when KEY/MOUSE events reach interact_core.
-    # On host_build only, seed the first activatable Button (has .clicked). Note:
+    # Single-tree: seed the first activatable Button (has .clicked). Note:
     # textbuttons inherit focus_name from the screen Fixed (`_screen_main_menu`)
     # — that name is NOT a reason to skip; the type+clicked check is the filter.
-    # SDL path unchanged (renpy.host_build is False there).
-    if current is None and getattr(renpy, "host_build", False):
+    if current is None:
         for f, n, screen, gen in fwn:
             if gen != modal_generation:
                 continue
@@ -1054,13 +1053,12 @@ def key_handler(ev):
     # Host residual (post-pump #2): bare keyboard button_select (Enter/Space/KP_Enter)
     # with no focused Button is a stock no-op (Button.event requires is_focused).
     # Games without default_focus (the_question main menu) therefore look total-dead
-    # even after KEY events reach interact_core. On host_build only, seed the first
-    # keyboard-focusable widget and re-dispatch the KEY event so Start activates
-    # without game content edits. Mouse button_select is intentionally excluded —
-    # empty-area clicks must not auto-activate Start. SDL path unchanged.
+    # even after KEY events reach interact_core. Seed the first keyboard-focusable
+    # widget and re-dispatch the KEY event so Start activates without game content
+    # edits. Mouse button_select is intentionally excluded — empty-area clicks
+    # must not auto-activate Start.
     if (
-        getattr(renpy, "host_build", False)
-        and getattr(ev, "type", None) == pygame.KEYDOWN
+        getattr(ev, "type", None) == pygame.KEYDOWN
         and map_event(ev, "button_select")
         and get_focused() is None
     ):

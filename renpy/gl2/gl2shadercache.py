@@ -1,4 +1,4 @@
-# SINGLE-TREE probe — collapsed host_build branches to True
+# Single-tree: SDL/GL branches removed; WGSL soft-stub only.
 # Copyright 2004-2026 Tom Rothamel <pytom@bishoujo.us>
 #
 # Permission is hereby granted, free of charge, to any person

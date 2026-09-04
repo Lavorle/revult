@@ -124,26 +124,18 @@ if [[ "$MODE" == "check" ]]; then
     echo "OK: pyproject.toml no sdl3 (already host-only)"
   fi
   if [[ -f "$ROOT/setup.py" ]]; then
-    if grep -q "RENPY_HOST_BUILD\|host_build" "$ROOT/setup.py"; then
-      echo "OK: setup.py has RENPY_HOST_BUILD gating"
-    else
-      echo "WARN: setup.py lacks RENPY_HOST_BUILD gating (deferred to Phase 9, per packaging-investigation C)"
+    # Single-tree (Phase 9+): no sdl packages may remain in setup.py at all.
+    if grep -q "RENPY_HOST_BUILD\|HOST_ALLOW\|_host_allowed" "$ROOT/setup.py"; then
+      echo "WARN: setup.py still references retired RENPY_HOST_BUILD gating"
       # not fail in --check
+    else
+      echo "OK: setup.py RENPY_HOST_BUILD gating retired (single-tree)"
     fi
     # deeper probe: cython wrapper must gate packages containing sdl
     if grep -q 'if "sdl" in pkg.lower()' "$ROOT/setup.py" 2>/dev/null; then
       echo "OK: setup.py cython sdl guard (packages.*sdl hard error)"
     else
-      # fallback: check for sdl in packages check broadly
-      if grep -q 'packages.*sdl' "$ROOT/setup.py" && grep -q 'HOST_BUILD' "$ROOT/setup.py"; then
-        echo "OK: setup.py HOST_BUILD + packages.*sdl probe"
-      else
-        echo "WARN: setup.py missing explicit cython sdl guard text"
-      fi
-    fi
-    # verify HOST_BUILD allowlist exists
-    if grep -q "HOST_ALLOW" "$ROOT/setup.py"; then
-      echo "OK: setup.py HOST_ALLOW allowlist present"
+      echo "WARN: setup.py missing explicit cython sdl guard text"
     fi
   fi
   # per-file-ignores is the ruff gate for host/python (pyproject.toml)
@@ -155,22 +147,14 @@ if [[ "$MODE" == "check" ]]; then
     echo "OK: setup.py cython packages param probe"
   fi
 
-  # 3b. RENPY_HOST_BUILD=1 exclusion path probe (no true build, grep-only)
-  echo "--- RENPY_HOST_BUILD=1 exclusion probe (grep-only, no build) ---"
-  if grep -q "RENPY_HOST_BUILD" "$ROOT/setup.py" && grep -q "packages.*sdl3" "$ROOT/setup.py"; then
-    echo "OK: RENPY_HOST_BUILD=1 would gate sdl3 packages (grep packages.*sdl3 + HOST_BUILD present)"
-  else
-    echo "WARN: RENPY_HOST_BUILD gating probe incomplete"
-  fi
-  # document that host build skips sdl3 via allowlist (no dlopen libSDL)
-  if grep -q "_host_allowed" "$ROOT/setup.py" && grep -q "HOST_BUILD" "$ROOT/setup.py"; then
-    echo "OK: setup.py _host_allowed + HOST_BUILD discrimination present (sdl3 exclusion path documentable)"
-  fi
-  # verify without building: ensure at least one cython(..., packages="sdl3") exists but is guarded
+  # 3b. Single-tree sdl purge probe (no true build, grep-only, fail-closed)
+  echo "--- single-tree sdl purge probe (grep-only, no build) ---"
   SDL_CYTHON_COUNT=$(grep -c 'cython.*packages="[^"]*sdl' "$ROOT/setup.py" || true)
   echo "cython packages sdl count (grep): $SDL_CYTHON_COUNT"
-  if [[ "$SDL_CYTHON_COUNT" -gt 0 ]]; then
-    echo "OK: setup.py contains cython packages sdl3 entries (guarded by HOST_BUILD)"
+  if [[ "$SDL_CYTHON_COUNT" -eq 0 ]]; then
+    echo "OK: setup.py contains zero cython packages sdl entries (single-tree)"
+  else
+    echo "FAIL: setup.py still registers $SDL_CYTHON_COUNT sdl extension(s)" >&2; exit 1
   fi
 
   # 4. sdist file list probe (zero-network: only find/ls/grep/tar, no curl/wget)

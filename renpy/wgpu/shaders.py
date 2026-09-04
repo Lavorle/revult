@@ -192,8 +192,6 @@ def register_wgsl_shader(name: str, **kwargs):
     snippets or structured part metadata. P1.0 Snippet IR fields are accepted
     and normalized (see module docstring / snippet-ir.md).
     """
-    if not getattr(renpy, "host_build", False):
-        pass
     meta = dict(kwargs)
     if "pipeline" not in meta and name in _PIPELINE_KEYS:
         meta["pipeline"] = _PIPELINE_KEYS[name]
@@ -564,8 +562,7 @@ def register_builtin_core():
 # Install on renpy module for call sites.
 def _install():
     renpy.register_wgsl_shader = register_wgsl_shader  # type: ignore[attr-defined]
-    if getattr(renpy, "host_build", False):
-        register_builtin_core()
+    register_builtin_core()
 
 
 _install()

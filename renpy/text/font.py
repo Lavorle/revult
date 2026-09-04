@@ -673,11 +673,11 @@ def load_face(fn, shaper):
                 if font_file:
                     break
 
-        # Host: absolute searchpath + basedir join can miss common fonts; try
-        # renpy/common and searchpath roots directly. Also honor
+        # Single-tree: absolute searchpath + basedir join can miss common fonts;
+        # try renpy/common and searchpath roots directly. Also honor
         # config.renamed_files (DejaVuSans.ttf → dejavusans.woff2) and bare
         # .woff2 siblings when only woff2 ships in common/.
-        if font_file is None and getattr(renpy, "host_build", False):
+        if font_file is None:
             import os
 
             names = [fn]

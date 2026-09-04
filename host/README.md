@@ -7,19 +7,17 @@ Rust host for Ren'Py on the **wgpu + Vulkan** product path. Authority plan:
 
 ---
 
-## 1. Two build graphs (dual-tree)
+## 1. Single build graph (single-tree, Phase 9+)
 
 | Graph | Entry | Window / GPU | pygame extensions | Link SDL? |
 |-------|-------|--------------|-------------------|-----------|
-| **SDL reference** | `./run.sh <game>` or `python renpy.py <game>` | SDL3 + GL2Draw | `setup.py` with `packages=sdl3` (today) | **Yes** |
-| **Host MVP** | `cargo run -p renpy-host -- <game>` | winit + wgpu Vulkan | Host stubs / reimpls; **no** `packages=sdl3` for replaced modules | **No** |
+| **Host (sole)** | `cargo run -p renpy-host -- <game>` | winit + wgpu Vulkan | `setup.py` SDL-free subset + host_pygame | **No** |
+| ~~SDL reference (retired)~~ | ~~`./run.sh <game>`~~ | ~~SDL3 + GL2Draw~~ | ~~removed: no `.pyx`, no sdl packages~~ | — |
 
 Rules (locked):
 
-- SDL/GL tree stays **buildable** for human reference until Phase 9 strip.
-- Host build is **additive** under `host/`.
-- Shared Python files (e.g. `renpy/display/core.py`) use explicit host branches
-  (`renpy.host_build` / compile flag). Do **not** break the SDL reference tree.
+- SDL/GL tree is **retired** (rollback: `archive/sdl-reference` tag).
+- `renpy.host_build` is a constant `True`; no new host/SDL branches.
 - Product host exposes **only** `WgpuDraw` (no GL coexistence).
 
 ---
@@ -59,14 +57,15 @@ Environment overrides:
 | `WGPU_BACKEND` | Leave unset; host forces Vulkan in code |
 | `RENPY_HOST_HEADLESS` | If `1`, skip window present (CI smoke only; Phase 0 still prefers real present) |
 
-### SDL reference (untouched)
+### SDL reference (retired)
+
+SDL graph is retired and unbuildable (no `.pyx` sources, no sdl packages in
+`setup.py`). Historical reference: `archive/sdl-reference` tag. The commands
+below are kept for archaeology only and are not expected to work:
 
 ```bash
-# From repo root — existing workflow
-uv sync                 # if using project venv
-./run.sh the_question   # builds Cython inplace + runs renpy.py
-# or
-./run.sh --build        # build extensions only
+uv sync
+./run.sh the_question
 python renpy.py the_question
 ```
 
@@ -381,7 +380,7 @@ Artifacts: `host/target/gate-g0N.txt`, baselines under `testcases/wgpu_golden/G0
 - [x] `ldd target/release/renpy-host | grep -iE 'libSDL'` is **empty** (AC2) — `host/target/verify-ldd-release.log`
 - [x] Startup log: `wgpu adapter backend=Vulkan` — RADV NAVI12, `host/target/verify-phase1.log` / `verify-bench.log`
 - [x] `bash scripts/phase9_gates.sh` green (or CI equivalent) — **replaced by `bash host/scripts/run_golden_tests.sh` via `parent_runner` 8/8 + 2 composer combos**, `host/target/envelopes/*.json` (10) + `host/target/verify-golden.log`; also `bash host/scripts/phase1_gates.sh` green
-- [x] Dual-tree: **do not delete** SDL/GL source tree — strip is host-artifact only
+- [x] Single-tree: SDL/GL source tree retired — `setup.py`/`src/Setup` sdl-free, `host_build` branches collapsed (rollback: `archive/sdl-reference`)
 - [x] Shader migration docs current: `doc/wgsl_shader_migration.md`
 
 **Release evidence (rebound to HEAD 78b21d7b4, 2026-08-25):** `release_acceptance.v1.json PASS` + `product_acceptance.v1.json PASS` (evidence_revision 78b21d7b4), `bc160_perf_metrics.v1.json MEASURED 2262.28fps 1800 frames 830.91 1%low render_pass 5098ns TIMESTAMP_QUERY true eligible true` (host/target/), `cargo test 34`, `ruff renpy/wgpu 0 + host/python/gates 0 (per-file-ignores)`, `phase1_gates 0`. Full digest: `.omc/artifacts/release_artifacts.sha256`. See `CHANGELOG.md` wgpu-host v0.6.0 and `.omc/artifacts/release_acceptance.v1.json`.

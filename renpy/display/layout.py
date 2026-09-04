@@ -209,25 +209,22 @@ class Container(renpy.display.displayable.Displayable):
         if child._duplicatable:
             self._duplicatable = True
 
-        # host_build: invalidate() outside a render pass only queues redraw.
+        # Single-tree: invalidate() outside a render pass only queues redraw.
         # Force-redraw / gate paths may render_screen before process_redraws,
         # so a Render cached while this Fixed still had fewer children (e.g.
         # mid SL _clear+re-add, or after a partial predict) would stick and
         # drop preferences_layout's background.png. Kill cache entries now.
-        if getattr(renpy, "host_build", False):
-            try:
-                cache = renpy.display.render.render_cache.get(id(self))
-                if cache:
-                    for v in list(cache.values()):
-                        try:
-                            v.kill_cache()
-                        except Exception:
-                            pass
-            except Exception:
-                renpy.display.render.invalidate(self)
-            renpy.display.render.redraw(self, 0)
-        else:
+        try:
+            cache = renpy.display.render.render_cache.get(id(self))
+            if cache:
+                for v in list(cache.values()):
+                    try:
+                        v.kill_cache()
+                    except Exception:
+                        pass
+        except Exception:
             renpy.display.render.invalidate(self)
+        renpy.display.render.redraw(self, 0)
 
     def _clear(self):
         self.child = None
@@ -239,21 +236,18 @@ class Container(renpy.display.displayable.Displayable):
         # MultiBox can survive across SL reuse (_clear + re-add children) and
         # return a Render missing the new kids (preferences panel bg drop).
         # ``invalidate`` outside a render pass only schedules redraw — force
-        # kill_cache on host so the next render rebuilds immediately.
-        if getattr(renpy, "host_build", False):
-            try:
-                cache = renpy.display.render.render_cache.get(id(self))
-                if cache:
-                    for v in list(cache.values()):
-                        try:
-                            v.kill_cache()
-                        except Exception:
-                            pass
-            except Exception:
-                renpy.display.render.invalidate(self)
-            renpy.display.render.redraw(self, 0)
-        else:
-            renpy.display.render.redraw(self, 0)
+        # kill_cache so the next render rebuilds immediately.
+        try:
+            cache = renpy.display.render.render_cache.get(id(self))
+            if cache:
+                for v in list(cache.values()):
+                    try:
+                        v.kill_cache()
+                    except Exception:
+                        pass
+        except Exception:
+            renpy.display.render.invalidate(self)
+        renpy.display.render.redraw(self, 0)
 
     def remove(self, d):
         """
@@ -872,10 +866,11 @@ class MultiBox(Container):
 
         if self.first and adjust_times:
             self.update_times()
-        elif adjust_times and getattr(renpy, "host_build", False):
-            # Host residual: first render often runs before interact_time is set,
-            # leaving start_times as None forever (update_times early-return).
-            # Re-resolve None entries once interact_time exists so Dissolve st advances.
+        elif adjust_times:
+            # Single-tree residual: first render often runs before interact_time
+            # is set, leaving start_times as None forever (update_times
+            # early-return). Re-resolve None entries once interact_time exists
+            # so Dissolve st advances.
             try:
                 it = renpy.game.interface.interact_time if renpy.game.interface else None
                 if it is not None and (None in self.start_times or None in self.anim_times):

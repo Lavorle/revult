@@ -1,4 +1,4 @@
-# SINGLE-TREE probe — collapsed host_build branches to True
+# Single-tree: SDL/GL branches removed; WgpuDraw only.
 # Copyright 2004-2026 Tom Rothamel <pytom@bishoujo.us>
 #
 # Permission is hereby granted, free of charge, to any person
@@ -3508,19 +3508,19 @@ class Interface:
 
                 # Ignore KEY-events while text is being edited (usually with an IME).
                 if ev.type == pygame.TEXTEDITING:
-                    # host_build: composition length guard (M3 B3 T3) — clamp to 64 chars
-                    # so Wayland long preedit does not overflow core.text_editing.
-                    if getattr(renpy, "host_build", False):
-                        try:
-                            t = getattr(ev, "text", "")
-                            if isinstance(t, str) and len(t) > 64:
-                                ev.text = t[:64]
-                                try:
-                                    ev.length = len(ev.text)
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
+                    # Single-tree: composition length guard (M3 B3 T3) — clamp to
+                    # 64 chars so Wayland long preedit does not overflow
+                    # core.text_editing.
+                    try:
+                        t = getattr(ev, "text", "")
+                        if isinstance(t, str) and len(t) > 64:
+                            ev.text = t[:64]
+                            try:
+                                ev.length = len(ev.text)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     if ev.text:
                         self.text_editing = ev
                     else:
@@ -3693,9 +3693,8 @@ class Interface:
                     pygame.CONTROLLERDEVICEADDED,
                     pygame.CONTROLLERDEVICEREMOVED,
                 )
-                if getattr(renpy, "host_build", False) and ev.type in _joy_types:
-                    pass
-                else:
+                # Single-tree: JOY/CONTROLLER events pass through unfiltered.
+                if ev.type not in _joy_types:
                     # This can set the event to None, to ignore it.
                     ev = renpy.display.controller.event(ev)
                     if not ev:

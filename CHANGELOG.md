@@ -29,7 +29,7 @@
 - `cargo fmt` + `cargo check -D warnings` green, `host` release ldd-clean.
 
 ### Breaking / Migration
-- GLSL `register_shader` / `register_textshader` on host hard-fails — use `register_wgsl_shader` (WGSL) per `doc/wgsl_shader_migration.md`.
+- GLSL `register_shader` / `register_textshader` on host soft-stubs (`host_glsl_stub`, text forces blit path) — use `register_wgsl_shader` (WGSL) per `doc/wgsl_shader_migration.md`.
 - Host build does not link SDL (`ldd` guard in `phase1_gates.sh` + `run_golden_tests.sh`).
 - `WGPU_BACKEND` must remain unset; host forces `Backends::VULKAN`.
 

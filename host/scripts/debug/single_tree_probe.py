@@ -10,10 +10,10 @@ Scope (goudi Minimum Viable Move):
          本脚本幂等，--revert 用 `git checkout -- <files>` 回滚。
 
 Usage:
-  python host/scripts/single_tree_probe.py --check    # dry-run
-  python host/scripts/single_tree_probe.py --apply    # 施加塌缩
-  python host/scripts/single_tree_probe.py --verify   # 跑 gate 子集
-  python host/scripts/single_tree_probe.py --revert   # 还原
+  python host/scripts/debug/single_tree_probe.py --check    # dry-run
+  python host/scripts/debug/single_tree_probe.py --apply    # 施加塌缩
+  python host/scripts/debug/single_tree_probe.py --verify   # 跑 gate 子集
+  python host/scripts/debug/single_tree_probe.py --revert   # 还原
 
 Design:
   只把 `getattr(renpy, "host_build", False)` → `True`，
@@ -29,7 +29,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 TARGETS = [
     ROOT / "renpy/__init__.py",
     ROOT / "renpy/display/core.py",
@@ -284,7 +284,7 @@ def do_verify() -> int:
     print("="*60)
     if failures:
         print(f"[probe] VERIFY FAIL: {len(failures)} failure(s). See goudi Stop Rule -> pause/shrink.")
-        print("  Next: python host/scripts/single_tree_probe.py --revert")
+        print("  Next: python host/scripts/debug/single_tree_probe.py --revert")
         return 1
     else:
         print("[probe] VERIFY PASS: single-tree probe green (headless subset).")

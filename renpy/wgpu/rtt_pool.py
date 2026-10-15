@@ -45,6 +45,8 @@ class RttPoolMixin:
     _rtt_prev_frame: list[tuple[int, int, int]]  # type: ignore
     _rtt_curr_frame: list[tuple[int, int, int]]  # type: ignore
     _rtt_pool_cap: int  # type: ignore
+    _rtt_gen: int  # type: ignore
+    _pool_handles: set[int]  # type: ignore
     drawable_size: tuple[int, int]  # type: ignore
     virtual_size: tuple[int, int]  # type: ignore
     layout_virtual_size: tuple[int, int]  # type: ignore
@@ -52,6 +54,30 @@ class RttPoolMixin:
         free_n = sum(len(v) for v in self._rtt_free.values())
         live_n = len(self._rtt_prev_frame) + len(self._rtt_curr_frame)
         return (live_n + free_n, len(self.texture_cache))
+
+    def _pool_handles_set(self):
+        """O(1) RTT membership set backing _rtt_hot_pool_handle.
+
+        Maintained by the same functions that mutate the freelist/frame rings
+        (acquire/recycle/release/free_push/destroy); initialized lazily so a
+        warm render draw object upgraded mid-run stays correct.
+        """
+        st = getattr(self, "_pool_handles", None)
+        if st is None:
+            st = set()
+            # Bootstrap from the current freelist + frame rings so an upgrade
+            # does not lose existing pool handles.
+            try:
+                for bucket in self._rtt_free.values():
+                    st.update(bucket)
+                for t in self._rtt_curr_frame:
+                    st.add(int(t[0]))
+                for t in self._rtt_prev_frame:
+                    st.add(int(t[0]))
+            except Exception:
+                pass
+            self._pool_handles = st
+        return st
 
     def _rtt_free_push(self, handle, w, h):
         """Single-point freelist insert bounded by ``_rtt_pool_cap`` per size.
@@ -65,6 +91,10 @@ class RttPoolMixin:
         bucket = self._rtt_free.setdefault(key, [])
         if len(bucket) < self._rtt_pool_cap:
             bucket.append(int(handle))
+            try:
+                self._pool_handles_set().add(int(handle))
+            except Exception:
+                pass
             return True
         return False
 
@@ -105,6 +135,10 @@ class RttPoolMixin:
         if free:
             handle = int(free.pop())
             self._rtt_curr_frame.append((handle, w, h))
+            try:
+                self._pool_handles_set().add(handle)
+            except Exception:
+                pass
             return handle
         live_same = [t for t in self._rtt_curr_frame if t[1] == w and t[2] == h]
         if len(live_same) >= self._rtt_pool_cap:
@@ -159,6 +193,10 @@ class RttPoolMixin:
             renpy_host.destroy_texture(handle)
         except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
+        try:
+            self._pool_handles_set().discard(handle)
+        except Exception:
+            pass
 
     def _recycle_frame_rtts(self):
         """End-of-frame: freelist previous frame RTTs; promote current → previous.
@@ -176,13 +214,73 @@ class RttPoolMixin:
             bucket = self._rtt_free.setdefault(key, [])
             if len(bucket) < self._rtt_pool_cap:
                 bucket.append(handle)
+                try:
+                    self._pool_handles_set().add(int(handle))
+                except Exception:
+                    pass
             elif renpy_host is not None:
                 try:
                     renpy_host.destroy_texture(handle)
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
+                try:
+                    self._pool_handles_set().discard(int(handle))
+                except Exception:
+                    pass
         self._rtt_prev_frame = self._rtt_curr_frame
         self._rtt_curr_frame = []
+        # New bake generation: cached_texture stamps from previous frames are
+        # stale on the next frame (see _rtt_cached_sample_ok).
+        self._rtt_gen = int(getattr(self, "_rtt_gen", 0)) + 1
+
+    def _rtt_hot_pool_handle(self, handle):
+        """True when ``handle`` is currently a pool RTT handle.
+
+        Pool membership matters for sampling: a handle sitting on
+        ``_rtt_free`` (or tracked on the frame rings after a bake) may be
+        re-acquired as a bake target at any time. Sampling it via a stale
+        ``cached_texture`` while another pass (or the same pass) targets it
+        causes a fatal wgpu usage conflict (HuangmeiC start dissolve).
+        """
+        try:
+            h = int(handle)
+        except (TypeError, ValueError):
+            return False
+        if h <= 0:
+            return False
+        try:
+            return h in self._pool_handles_set()
+        except Exception:
+            return False
+
+    def _rtt_cached_sample_ok(self, child):
+        """Freshness check for sampling ``child.cached_texture``.
+
+        Accepts only:
+        - non-pool handles (persisted chrome draw-model textures), or
+        - pool RTT handles stamped by a bake in the CURRENT generation
+          (``child._cached_texture_gen == self._rtt_gen``).
+
+        Rejects stale pool handles (freelist / frame rings / older gen) so the
+        caller re-bakes into a fresh target instead of sampling a handle that
+        may already be (or become) the target of an inner bake pass.
+        """
+        if child is None:
+            return False
+        ct = getattr(child, "cached_texture", None)
+        if isinstance(ct, int) and not isinstance(ct, bool):
+            handle = int(ct)
+        else:
+            # HostTexture / duck-typed wrapper exposing .handle (rtt_pool must
+            # not import renpy.wgpu.draw at module import time).
+            handle = int(getattr(ct, "handle", 0) or 0)
+        if handle <= 0:
+            return False
+        if not self._rtt_hot_pool_handle(handle):
+            # Non-pool handle: persisted chrome / helper texture; safe to use.
+            return True
+        gen = getattr(child, "_cached_texture_gen", None)
+        return gen is not None and int(gen) == int(getattr(self, "_rtt_gen", 0))
 
     def _destroy_all_rtts(self):
         """Destroy freelist + tracked frame RTTs (kill_textures / resize)."""
@@ -199,6 +297,12 @@ class RttPoolMixin:
         self._rtt_free.clear()
         self._rtt_prev_frame = []
         self._rtt_curr_frame = []
+        try:
+            st = getattr(self, "_pool_handles", None)
+            if st is not None:
+                st.clear()
+        except Exception:
+            pass
         if renpy_host is None:
             return
         for handle in handles:

@@ -16,10 +16,15 @@ from collections.abc import Sequence  # noqa: F401
 from typing import TYPE_CHECKING
 
 from .draw_debug import (  # noqa: F401
+    _BAKE_ENABLED,
+    _WALKSTAT_ON,    _UI_TRACE_LOGGED,
     _host_draw_fail,
     _phase0_due_dissolve,
     _phase0_log,
     _ui_trace_once,
+    trans_bake_cache_enabled,
+    trans_cache_count,
+    bake_attn,
 )
 from .host_bridge import host_env_bool
 from .host_texture import HostTexture
@@ -32,6 +37,55 @@ except Exception:
 
 if TYPE_CHECKING:
     from .host_texture import HostTexture
+
+
+# =============================================================================
+# Transition bake cache (dissolve old-slot cross-frame RTT content cache).
+# Evidence: /tmp/hmc_childtrust.txt — a dissolve mid frame bakes BOTH slots at
+# full-screen resolution; the old slot's structural fingerprint (type tree +
+# deep texture/mesh handles + uniforms minus u_renpy_dissolve + matrix bits)
+# is 95.7–99.7% identical across the whole transition band, so its bake result
+# can be pinned once and reused. Movie frames rewrite texture CONTENT in place
+# on a stable handle, so the key is stamped with the global movie publish
+# sequence from renpy.display.video._MOVIE_PUBLISH_SEQ — any successful movie
+# frame publish invalidates every cached bake (correct direction).
+# The pinned bake target comes from renpy_host.create_render_texture directly:
+# it never enters _rtt_free / frame rings / pool membership, never participates
+# in gen-stamp refusal, and its lifetime is owned entirely by the cache
+# (destroyed via destroy_texture on eviction / kill_textures / clear).
+# =============================================================================
+_MOVIE_VIDEO_MOD = None
+_MOVIE_SEQ_FAIL: bool = False
+
+
+def _movie_publish_seq() -> int:
+    """Snapshot of the global movie publish sequence (display.video.
+
+    lazily resolves ``renpy.display.video``; hermetic gates may inject a stub
+    module into ``sys.modules`` (product path imports the real one). Import
+    failure → -1 constant — the nonce then simply stays flat (same as a no
+    movie context) and product behavior is unaffected.
+    """
+    global _MOVIE_VIDEO_MOD, _MOVIE_SEQ_FAIL
+    mod = _MOVIE_VIDEO_MOD
+    if mod is not None:
+        try:
+            return int(getattr(mod, "_MOVIE_PUBLISH_SEQ", -1))
+        except Exception:
+            return -1
+    if _MOVIE_SEQ_FAIL:
+        return -1
+    try:
+        import sys as _sys
+
+        mod = _sys.modules.get("renpy.display.video")
+        if mod is None:
+            from renpy.display import video as mod  # type: ignore
+        _MOVIE_VIDEO_MOD = mod
+        return int(getattr(mod, "_MOVIE_PUBLISH_SEQ", -1))
+    except Exception:
+        _MOVIE_SEQ_FAIL = True
+        return -1
 
 
 class SurftreeMixin:
@@ -911,12 +965,13 @@ class SurftreeMixin:
             return child if child.handle > 0 else None
         if isinstance(child, int) and not isinstance(child, bool):
             return HostTexture(child, 1, 1) if child > 0 else None
-        ct = getattr(child, "cached_texture", None)
-        if isinstance(ct, HostTexture) and ct.handle > 0:
-            return ct
-        if isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
-            w, h = self._node_size(child, default=(1, 1))
-            return HostTexture(ct, max(1, w), max(1, h))
+        if self._rtt_cached_sample_ok(child):
+            ct = getattr(child, "cached_texture", None)
+            if isinstance(ct, HostTexture) and ct.handle > 0:
+                return ct
+            if isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
+                w, h = self._node_size(child, default=(1, 1))
+                return HostTexture(ct, max(1, w), max(1, h))
         if not self._is_render_like(child):
             return None
         if getattr(child, "mesh", None):
@@ -1005,8 +1060,428 @@ class SurftreeMixin:
             pass
         return leaf
 
-    def _child_to_texture(self, child):
-        """Convert a mesh-child to HostTexture for model texture slots."""
+    # --- Dissolve transition old-slot bake cache ------------------------------
+
+    _TRANS_BAKE_FP_MAX_NODES = 64  # node budget for fingerprint construction
+    _TRANS_BAKE_CACHE_CAP = 4      # LRU pinned entries (task contract)
+
+    def _trans_bake_key(self, child):
+        """Structural cache key for the dissolve old-slot bake.
+
+        key = ("trb1", _MOVIE_PUBLISH_SEQ, drawable_size, layout_virtual_size,
+               fingerprint)
+        with fingerprint = type tree (NodeClassName, depth ≤ 3, kid counts +
+        child offsets) + deep texture/mesh handles + uniform bits minus
+        ``u_renpy_dissolve`` + matrix2d/matrixcolor bits + node size.
+
+        A node carrying a non-composition shader / movie-ish surface is keyed
+        by its uniforms/maps; the movie publish seq covers in-place content
+        rewrites. Returns None when the tree is too large to fingerprint or
+        anything raised — callers treat None as cache-disabled (safe miss).
+        """
+        try:
+            cap = [self._TRANS_BAKE_FP_MAX_NODES]
+            body = self._trans_fp_node(child, 0, cap)
+            if body is None:
+                return None
+            drawable = tuple(int(x) for x in (getattr(self, "drawable_size", None) or (0, 0)))
+            layout = tuple(int(x) for x in (getattr(self, "layout_virtual_size", None) or (0, 0)))
+            return ("trb1", _movie_publish_seq(), drawable, layout, body)
+        except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
+            try:
+                trans_cache_count("key_fail")
+            except Exception:  # noqa: BLE001, S110
+                pass
+            _host_draw_fail("trans_bake_key", e)
+            return None
+
+    def _trans_matrix_bits(self, rev):
+        """Matrix2D/3D fingerprint bits: None→"n", identity→"i", else type+vals."""
+        if rev is None:
+            return "n"
+        try:
+            if self._is_identity(rev):
+                return "i"
+        except Exception:  # noqa: BLE001 -- wgpu host must not abort frame
+            pass
+        vals = []
+        try:
+            for attr in (
+                "xdx", "xdy", "ydx", "ydy", "xdw", "ydw",
+                "zdx", "zdy", "zdz", "zdw", "wdx", "wdy", "wdz", "wdw",
+            ):
+                v = getattr(rev, attr, None)
+                if v is None:
+                    continue
+                vals.append(round(float(v), 5))
+        except Exception:  # noqa: BLE001 -- value noise: uniform miss fallback
+            vals = ["x"]
+        return ("m", type(rev).__name__, tuple(vals))
+
+    def _trans_one_tex(self, t):
+        """Texture-like → handle tag or opaque type tag for the fingerprint."""
+        if t is None:
+            return 0
+        if isinstance(t, HostTexture):
+            h = int(getattr(t, "handle", 0) or 0)
+            return ("ht", h) if h > 0 else 0
+        if isinstance(t, int) and not isinstance(t, bool):
+            return ("ht", t) if t > 0 else 0
+        for attr in ("handle", "texture"):
+            inner = getattr(t, attr, None)
+            if isinstance(inner, HostTexture):
+                h = int(getattr(inner, "handle", 0) or 0)
+                return ("ht", h) if h > 0 else 0
+            if isinstance(inner, int) and not isinstance(inner, bool) and inner > 0:
+                return ("ht", inner)
+        return ("x", type(t).__name__)
+
+    def _trans_tex_handles(self, node, collect_cached: bool):
+        """Deep texture handle bits for one node (cached_texture excluded).
+
+        collect_cached=False at the slot child (depth 0): its cached_texture is
+        the self-cycling bake handle (pool reel re-targets every frame —
+        evidence hmc_childtrust §recycling) and must not churn the key.
+        """
+        th = []
+        for attr in ("texture", "textures"):
+            raw = getattr(node, attr, None)
+            entries = raw if isinstance(raw, (list, tuple)) else (((raw,) if raw is not None else ()))
+            for t in entries:
+                if t is None:
+                    th.append(0)
+                    continue
+                th.append(self._trans_one_tex(t))
+        if collect_cached:
+            ct = getattr(node, "cached_texture", None)
+            th.append(self._trans_one_tex(ct) if ct is not None else 0)
+        return tuple(th)
+
+    def _trans_mesh_bits(self, node):
+        """Mesh attribute fingerprint bits (mesh handles at depth ≥ 1)."""
+        m = getattr(node, "mesh", None)
+        if m is None:
+            return None
+        if isinstance(m, bool):
+            return ("b", m)
+        if isinstance(m, int) and not isinstance(m, bool):
+            return ("h", int(m))
+        if m == "quad":
+            return "q"
+        if hasattr(m, "vertices"):
+            try:
+                verts = list(m.vertices) or []
+            except Exception:  # noqa: BLE001, S110
+                verts = []
+            head = tuple(round(float(v), 3) for v in verts[:16])
+            return ("v", len(verts), head)
+        if hasattr(m, "get_points") or hasattr(m, "points"):
+            return ("p", type(m).__name__)
+        return ("o", type(m).__name__)
+
+    def _trans_fp_node(self, node, depth, cap):
+        """Recursive fingerprint tuple; depth ≤ 3, bounded by cap[0] nodes."""
+        if node is None or depth > 3:
+            return None
+        if isinstance(node, bool):
+            return ("b", node)
+        if isinstance(node, int) and not isinstance(node, bool):
+            return ("t", int(node))
+        if isinstance(node, float):
+            return ("f", round(node, 4))
+        if isinstance(node, str):
+            return ("s", node)
+        if isinstance(node, HostTexture):
+            return self._trans_one_tex(node)
+        cap[0] -= 1
+        if cap[0] < 0:
+            raise ValueError("trans fingerprint node budget exceeded")
+        parts = [type(node).__name__]
+        try:
+            nw, nh = self._node_size(node, default=(0, 0))
+        except Exception:  # noqa: BLE001, S110
+            nw = nh = 0
+        parts.append((int(nw), int(nh)))
+        parts.append(self._trans_matrix_bits(getattr(node, "reverse", None)))
+        uniforms = getattr(node, "uniforms", None)
+        if isinstance(uniforms, dict):
+            ub = []
+            for k in sorted(uniforms):
+                if k == "u_renpy_dissolve":
+                    continue
+                v = uniforms[k]
+                if isinstance(v, float):
+                    ub.append((k, round(v, 4)))
+                elif isinstance(v, int) and not isinstance(v, bool):
+                    ub.append((k, int(v)))
+                else:
+                    ub.append((k, str(v)))
+            parts.append(("u", tuple(ub)))
+        else:
+            parts.append(None)
+        parts.append(self._trans_mesh_bits(node))
+        # Evidence: exclude the slot child's (depth-0) texture set + the
+        # self-cycling cached_texture bake handle everywhere.
+        parts.append(self._trans_tex_handles(node, depth > 0))
+        kids = []
+        for knd, kx, ky in self._iter_children(node):
+            cap[0] -= 1
+            if cap[0] < 0:
+                raise ValueError("trans fingerprint node budget exceeded")
+            try:
+                off = (round(float(kx), 3), round(float(ky), 3))
+            except (TypeError, ValueError):
+                off = None
+            kids.append((off, self._trans_fp_node(knd, depth + 1, cap)))
+        parts.append(("k", tuple(kids)))
+        return tuple(parts)
+
+    def _trans_cache_state(self):
+        st = getattr(self, "_trans_bake_cache", None)
+        if st is None:
+            st = {}
+            self._trans_bake_cache = st  # key → (handle, w, h, drawable, layout)
+        pend = getattr(self, "_trans_bake_cache_pending", None)
+        if pend is None:
+            pend = []
+            self._trans_bake_cache_pending = pend  # destroys drained at next store
+        return st, pend
+
+    def _trans_cache_destroy_handle(self, handle) -> None:
+        """Give a pinned private RTT back to the host + pool bookkeeping."""
+        try:
+            h = int(handle)
+        except (TypeError, ValueError):
+            return
+        if h <= 0:
+            return
+        try:
+            import renpy_host  # type: ignore
+
+            renpy_host.destroy_texture(h)
+        except Exception:  # noqa: BLE001, S110 -- destroy must never abort frames
+            pass
+        try:
+            self._pool_handles_set().discard(h)
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+    def _trans_cache_clear(self) -> None:
+        """Destroy every pinned entry + pending destroys (kill_textures / resize)."""
+        st, pend = self._trans_cache_state()
+        try:
+            trans_cache_count("clear")
+        except Exception:  # noqa: BLE001, S110
+            pass
+        if st:
+            for ent in st.values():
+                try:
+                    self._trans_cache_destroy_handle(ent[0])
+                except Exception:  # noqa: BLE001, S110
+                    pass
+            st.clear()
+        if pend:
+            for h in list(pend):
+                self._trans_cache_destroy_handle(h)
+            pend.clear()
+
+    def _trans_cache_lookup(self, key, w, h):
+        """Return the pinned HostTexture for ``key`` when safely reusable.
+
+        Defenses: non-pool handle (never freelist / frame rings / pool
+        membership), liveness probe via renpy_host.texture_alive, and a
+        per-entry drawable/layout stamp — a resize boundary drops the entry
+        before content can leak across the geometry change.
+        """
+        st, pend = self._trans_cache_state()
+        ent = st.get(key) if st else None
+        if ent is None:
+            return None
+        handle, ew, eh, edraw, elay = ent
+        # Geometry-change boundary: a stale entry can not survive a resize.
+        drawable_now = getattr(self, "drawable_size", None) or (0, 0)
+        layout_now = getattr(self, "layout_virtual_size", None) or (0, 0)
+        try:
+            dnow = (int(drawable_now[0]), int(drawable_now[1]))
+            lnow = (int(layout_now[0]), int(layout_now[1]))
+        except Exception:  # noqa: BLE001, S110
+            return None
+        if dnow != edraw or lnow != elay:
+            self._trans_cache_clear()
+            return None
+        try:
+            if (int(ew), int(eh)) != (int(w), int(h)):
+                return None
+        except Exception:  # noqa: BLE001, S110
+            return None
+        if self._rtt_hot_pool_handle(handle):
+            # Pinned handles are non-pool by construction; a pool leak means
+            # external state corruption — refuse + drop rather than sample it.
+            self._trans_cache_clear()
+            return None
+        try:
+            import renpy_host  # type: ignore
+
+            alive = int(handle) > 0 and bool(renpy_host.texture_alive(int(handle)))
+        except Exception:  # noqa: BLE001, S110 -- probe failure → conservative miss
+            alive = False
+        if not alive:
+            self._trans_cache_destroy_handle(handle)
+            st.pop(key, None)
+            return None
+        # Fresh on-use: re-insert as MRU so bounded eviction stays stable.
+        st.pop(key, None)
+        st[key] = ent
+        return HostTexture(int(handle), int(ew), int(eh))
+
+    def _trans_cache_store(self, key, handle, w, h) -> None:
+        """Pin a freshly baked private RTT under ``key`` (LRU cap 4)."""
+        st, pend = self._trans_cache_state()
+        # Drain pending destroys queued from earlier frames: those handles
+        # were last drawn in an already-drained product frame, so destroying
+        # at the next bake keeps painter order and pool state intact
+        # (never a mid-frame destroy of a handle still inside frame_cmds).
+        if pend:
+            for ph in list(pend):
+                self._trans_cache_destroy_handle(ph)
+            pend.clear()
+        st.pop(key, None)
+        while len(st) >= self._TRANS_BAKE_CACHE_CAP:
+            try:
+                ok, old = next(iter(st.items()))
+            except StopIteration:
+                break
+            st.pop(ok, None)
+            try:
+                pend.append(int(old[0]))
+            except Exception:  # noqa: BLE001, S110
+                pass
+        drawable = getattr(self, "drawable_size", None) or (0, 0)
+        layout = getattr(self, "layout_virtual_size", None) or (0, 0)
+        st[key] = (
+            int(handle),
+            int(w),
+            int(h),
+            (int(drawable[0]), int(drawable[1])),
+            (int(layout[0]), int(layout[1])),
+        )
+
+    def _trans_cache_pinned_bake(self, child, key, w, h):
+        """Old-slot bake into a PRIVATE non-pool RTT pinned under ``key``.
+
+        Mirrors render_to_texture._rtt_pass exactly (instance-group isolation,
+        parent batch flush, nested frame + full-canvas scoping, virtual/clip
+        restore) except the target comes from renpy_host.create_render_texture
+        directly — never handed to _acquire_rtt/_recycle_frame_rtts, never
+        gen-stamped, never refused. Lifetime: pinned until eviction / clear.
+        """
+        import renpy_host  # type: ignore
+
+        self._ensure_pipes()  # type: ignore[attr-defined]
+        if w <= 0 or h <= 0:
+            w, h = self.virtual_size
+        bake_attn(self, "trans_bake_pin", child, w, h)
+        rtt = 0
+        _grp = getattr(self, "_instance_group", None)
+        if _grp is not None:
+            try:
+                if not _grp.empty():
+                    _grp.flush(self)
+                _grp.push()
+            except Exception:  # noqa: BLE001, S110
+                _grp = None
+            # Pending parent batch items precede the bake content in tree
+            # order; commit them into the parent target first (painter order).
+            self._flush_draw_batch()  # type: ignore[attr-defined]
+        try:
+            rtt = int(renpy_host.create_render_texture(w, h))
+            if rtt <= 0:
+                raise ValueError("trans_bake_pin: bad private RTT handle")
+            bw, bh = self._node_size(child)
+            if bw <= 0 or bh <= 0:
+                bw, bh = self.virtual_size
+            renpy_host.begin_target(rtt)
+            renpy_host.begin_frame()
+            old_vs = self.virtual_size
+            old_clip = self._clip_rect
+            old_poly = getattr(self, "_clip_poly", None)
+            old_full = getattr(self, "_frame_full_canvas_hop", None)
+            prev_full = getattr(self, "_frame_full_canvas", False)
+            self._frame_full_canvas_hop = True
+            self._frame_full_canvas = False
+            try:
+                # Honest bake count: the pinned bake is a real RTT pass (so
+                # WALKSTAT bakes= stays truthful; hit frames simply skip it).
+                try:
+                    self._frame_bakes = getattr(self, "_frame_bakes", 0) + 1
+                except Exception:  # noqa: BLE001, S110 -- counter is diagnostics-only
+                    pass
+                try:
+                    self.virtual_size = (bw, bh)
+                    self._clip_rect = None
+                    self._clip_poly = None
+                    self._draw_node(child, 0.0, 0.0)  # type: ignore[attr-defined]
+                finally:
+                    self.virtual_size = old_vs
+                    self._clip_rect = old_clip
+                    self._clip_poly = old_poly
+                    try:
+                        self._end_frame_present()  # type: ignore[attr-defined]
+                    except Exception as e:  # noqa: BLE001 -- logged, frame order kept
+                        _host_draw_fail("trans_bake_pin.end_frame", e)
+                    try:
+                        renpy_host.end_target()
+                    except Exception as e:  # noqa: BLE001 -- logged
+                        _host_draw_fail("trans_bake_pin.end_target", e)
+            finally:
+                self._frame_full_canvas = bool(prev_full)
+                self._frame_full_canvas_hop = old_full
+                if _grp is not None:
+                    try:
+                        _grp.pop()
+                    except Exception:  # noqa: BLE001, S110
+                        pass
+            self._trans_cache_store(key, rtt, int(bw), int(bh))
+            return HostTexture(rtt, int(bw), int(bh))
+        except Exception as e:  # noqa: BLE001 -- pin failure falls back to pooled path
+            _host_draw_fail("trans_bake_pin", e)
+            if rtt:
+                self._trans_cache_destroy_handle(rtt)
+                rtt = 0
+            return None
+
+    def kill_textures(self):
+        """Surftree pre-hook: clear the transition bake cache before the
+        Texture mixin destroys everything. Pinned private RTTs are invisible
+        to the RTT pool (never in _rtt_free / frame rings), so they must be
+        destroyed here when kill_textures runs (resize / quit / display reset
+        boundaries all funnel into draw.kill_textures). TextureMixin
+        .kill_textures is next in MRO; explicit delegation keeps the product
+        destruction order intact with no draw.py call-site change.
+        """
+        try:
+            if trans_bake_cache_enabled():
+                self._trans_cache_clear()
+        except Exception:  # noqa: BLE001, S110 -- cache cleanup must never abort kill
+            pass
+        try:
+            from .draw_texture import TextureMixin
+
+            TextureMixin.kill_textures(self)
+        except Exception as e:  # noqa: BLE001 -- delegate failure logged (re-raises under DRAW_RAISE)
+            _host_draw_fail("kill_textures", e)
+
+    def _child_to_texture(self, child, _trans_key=None):
+        """Convert a mesh-child to HostTexture for model texture slots.
+
+        ``_trans_key`` (optional) engages the transition old-slot bake cache:
+        on structural-key hit the pinned private RTT is returned directly —
+        no render_to_texture pass is issued. On miss the child is baked into a
+        private RTT (pin) when possible; a pin failure falls through to the
+        normal pooled path below, unchanged. ctx/uv/position math is never
+        touched — only the sampled texture content is substituted (identical
+        source w/h ↔ HostTexture shape).
+        """
         if child is None:
             return None
         if isinstance(child, HostTexture):
@@ -1015,11 +1490,12 @@ class SurftreeMixin:
             return HostTexture(child, 1, 1) if child > 0 else None
         if self._is_render_like(child):
             ct = getattr(child, "cached_texture", None)
-            if isinstance(ct, HostTexture) and ct.handle > 0:
-                return ct
-            if isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
-                w, h = self._node_size(child)
-                return HostTexture(ct, w, h)
+            if self._rtt_cached_sample_ok(child):
+                if isinstance(ct, HostTexture) and ct.handle > 0:
+                    return ct
+                if isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
+                    w, h = self._node_size(child)
+                    return HostTexture(ct, w, h)
             pure = self._extract_host_texture(child)
             if pure is not None:
                 return pure
@@ -1038,8 +1514,35 @@ class SurftreeMixin:
                 if solid_slot is not None:
                     return solid_slot
                 ct = getattr(child, "cached_texture", None)
-                if isinstance(ct, HostTexture) and ct.handle > 0:
-                    return ct
+                if self._rtt_cached_sample_ok(child):
+                    if isinstance(ct, HostTexture) and ct.handle > 0:
+                        return ct
+                    if isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
+                        w, h = self._node_size(child)
+                        return HostTexture(ct, w, h)
+            # Transition old-slot cache: skip the RTT bake entirely on a
+            # structural-key hit; pin a private RTT bake on the first miss.
+            if _trans_key is not None:
+                try:
+                    tw, th = self._node_size(child)
+                    if tw <= 0 or th <= 0:
+                        tw, th = self.virtual_size
+                    hit = self._trans_cache_lookup(_trans_key, tw, th)
+                    if hit is not None:
+                        trans_cache_count("hit")
+                        return hit
+                    trans_cache_count("miss")
+                    pinned = self._trans_cache_pinned_bake(child, _trans_key, tw, th)
+                    if pinned is not None:
+                        return pinned
+                    # Pin failed → the normal pooled bake below still runs.
+                except Exception as e:  # noqa: BLE001 -- cache failure must not abort frame
+                    _host_draw_fail("child_to_texture.trans_cache", e)
+            # Phase 0d bake-attribution: this is the mesh-children → texture
+            # seam; nested render_to_texture lands in an RTT bake here.
+            if _BAKE_ENABLED:
+                _cw, _ch = self._node_size(child)
+                bake_attn(self, "child_tex", child, _cw, _ch)
             handle = self.render_to_texture(child)
             ht = None
             if isinstance(handle, HostTexture):
@@ -1050,6 +1553,9 @@ class SurftreeMixin:
             if ht is not None:
                 try:
                     child.cached_texture = ht
+                    # Stamp the bake generation so next-frame pool handles
+                    # (freelist re-target) are refused by _rtt_cached_sample_ok.
+                    child._cached_texture_gen = int(getattr(self, "_rtt_gen", 0))
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             return ht
@@ -1077,6 +1583,10 @@ class SurftreeMixin:
                         return HostTexture(tex, 1, 1)
             except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
+        # Phase 0d bake-attribution: generic child → bake tail branch.
+        if _BAKE_ENABLED:
+            _cw, _ch = self._node_size(child)
+            bake_attn(self, "child_tex", child, _cw, _ch)
         try:
             handle = self.render_to_texture(child)
             ht = None
@@ -1088,6 +1598,9 @@ class SurftreeMixin:
             if ht is not None and self._is_render_like(child):
                 try:
                     child.cached_texture = ht
+                    # Stamp the bake generation so next-frame pool handles
+                    # (freelist re-target) are refused by _rtt_cached_sample_ok.
+                    child._cached_texture_gen = int(getattr(self, "_rtt_gen", 0))
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             return ht
@@ -1175,33 +1688,64 @@ class SurftreeMixin:
 
     def _bake_mesh_children(self, node, children):
         """Bake mesh children into an RTT leaf (surftree-owned)."""
+        if _WALKSTAT_ON:
+            try:
+                self._frame_bakes = getattr(self, "_frame_bakes", 0) + 1
+            except Exception:  # noqa: BLE001, S110 -- counter is diagnostics-only
+                pass
         try:
             import renpy_host  # type: ignore
             self._ensure_pipes()
             w, h = self._node_size(node)
             if w <= 0 or h <= 0:
                 w, h = self.virtual_size
-            rtt = self._acquire_rtt(w, h)
-            renpy_host.begin_target(rtt)
-            renpy_host.begin_frame()
-            old_vs = self.virtual_size
-            old_clip = self._clip_rect
-            old_poly = getattr(self, "_clip_poly", None)
-            try:
-                self.virtual_size = (w, h)
-                self._clip_rect = None
-                self._clip_poly = None
-                for child, cx, cy in children:
-                    self._draw_node(child, float(cx), float(cy))
-            finally:
-                self.virtual_size = old_vs
-                self._clip_rect = old_clip
-                self._clip_poly = old_poly
+            # Phase 0d bake-attribution: whole mesh-child subtree baked into
+            # an RTT here (nested begin_target frame, one bake per call).
+            bake_attn(self, "mesh_children", node, w, h)
+            # Tile-isolate the instance group around the nested bake (same
+            # contract as render_to_texture._rtt_pass): pending parent quads
+            # flush into the parent target BEFORE begin_target (painter order),
+            # and bake-target quads never merge into the parent frame's group
+            # map (they would be committed into the wrong parent target).
+            _grp = getattr(self, "_instance_group", None)
+            if _grp is not None:
                 try:
-                    self._end_frame_present()
-                    renpy_host.end_target()
-                except Exception as e:
-                    _host_draw_fail("mesh_bake.end_frame", e)
+                    if not _grp.empty():
+                        _grp.flush(self)
+                    _grp.push()
+                except Exception:
+                    _grp = None
+                # Pending parent batch items precede the bake content in tree
+                # order; commit them into the parent target first.
+                self._flush_draw_batch()
+            try:
+                rtt = self._acquire_rtt(w, h)
+                renpy_host.begin_target(rtt)
+                renpy_host.begin_frame()
+                old_vs = self.virtual_size
+                old_clip = self._clip_rect
+                old_poly = getattr(self, "_clip_poly", None)
+                try:
+                    self.virtual_size = (w, h)
+                    self._clip_rect = None
+                    self._clip_poly = None
+                    for child, cx, cy in children:
+                        self._draw_node(child, float(cx), float(cy))
+                finally:
+                    self.virtual_size = old_vs
+                    self._clip_rect = old_clip
+                    self._clip_poly = old_poly
+                    try:
+                        self._end_frame_present()
+                        renpy_host.end_target()
+                    except Exception as e:
+                        _host_draw_fail("mesh_bake.end_frame", e)
+            finally:
+                if _grp is not None:
+                    try:
+                        _grp.pop()
+                    except Exception:
+                        pass
             class _BakedLeaf:
                 pass
             leaf = _BakedLeaf()

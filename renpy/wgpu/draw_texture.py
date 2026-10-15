@@ -24,6 +24,40 @@ except Exception:  # noqa: BLE001
         DEAD_RECOVER = 3
 
 
+# ── Batched alive+touch probe (renpy_host.probe_touch adaptation) ──────────
+# The host exposes a batched FFI ``probe_touch(handles: list) -> list[bool]``
+# that performs ``texture_alive(handle)`` + ``touch_texture(handle)`` under a
+# single global-lock acquisition. It is resolved ONCE per process (lazy, at
+# first use): an older host build without the FFI permanently falls back to
+# the legacy per-call ``texture_alive``/``touch_texture`` path at every call
+# site — behavior is zero-delta there.
+_probe_touch_fn: object = None
+_probe_touch_checked: bool = False
+
+# Dedup-window bounds. The seen-set is only valid for one prepare/present
+# frame; a present gap is always ≥ one vsync interval, so a TTL under the
+# fastest expected interval (≈120fps → 8.3ms) collapses same-frame repeat
+# probes while guaranteeing a per-frame re-probe+touch. Oversize clears are
+# the size twin (mirrors the 8192 texture LRU cap headroom, arena.rs).
+_TOUCH_BATCH_TTL_S: float = 0.008
+_TOUCH_BATCH_MAX_SEEN: int = 8192
+
+
+def _resolve_probe_touch():
+    global _probe_touch_fn, _probe_touch_checked
+    if not _probe_touch_checked:
+        _probe_touch_checked = True
+        try:
+            import renpy_host  # type: ignore
+
+            fn = getattr(renpy_host, "probe_touch", None)
+        except Exception:  # noqa: BLE001
+            fn = None
+        if callable(fn):
+            _probe_touch_fn = fn
+    return _probe_touch_fn
+
+
 class TextureMixin:
     texture_cache: dict
     _transient_tex: dict
@@ -36,6 +70,77 @@ class TextureMixin:
     _mesh_cache: dict
     _mesh_deferred_destroy: list
     _quad_mesh: object
+    _touch_batch_seen: dict
+    _touch_batch_t0: float | None
+
+    def _ensure_alive_touch_batch(self, handles):
+        """Batched per-frame alive+touch probe for texture handles.
+
+        Takes a list of int handles (entries ≤0 short-circuit to False without
+        FFI). Returns ``list[bool]`` aligned with ``handles``, or ``None`` when
+        the batched FFI is unavailable/failed so callers can run their legacy
+        ``texture_alive``/``touch_texture`` path unchanged (zero-delta fallback).
+
+        Semantics per handle result:
+        - ``True``: the handle is alive **and has been touched for this frame**
+          (``probe_touch`` performs the touch under the same lock) — callers
+          must treat it exactly like the legacy touch_texture success branch.
+        - ``False``: keep the caller's existing failure/rebuild branch.
+
+        Dedup: ``self._touch_batch_seen`` maps handle → alive result and is
+        reused within the frame window (no FFI roundtrip at all on repeat
+        probes). The window is bounded two ways, both clears are whole-set and
+        happen only at re-probe time, so a handle probed during a frame always
+        receives its touch once, and entries can only be dropped *earlier*
+        (extra probe+touch), never skipped:
+        - TTL: whole-set clear when the window grew past ``_TOUCH_BATCH_TTL_S``;
+          a present gap between frames always exceeds one vsync interval (~8ms
+          at 120fps), so a new frame simply re-probes instead of reusing stale
+          epoch-pin state.
+        - Size: ``self._touch_batch_seen`` cleared whole when it reaches
+          ``_TOUCH_BATCH_MAX_SEEN`` (long thrash frames can't grow it unbounded).
+        Process-consistent because the state lives on ``self`` (per WgpuDraw
+        instance) and every access re-checks the bounds.
+        """
+        probe = _resolve_probe_touch()
+        if probe is None:
+            return None
+        seen = getattr(self, "_touch_batch_seen", None)
+        if not isinstance(seen, dict):
+            seen = {}
+            self._touch_batch_seen = seen
+        now = _time.monotonic()
+        t0 = getattr(self, "_touch_batch_t0", None)
+        if (
+            t0 is None
+            or (now - t0) >= _TOUCH_BATCH_TTL_S
+            or len(seen) >= _TOUCH_BATCH_MAX_SEEN
+        ):
+            seen.clear()
+            self._touch_batch_t0 = now
+        norm = []
+        for h in handles:
+            try:
+                n = int(h)
+            except Exception:  # noqa: BLE001
+                n = 0
+            norm.append(n)
+        miss = [(i, n) for i, n in enumerate(norm) if n > 0 and n not in seen]
+        if miss:
+            batch = [n for _, n in miss]
+            try:
+                res = probe(batch)
+            except Exception:  # noqa: BLE001
+                return None
+            try:
+                vals = list(res)
+            except Exception:  # noqa: BLE001
+                return None
+            if len(vals) != len(batch):
+                return None
+            for (i, n), ok in zip(miss, vals):
+                seen[n] = bool(ok)
+        return [(seen[n] if n > 0 else False) for n in norm]
 
     def _stash_handle_pixels(self, handle, w, h, pixels, *, transient=False):
         try:
@@ -108,24 +213,35 @@ class TextureMixin:
             return None
         if handle <= 0:
             return ht
-        # State 1: ALIVE probe — single lookup via texture_alive
-        try:
-            import renpy_host  # type: ignore
-
-            alive_fn = getattr(renpy_host, "texture_alive", None)
-            if alive_fn is not None:
-                is_alive = bool(alive_fn(int(handle)))
-            else:
-                is_alive = True
-            if is_alive:
-                if hasattr(renpy_host, "touch_texture"):
-                    try:
-                        renpy_host.touch_texture(int(handle))
-                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                        pass
+        # State 1: ALIVE probe — batched via probe_touch (one host-lock
+        # roundtrip covers probe+touch, deduped per frame); legacy path
+        # otherwise, byte-for-byte identical failure behavior.
+        _b1 = self._ensure_alive_touch_batch([handle])
+        if _b1 is not None:
+            if _b1[0]:
+                # alive=True from probe_touch carries the touch for this
+                # frame — same semantics as the legacy touch_texture call.
                 return ht
-        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            pass
+            # alive=False keeps the State 2/3 remap + dead-rebuild flow.
+        else:
+            # Legacy path (probe_touch FFI missing or call failed).
+            try:
+                import renpy_host  # type: ignore
+
+                alive_fn = getattr(renpy_host, "texture_alive", None)
+                if alive_fn is not None:
+                    is_alive = bool(alive_fn(int(handle)))
+                else:
+                    is_alive = True
+                if is_alive:
+                    if hasattr(renpy_host, "touch_texture"):
+                        try:
+                            renpy_host.touch_texture(int(handle))
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                            pass
+                    return ht
+            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                pass
         # State 2: REMAPPED — single lookup, no chain walk
         remap = self._handle_remap
         try:
@@ -232,53 +348,28 @@ class TextureMixin:
                         and last_idx is not None
                         and int(last_idx) == int(frame_idx)
                     ):
-                        alive = True
-                        if hasattr(renpy_host, "texture_alive"):
-                            try:
-                                alive = bool(renpy_host.texture_alive(int(thandle)))
-                            except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                                alive = True
-                        if alive:
-                            if hasattr(renpy_host, "touch_texture"):
+                        _tb = self._ensure_alive_touch_batch([int(thandle)])
+                        if _tb is not None:
+                            if _tb[0]:
+                                # Batched probe already touched per this frame.
+                                return HostTexture(thandle, w, h)
+                            # alive=False → drop into the fingerprint /
+                            # rewrite-or-recreate path below unchanged.
+                        else:
+                            # Legacy texture_alive/touch_texture probe pair.
+                            alive = True
+                            if hasattr(renpy_host, "texture_alive"):
                                 try:
-                                    renpy_host.touch_texture(int(thandle))
-                                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                                    pass
-                            return HostTexture(thandle, w, h)
-            if hasattr(surf, "_pixels"):
-                raw = surf._pixels
-                pixels = bytes(raw)
-            else:
-                try:
-                    pixels = bytes(surf.get_buffer())
-                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                    pixels = b""
-            empty_pad_input = False
-            if len(pixels) < need:
-                if len(pixels) == 0:
-                    empty_pad_input = True
-                    pixels = bytes(need)  # transparent black
-                else:
-                    pixels = pixels + bytes(need - len(pixels))
-            elif len(pixels) > need:
-                pixels = pixels[:need]
-            self._load_empty_pad_input = empty_pad_input and (not transient)
-            fp = _surf_fingerprint(pixels, w, h)
-            if (
-                host_env_bool("RENPY_HOST_UI_TRACE")
-                and "empty_upload" not in _UI_TRACE_LOGGED
-                and (w * h) > 4
-            ):
-                try:
-                    any_a = False
-                    for i in range(3, len(pixels), 4):
-                        if pixels[i]:
-                            any_a = True
-                            break
-                    if not any_a:
-                        self._ui_trace_blank_pixels = (w, h, bool(empty_pad_input))
-                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                    pass
+                                    alive = bool(renpy_host.texture_alive(int(thandle)))
+                                except Exception:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                                    alive = True
+                            if alive:
+                                if hasattr(renpy_host, "touch_texture"):
+                                    try:
+                                        renpy_host.touch_texture(int(thandle))
+                                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                                        pass
+                                return HostTexture(thandle, w, h)
             def _alive(handle):
                 if not handle:
                     return False
@@ -314,6 +405,64 @@ class TextureMixin:
                     return
                 try:
                     renpy_host.touch_texture(int(handle))
+                except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                    pass
+            # Fast path (common case): raw buffer already exactly `need`
+            # bytes. Cheap 3-slice content fingerprint FIRST, cache-hit
+            # short-circuit SECOND, full-pixel `bytes()` materialization ONLY
+            # on an actual (re)load. Previously every non-transient load paid
+            # an 8.3MB (1920x1080) memcpy per even-cache-hit frame.
+            raw = surf._pixels if hasattr(surf, "_pixels") else None
+            if raw is None:
+                try:
+                    raw = surf.get_buffer()
+                except Exception:  # noqa: BLE001 -- surf readback failing must keep the slow path probing
+                    raw = None
+            cached_row = None
+            if raw is not None and len(raw) == need:
+                # exact-size fast path never pads; clear any prior-call pad flag.
+                self._load_empty_pad_input = False
+                fp = _surf_fingerprint(raw, w, h)
+                cached_row = self.texture_cache.get(key)
+                if cached_row is not None:
+                    old_fp, handle, old_w, old_h = cached_row
+                    # Batched probe: alive+touch in one lock (dedup per frame);
+                    # a False result keeps the original pop-and-recreate flow.
+                    _cb = self._ensure_alive_touch_batch([int(handle)])
+                    _hb_alive = bool(_cb[0]) if _cb is not None else _alive(handle)
+                    if not _hb_alive:
+                        self.texture_cache.pop(key, None)
+                    elif old_fp is not None and old_fp == fp and (old_w, old_h) == (w, h):
+                        if _cb is None:
+                            _touch(handle)
+                        return HostTexture(handle, w, h)
+                pixels = bytes(raw)
+            else:
+                pixels = bytes(raw) if raw is not None else b""
+                empty_pad_input = False
+                if len(pixels) < need:
+                    if len(pixels) == 0:
+                        empty_pad_input = True
+                        pixels = bytes(need)  # transparent black
+                    else:
+                        pixels = pixels + bytes(need - len(pixels))
+                elif len(pixels) > need:
+                    pixels = pixels[:need]
+                self._load_empty_pad_input = empty_pad_input and (not transient)
+                fp = _surf_fingerprint(pixels, w, h)
+            if (
+                host_env_bool("RENPY_HOST_UI_TRACE")
+                and "empty_upload" not in _UI_TRACE_LOGGED
+                and (w * h) > 4
+            ):
+                try:
+                    any_a = False
+                    for i in range(3, len(pixels), 4):
+                        if pixels[i]:
+                            any_a = True
+                            break
+                    if not any_a:
+                        self._ui_trace_blank_pixels = (w, h, bool(empty_pad_input))
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             if transient:
@@ -356,8 +505,32 @@ class TextureMixin:
                     thandle, tw, th, tfp = tent[0], tent[1], tent[2], tent[3]
                     if tw == w and th == h and thandle and _alive(thandle):
                         if tfp is not None and tfp == fp:
-                            _touch(thandle)
-                            return HostTexture(thandle, w, h)
+                            # Movie transient rewrite guard: the 3×64B sample
+                            # fingerprint (``_surf_fingerprint``) misses most
+                            # real content changes of 1080p video frames — on
+                            # HuangmeiC main_menu.webm 49/359 consecutive frame
+                            # pairs hash equal per those three windows (the top
+                            # -left, the exact mid scanline and the
+                            # bottom-right of an 8.3MB frame stay literally
+                            # static while the middle band animates), with
+                            # same-hash runs up to 9 frames per run (measured).
+                            # Short-circuiting to ``_touch`` on equal
+                            # fingerprint froze the menu video ~14% of frame
+                            # transitions (up to 300ms per run at 30fps).
+                            # Rewrites are still required even on equal
+                            # fingerprint when the presentation index advanced,
+                            # because a different-but-colliding frame is a
+                            # real content change the GPU has to see.
+                            # Same-index + same-fp stays a touch (no thrash).
+                            last_touch_idx = tent[4] if len(tent) >= 5 else None
+                            frame_advanced = (
+                                frame_idx is not None
+                                and last_touch_idx is not None
+                                and int(last_touch_idx) != int(frame_idx)
+                            )
+                            if not frame_advanced:
+                                _touch(thandle)
+                                return HostTexture(thandle, w, h)
                         wrote = False
                         wt_ms = 0.0
                         if hasattr(renpy_host, "write_texture_rgba"):
@@ -419,10 +592,16 @@ class TextureMixin:
             self._load_empty_pad_input = False
             if key in self.texture_cache:
                 old_fp, handle, old_w, old_h = self.texture_cache[key]
-                if not _alive(handle):
+                # Batched probe (alive+touch in one lock). Detection order and
+                # fall-through branches are unchanged; the returned
+                # HostTexture/cache row semantics below are untouched.
+                _cb = self._ensure_alive_touch_batch([int(handle)])
+                _hb_alive = bool(_cb[0]) if _cb is not None else _alive(handle)
+                if not _hb_alive:
                     self.texture_cache.pop(key, None)
                 elif old_fp is not None and old_fp == fp and (old_w, old_h) == (w, h):
-                    _touch(handle)
+                    if _cb is None:
+                        _touch(handle)
                     return HostTexture(handle, w, h)
                 else:
                     wrote = False

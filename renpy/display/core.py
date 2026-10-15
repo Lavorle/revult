@@ -30,6 +30,7 @@ import threading
 import gc
 import atexit
 import platform
+import contextlib
 
 import renpy
 import renpy.pygame as pygame
@@ -40,6 +41,22 @@ from renpy.display.displayable import Displayable, DisplayableArguments as Displ
 from renpy.display.scenelists import SceneListEntry as SceneListEntry, SceneLists as SceneLists
 
 import_time = time.time()
+
+# --- host hot-path lazy caches -------------------------------------------------
+# Module-level cells avoid both re-import work inside per-frame hot paths and
+# the ``global X`` UnboundLocalError anti-pattern: a single-slot list holder is
+# read/written without ever re-binding a module global.
+
+# (renpy_host, (Movie, Transition, MultiBox, Container, SayBehavior, video)) for
+# _try_host_re_present_fast. None on each slot until a successful import slot
+# by slot; failed imports retry next frame (same as per-frame imports did).
+_HOST_FAST_CELL: list = [None, None]
+
+# Cached render-schedule lock object (RLock from renderschedule), or a single
+# reusable ``contextlib.nullcontext()`` instance when renderschedule is not
+# importable (early/bare import paths). Both are reusable with-statement
+# context managers; the cell is filled once and never rebound per frame.
+_RENDER_SCHEDULE_CM_CELL: list = [None]
 
 try:
     import android
@@ -197,6 +214,57 @@ def displayable_by_tag(layer: str, tag: str) -> Displayable | None:
     """
 
     return renpy.game.context().scene_lists.get_displayable_by_tag(layer, tag)
+
+
+def _host_fast_renpy_host():
+    """Cached ``renpy_host`` reference for per-frame re-present fast path."""
+    host = _HOST_FAST_CELL[0]
+    if host is None:
+        import renpy_host  # type: ignore
+
+        host = renpy_host
+        _HOST_FAST_CELL[0] = host
+    return host
+
+
+def _host_fast_classes():
+    """Cached display-class refs for _try_host_re_present_fast.
+
+    Returns ``(Movie, Transition, MultiBox, Container, SayBehavior, video)``.
+    A failed import leaves the cell unwritten; the next call retries, matching
+    what per-frame ``from renpy.display.video import Movie`` did.
+    """
+    classes = _HOST_FAST_CELL[1]
+    if classes is None:
+        from renpy.display import video
+        from renpy.display.behavior import SayBehavior
+        from renpy.display.layout import Container, MultiBox
+        from renpy.display.transition import Transition
+        from renpy.display.video import Movie
+
+        classes = (Movie, Transition, MultiBox, Container, SayBehavior, video)
+        _HOST_FAST_CELL[1] = classes
+    return classes
+
+
+def _draw_schedule_cm():
+    """Reusable render-schedule lock, for ``with:`` in draw_screen.
+
+    Caches ``renderschedule.schedule_lock_obj()`` (process-wide RLock) instead
+    of building a fresh contextlib generator context every frame. Falls back to
+    one reusable ``nullcontext`` when renderschedule is not importable — same
+    no-op semantics as the previous per-frame ``render_schedule()`` fallback.
+    """
+    cm = _RENDER_SCHEDULE_CM_CELL[0]
+    if cm is None:
+        try:
+            from renpy.display.renderschedule import schedule_lock_obj
+
+            cm = schedule_lock_obj()
+        except Exception:  # noqa: BLE001 — instrumentation must never abort frames
+            cm = contextlib.nullcontext()
+        _RENDER_SCHEDULE_CM_CELL[0] = cm
+    return cm
 
 
 class IgnoreEvent(Exception):
@@ -1371,14 +1439,16 @@ class Interface:
         """Movie/static re-present without full render_screen (WP3 residual)."""
         if not True:
             return False
+        # PHASE0: start of the attempt clock (renpy-side python work); read
+        # only from here on when the signal gate is on.
+        _rp_t0 = time.monotonic()
         try:
-            import os as _os
-            if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+            if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
                 self._host_re_present_attempts = int(getattr(self, "_host_re_present_attempts", 0)) + 1
         except Exception:
             pass
         try:
-            import renpy_host  # type: ignore
+            renpy_host = _host_fast_renpy_host()
         except Exception:
             return False
         re_present = getattr(renpy_host, "re_present_last_product", None)
@@ -1395,8 +1465,7 @@ class Interface:
         try:
             if self.get_ongoing_transition(None):
                 try:
-                    import os as _os
-                    if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                    if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
                         n = int(getattr(self, "_host_re_present_attempts", 0))
                         if n < 8 or (n % 300) == 0:
                             tt = self.transition_time.get(None)
@@ -1417,8 +1486,7 @@ class Interface:
                     continue
                 if self.get_ongoing_transition(_layer):
                     try:
-                        import os as _os
-                        if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                        if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
                             n = int(getattr(self, "_host_re_present_attempts", 0))
                             if n < 8 or (n % 300) == 0:
                                 print(
@@ -1430,8 +1498,7 @@ class Interface:
                     return False
         except Exception as e:
             try:
-                import os as _os
-                if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
                     print(f"PHASE0_SIGNAL re_present_block trans_exc {e!r}", flush=True)
             except Exception:
                 pass
@@ -1441,11 +1508,7 @@ class Interface:
         # Container-only residual (MultiBox/Fixed parents after child ATL/Movie)
         # must not permanently block Movie re-present on dense prefs idle.
         try:
-            from renpy.display.video import Movie as _Movie
-            from renpy.display.transition import Transition as _Trans
-            from renpy.display.layout import MultiBox as _MultiBox, Container as _Container
-            from renpy.display.behavior import SayBehavior as _SayBehavior
-            import time as _time
+            _Movie, _Trans, _MultiBox, _Container, _SayBehavior, _video = _host_fast_classes()
 
             movies_playing = False
             try:
@@ -1454,55 +1517,58 @@ class Interface:
                 movies_playing = False
 
             now = get_time()
-            now_m = _time.monotonic()
+            now_m = time.monotonic()
             kept = []
             ui_due = False
             ui_due_type = "?"
-            for when, d in renpy.display.render.redraw_queue:
-                if isinstance(d, _Trans):
-                    if bool(getattr(d, "events", False)):
-                        continue
-                    delay = float(getattr(d, "time", getattr(d, "delay", 0.0)) or 0.0)
-                    t0 = getattr(d, "_host_t0", None)
-                    if t0 is None:
-                        try:
-                            d._host_t0 = now_m  # type: ignore[attr-defined]
-                        except Exception:
-                            pass
-                        t0 = now_m
-                    if (now_m - float(t0)) >= (delay + 0.016):
-                        try:
-                            d.events = True
-                        except Exception:
-                            pass
-                        continue
-                    # Stale transition residue while Interface has no ongoing.
-                    continue
-                if isinstance(d, _Movie):
-                    kept.append((when, d))
-                    continue
-                # Sticky pause/say behaviors after transitions: drop when not modal.
-                if isinstance(d, _SayBehavior):
-                    continue
-                if when <= now:
-                    try:
-                        in_cache = id(d) in renpy.display.render.render_cache
-                    except Exception:
-                        in_cache = True
-                    if in_cache:
-                        # Container-only with movies: parent marks after Movie/ATL;
-                        # chrome sample handles are unchanged — re-present is safe.
-                        if movies_playing and isinstance(d, (_MultiBox, _Container)):
-                            # Drop so process_redraws on a later full frame can reclaim.
+            # Hot-path short-circuit: an empty queue has nothing to keep,
+            # nothing to drop, and no ui_due — skip the whole walk and the
+            # list rebind (identity-sensitive) entirely.
+            if renpy.display.render.redraw_queue:
+                for when, d in renpy.display.render.redraw_queue:
+                    if isinstance(d, _Trans):
+                        if bool(getattr(d, "events", False)):
                             continue
-                        ui_due = True
-                        ui_due_type = type(d).__name__
-                kept.append((when, d))
-            renpy.display.render.redraw_queue = kept
+                        delay = float(getattr(d, "time", getattr(d, "delay", 0.0)) or 0.0)
+                        t0 = getattr(d, "_host_t0", None)
+                        if t0 is None:
+                            try:
+                                d._host_t0 = now_m  # type: ignore[attr-defined]
+                            except Exception:
+                                pass
+                            t0 = now_m
+                        if (now_m - float(t0)) >= (delay + 0.016):
+                            try:
+                                d.events = True
+                            except Exception:
+                                pass
+                            continue
+                        # Stale transition residue while Interface has no ongoing.
+                        continue
+                    if isinstance(d, _Movie):
+                        kept.append((when, d))
+                        continue
+                    # Sticky pause/say behaviors after transitions: drop when not modal.
+                    if isinstance(d, _SayBehavior):
+                        continue
+                    if when <= now:
+                        try:
+                            in_cache = id(d) in renpy.display.render.render_cache
+                        except Exception:
+                            in_cache = True
+                        if in_cache:
+                            # Container-only with movies: parent marks after Movie/ATL;
+                            # chrome sample handles are unchanged — re-present is safe.
+                            if movies_playing and isinstance(d, (_MultiBox, _Container)):
+                                # Drop so process_redraws on a later full frame can reclaim.
+                                continue
+                            ui_due = True
+                            ui_due_type = type(d).__name__
+                    kept.append((when, d))
+                renpy.display.render.redraw_queue = kept
             if ui_due:
                 try:
-                    import os as _os
-                    if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                    if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
                         self._host_re_present_blocked_ui = int(
                             getattr(self, "_host_re_present_blocked_ui", 0)
                         ) + 1
@@ -1520,7 +1586,6 @@ class Interface:
 
         # Movie texture rewrite in place.
         try:
-            from renpy.display import video as _video
             for (channel, mask_channel), movies in list(_video.displayable_channels.items()):
                 if not movies:
                     continue
@@ -1538,13 +1603,14 @@ class Interface:
             pass
 
         try:
-            from renpy.display.video import Movie as _Movie
             now = get_time()
-            renpy.display.render.redraw_queue = [
-                (when, d)
-                for (when, d) in renpy.display.render.redraw_queue
-                if not (when <= now and isinstance(d, _Movie))
-            ]
+            # Empty queue short-circuit: skip building a new list each attempt.
+            if renpy.display.render.redraw_queue:
+                renpy.display.render.redraw_queue = [
+                    (when, d)
+                    for (when, d) in renpy.display.render.redraw_queue
+                    if not (when <= now and isinstance(d, _Movie))
+                ]
         except Exception:
             pass
 
@@ -1554,8 +1620,7 @@ class Interface:
             return False
         if ok:
             try:
-                import os as _os
-                if _os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
                     self._host_re_present_ok = int(getattr(self, "_host_re_present_ok", 0)) + 1
                     n = int(getattr(self, "_host_re_present_ok", 0))
                     if n == 1 or (n % 120) == 0:
@@ -1563,6 +1628,23 @@ class Interface:
                             f"PHASE0_SIGNAL re_present_ok n={n} "
                             f"attempts={getattr(self,'_host_re_present_attempts',0)} "
                             f"blocked_ui={getattr(self,'_host_re_present_blocked_ui',0)}",
+                            flush=True,
+                        )
+            except Exception:
+                pass
+            try:
+                # PHASE0: renpy-side python wall of the attempt (walk / purge /
+                # movie rewrite, up to but excluding the host FFI present
+                # call, which the host reports as T_re_present_ms). Throttled
+                # ~0.5 s like the other PHASE0_SIGNAL lines. Zero semantic
+                # change; only a monotonic read per attempt when gated.
+                if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                    _rp_now = time.monotonic()
+                    if (_rp_now - getattr(self, "_host_rp_ph0_last_t", 0.0)) >= 0.5:
+                        self._host_rp_ph0_last_t = _rp_now
+                        print(
+                            f"PHASE0_SIGNAL t={_rp_now:.3f} "
+                            f"rp_ms={(_rp_now - _rp_t0) * 1000.0:.2f} n={n}",
                             flush=True,
                         )
             except Exception:
@@ -1577,6 +1659,24 @@ class Interface:
         return ok
 
     def draw_screen(self, root_widget, fullscreen_video, draw):
+        # HOST: hold the render-schedule lock across the whole visit so a
+        # foreign walker thread (host gate / force-redraw probe) can neither
+        # observe a half-drained screen tree nor have its OWN freshly
+        # rendered tree mark_sweep()-killed mid-walk — under the host probe
+        # thread that was the whole / partial-chrome black flake (the
+        # walker's Render.children were cleared while it walked).
+        # Upstream single-threaded renpy needs no such lock; reentrant, and
+        # renpy's own inner trail acquires nesting stays legal.
+        #
+        # Per-frame fast path: renderschedule holds a single process-wide RLock
+        # (schedule_lock_obj), so cache that raw lock object once (cell holder,
+        # module-level) and reuse it with ``with:`` — identical acquire/release
+        # semantics, no fresh contextlib generator per frame, and the same
+        # reusable nullcontext fallback when renderschedule is not importable.
+        with _draw_schedule_cm():
+            return self._draw_screen_sched_locked(root_widget, fullscreen_video, draw)
+
+    def _draw_screen_sched_locked(self, root_widget, fullscreen_video, draw):
         try:
             renpy.display.render.per_frame = True
             renpy.display.screen.per_frame()

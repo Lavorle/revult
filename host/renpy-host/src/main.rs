@@ -40,6 +40,11 @@ thread_local! {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // Latch RENPY_HOST_HEADLESS once (OnceLock; no getenv in frame loops).
+    crate::gpu::init_headless();
+    if crate::gpu::headless_enabled() {
+        info!("renpy-host headless=1 (present skipped; game-RT only)");
+    }
     info!("renpy-host Phase 2 starting");
     {
         let backend =
@@ -424,9 +429,15 @@ impl ApplicationHandler for ProductApp {
             let st = host_state().lock().unwrap();
             (st.width, st.height, st.title.clone())
         };
-        let attrs = Window::default_attributes()
+        let mut attrs = Window::default_attributes()
             .with_title(title)
             .with_inner_size(winit::dpi::LogicalSize::new(w as f64, h as f64));
+        // Headless: keep the winit Window (EventLoop pump contract + surface
+        // target for the Vulkan swapchain config) but never map it on screen.
+        // Present itself is skipped in arena.rs / gpu.rs.
+        if crate::gpu::headless_enabled() {
+            attrs = attrs.with_visible(false);
+        }
         match event_loop.create_window(attrs) {
             Ok(window) => {
                 let window = Arc::new(window);

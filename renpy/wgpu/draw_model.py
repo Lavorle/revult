@@ -1,7 +1,8 @@
 """draw_model - model-leaf emit + node helpers (mixin)."""
 from __future__ import annotations
 
-from .draw_debug import (  # noqa: F401
+from .draw_debug import (
+    _WALKSTAT_ON,  # noqa: F401
     _PHASE0_LAST_DISSOLVE_T,
     _PHASE0_LAST_FRAME_T,
     _PHASE0_LAST_GENERIC,
@@ -18,6 +19,7 @@ from .draw_debug import (  # noqa: F401
     _phase0_signals_enabled,
     _safe_print,
     _ui_trace_once,
+    _walkstat_skip,
 )
 from .draw_surftree import SurftreeMixin  # T5 shim
 from .host_texture import HostTexture
@@ -573,6 +575,11 @@ class ModelMixin:
         """
         if node is None:
             return
+        if _WALKSTAT_ON:
+            try:
+                self._frame_nodes = getattr(self, "_frame_nodes", 0) + 1
+            except Exception:  # noqa: BLE001, S110 -- counter is diagnostics-only
+                pass
         try:
             self._draw_node_inner(node, ox, oy)
         except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
@@ -592,6 +599,11 @@ class ModelMixin:
         ):
             new_clip, empty = self._clip_push_from_node(node, ox, oy)
             if empty:
+                if _WALKSTAT_ON:
+                    try:
+                        _walkstat_skip("clip_empty", f"d={getattr(self, '_frame_depth', 0)} {type(node).__name__} id={id(node) % 100000}")
+                    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                        pass
                 return
             is_poly = isinstance(new_clip, list)
             # Mutual exclusion: clip_poly is not None preferred over clip_rect

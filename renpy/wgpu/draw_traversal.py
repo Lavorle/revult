@@ -40,7 +40,9 @@ class TraversalMixin:
     _mesh_cache: dict  # type: ignore
     _mesh_cache_cap: int  # type: ignore
     _mesh_deferred_destroy: list[int]  # type: ignore
-
+    # Frame-generation counter advanced once by ``_invalidate_prepared``
+    # (O(1) root marker); per-node frame-local clears fold into prepare.
+    _frame_gen: int
     def _extract_host_texture(self, child, depth=0):
         """Shim: canonical in SurftreeMixin (T5 single owner)."""
         return SurftreeMixin._extract_host_texture(self, child, depth)  # type: ignore[attr-defined]
@@ -65,7 +67,10 @@ class TraversalMixin:
         whose texture slots are child HostTextures / RTTs.
 
         ``reverse`` is accepted for call-site parity (matrix stack); unused MVP.
-        Frame-local: ``_invalidate_prepared`` clears ``loaded``/``cached_model``.
+        Frame-local: ``_invalidate_prepared`` advances the frame generation
+        (single O(1) root marker); this walk clears stale ``loaded`` /
+        ``cached_model`` / ``_wgpu_solid_slot`` stamps per node on first
+        touch, so every node is reset before any in-tree reader observes it.
 
         Top-level prepare must not leave host ``in_frame`` open. Nested RTT
         bake during prepare can orphan a stuck frame; the next product
@@ -154,6 +159,41 @@ class TraversalMixin:
                 pass
             return
 
+        # --- frame-generation fold (a)+(b) -----------------------------------
+        # ``_invalidate_prepared`` no longer walks the tree per node (that was
+        # 3×hasattr + up to 3×setattr + full recursion per node, every frame).
+        # It advances ``self._frame_gen`` and stamps the root once. The frame
+        # flag is folded into ``loaded`` itself: freshly prepared nodes carry
+        # ``loaded == self._frame_gen + 1`` (truthy int; old code wrote
+        # ``True``), a stale node carries an older tick (or False). Here, each
+        # node behind the expected tick gets the same frame-local clears the
+        # old invalidate performed — lazily on first touch, before any reader
+        # of ``cached_model``/``_wgpu_solid_slot`` below can observe them.
+        # ``loaded`` is not written False first: this walk immediately re-stamps
+        # the current tick and never reads it in between, so the False→True
+        # roundtrip was pure per-node overhead.
+        gen = getattr(self, "_frame_gen", 0)
+        expected = gen + 1
+        lg = getattr(what, "loaded", False)
+        if isinstance(what, (float, str, bytes, bytearray)):
+            lg = False
+        elif lg != expected:
+            if gen > 0:
+                # epoch 0 = no ``_invalidate_prepared`` has ever run this
+                # process; old code cleared nothing outside that call, so
+                # the folds below only fire once an epoch exists.
+                if hasattr(what, "cached_model"):
+                    try:
+                        what.cached_model = None
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                        pass
+                # Frame-local solid reverse dissolve-slot memo (Agent A Fade path).
+                if hasattr(what, "_wgpu_solid_slot"):
+                    try:
+                        what._wgpu_solid_slot = None
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                        pass
+
         # Surface-like (not Render): upload so parents can use texture.
         if self._is_surface_like(what) and not self._is_render_like(what):
             self.load_texture(what)
@@ -204,8 +244,12 @@ class TraversalMixin:
 
         # Already prepared this frame (also guards prepare↔RTT recursion).
         # Still walk children so HostTexture leaves get dead_present revive /
-        # LRU touch under thrash even when ancestors stay ``loaded=True``.
-        if getattr(what, "loaded", False):
+        # LRU touch under thrash even when ancestors stay mark-truthy.
+        # Tick-gated: a mark from an older generation (or False) means not
+        # prepared this frame — the folded invalidate clears above already
+        # ran, so fall through and re-prepare, exactly like the old
+        # ``loaded=False`` post-invalidate state did.
+        if lg == expected:
             try:
                 for child, _xo, _yo in self._iter_children(what):
                     self._load_all_textures_inner(child, reverse)
@@ -213,7 +257,8 @@ class TraversalMixin:
                 pass
             return
         if hasattr(what, "loaded"):
-            what.loaded = True
+            # Stamp the current tick (truthy; same contract as old ``True``).
+            what.loaded = expected
 
         children = list(self._iter_children(what))
         for child, _xo, _yo in children:
@@ -308,35 +353,50 @@ class TraversalMixin:
             what.cached_model = model
 
     def _invalidate_prepared(self, what):
-        """Clear frame-local ``loaded`` / ``cached_model`` so hover re-prepares."""
+        """Advance the frame generation; per-node clears fold into prepare.
+
+        Historical form walked the whole tree once per frame: per node, 3
+        ``hasattr`` (``loaded`` / ``cached_model`` / ``_wgpu_solid_slot``) + up
+        to 3 ``setattr`` + full ``_iter_children`` recursion — pure Python
+        overhead at O(tree size) on every present.
+
+        Semantic contract preserved for every reader::
+
+            - prepare skip: nodes re-prepare every frame exactly as before;
+              the per-node frame-local tick/cached_model/slot clears happen at
+              first touch in ``_load_all_textures_inner``, before any state
+              read of that node;
+            - ``_child_to_texture``'s ``getattr(child, "loaded", False)``
+              gate behaves identically (truthiness preserved — prepared nodes
+              carry a truthy tick, unprepared carry False / absent);
+            - draw-walk ``cached_model`` / solid-slot memo reads see fresh
+              values, because the clears happen at the start of the next
+              prepare visit — before the draw walk runs (frame order:
+              prepare → draw → present → invalidate_root);
+            - exclusions mirrored: ``None`` and the primitive basket
+              (HostTexture / int / float / bool / str / bytes / bytearray)
+              must not advance the generation — the old walk was a no-op
+              for those, so bumping here would over-invalidate.
+
+        Root marker: one ``setattr`` of ``_frame_gen`` on the root node is
+        kept so node-level introspection sites can observe the epoch.
+        """
         if what is None:
             return
         if isinstance(what, (HostTexture, int, float, bool, str, bytes, bytearray)):
             return
-        if hasattr(what, "loaded"):
-            try:
-                what.loaded = False
-            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                pass
-        if hasattr(what, "cached_model"):
-            try:
-                what.cached_model = None
-            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                pass
-        # Frame-local solid reverse dissolve-slot memo (Agent A Fade path).
-        if hasattr(what, "_wgpu_solid_slot"):
-            try:
-                what._wgpu_solid_slot = None
-            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                pass
+        self._frame_gen = int(getattr(self, "_frame_gen", 0)) + 1
+        gen = self._frame_gen
+        try:
+            what._frame_gen = gen
+        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+            pass
         # Do NOT clear cached_texture here: product image cache and dissolve-slot
         # RTTs reuse HostTextures across frames. Solid reverse memo is enough for
         # hover; full texture kill is kill_textures / fingerprint re-upload.
-        try:
-            for child, _xo, _yo in self._iter_children(what):
-                self._invalidate_prepared(child)
-        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            pass
+        # Per-node ``loaded`` tick / ``cached_model`` / ``_wgpu_solid_slot``
+        # clears are folded into ``_load_all_textures_inner`` (first-touch on
+        # stale ticks) — this call stays O(1).
 
     # --- Tree walk (duck-typed Render / Model / Surface) ---------------------
 

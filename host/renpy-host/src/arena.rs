@@ -3,8 +3,72 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 use log::{info, warn};
+
+/// Hot-site env cache: `end_frame_present` runs per product present AND per
+/// nested RTT bake; `std::env::var` there means a locked getenv + String alloc
+/// per call. `RENPY_HOST_DEBUG_SPARSE` is process-static (see input_trace.rs
+/// pattern), so cache it once.
+fn debug_sparse_enabled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("RENPY_HOST_DEBUG_SPARSE").ok().as_deref() == Some("1"))
+}
+
+/// PHASE0 hot-site gate cache (same pattern as `debug_sparse_enabled`):
+/// `end_frame_present` runs per product present AND per nested bake, so
+/// `std::env::var` must not run per call. Only `RENPY_HOST_PHASE0_SIGNALS=1`
+/// enables the throttled PHASE0_SIGNAL lines.
+fn phase0_signals_enabled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("RENPY_HOST_PHASE0_SIGNALS").ok().as_deref() == Some("1"))
+}
+
+fn phase0_anchor() -> std::time::Instant {
+    static ANCHOR: OnceLock<std::time::Instant> = OnceLock::new();
+    *ANCHOR.get_or_init(std::time::Instant::now)
+}
+
+// PHASE0 per-call efp / bake timing: mutable-free accumulators so the hot
+// path stays zero-alloc; emitted throttled (~0.5 s) exactly like the
+// Python-side `_phase0_due` signals. Module-level statics (Rust forbids
+// associated statics inside `impl`).
+static EFP_US_ACC: AtomicU64 = AtomicU64::new(0);
+static EFP_COUNT: AtomicU64 = AtomicU64::new(0);
+static EFP_BAKE_US_ACC: AtomicU64 = AtomicU64::new(0);
+static EFP_BAKE_COUNT: AtomicU64 = AtomicU64::new(0);
+static EFP_LAST_EMIT_MS: AtomicU64 = AtomicU64::new(0);
+
+fn efp_phase0_maybe_log(efp_us: u64, bake_us: u64, is_bake: bool) {
+    if !phase0_signals_enabled() {
+        return;
+    }
+    EFP_US_ACC.fetch_add(efp_us, Ordering::Relaxed);
+    EFP_COUNT.fetch_add(1, Ordering::Relaxed);
+    if is_bake {
+        EFP_BAKE_US_ACC.fetch_add(bake_us, Ordering::Relaxed);
+        EFP_BAKE_COUNT.fetch_add(1, Ordering::Relaxed);
+    }
+    let now_ms = (phase0_anchor().elapsed().as_secs_f64() * 1000.0) as u64;
+    let last = EFP_LAST_EMIT_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(last) < 500 {
+        return;
+    }
+    EFP_LAST_EMIT_MS.store(now_ms, Ordering::Relaxed);
+    let efp_ms = EFP_US_ACC.swap(0, Ordering::Relaxed) as f64 / 1000.0;
+    let bake_ms = EFP_BAKE_US_ACC.swap(0, Ordering::Relaxed) as f64 / 1000.0;
+    let bake_count = EFP_BAKE_COUNT.swap(0, Ordering::Relaxed);
+    let efp_count = EFP_COUNT.swap(0, Ordering::Relaxed);
+    eprintln!(
+        "PHASE0_SIGNAL t={:.3} efp_ms={:.2} bake_ms={:.2} bake_count={} efp_count={}",
+        phase0_anchor().elapsed().as_secs_f64(),
+        efp_ms,
+        bake_ms,
+        bake_count,
+        efp_count
+    );
+}
 use wgpu::util::DeviceExt;
 
 use crate::gpu::{GpuState, SWAPCHAIN_FORMAT};
@@ -267,6 +331,12 @@ pub struct GpuArena {
     /// recovery, lands "outside begin_frame" (arena-clear product RT).
     /// Flowchart custom mesh + confirm overlay is the product residual path.
     active_target_stack: Vec<Option<u64>>,
+    /// One-shot log guard: a draw cmd sampling the active RTT target itself
+    /// (stale cached_texture → freelist handle re-acquired as target) is
+    /// dropped before encode so a wgpu RESOURCE/COLOR_TARGET usage conflict
+    /// cannot poison host_state and abort the game (HuangmeiC start-label
+    /// dissolve crash). Logged once per process to avoid frame thrash spam.
+    rtt_self_draw_logged: bool,
     pub solid_pipeline: Option<u64>,
     pub textured_pipeline: Option<u64>,
     pub dissolve_pipeline: Option<u64>,
@@ -312,8 +382,17 @@ pub struct GpuArena {
     /// Used to skip sparse thrash presents that would Clear→partial chrome
     /// (text_config residual ~1 flaky frame under dense hover).
     last_frame_cmd_count: usize,
+    /// Python-side marker for a frame that fully covers the canvas (transition
+    /// composite bake / fullscreen movie frame). Full-canvas frames encode
+    /// regardless of the sparse guard (upstream draws every frame; our walker
+    /// legitimately collapses transition composites to few cmds).
+    frame_full_canvas_flag: bool,
     /// Full last product DrawCmd list for Movie-only re-present (WP3 residual).
     last_product_cmds: Vec<DrawCmd>,
+    /// Dissolve/composite bake texture pair of the last encoded product frame
+    /// (debug/probe aid: gate threads read these RTTs to see if an empty bake
+    /// painted a chrome-less frame).
+    last_dissolve_pair: (u64, u64),
     /// Sample textures created or touched since the last product present.
     /// Protects early prepare uploads (bg first in tree) from FIFO kill before
     /// draw_model queues them into frame_cmds. Cleared/replaced on present.
@@ -355,6 +434,10 @@ pub struct GpuArena {
     instance_next_byte_stack: Vec<u64>,
     /// Last frame stats for perf gate (M1 Wave32).
     pub last_stats: FrameStats,
+    /// PHASE0 attribution: swapchain-acquire→present segment of the last
+    /// `re_present_last_product`, in ms (read by python.rs for the
+    /// T_re_present_ms / present_ms signal; zero semantic effect).
+    pub last_re_present_present_ms: f32,
     /// Per-frame overdraw accumulator (Σ 1.0 per draw_model; future mesh area/fb).
     frame_overdraw_acc: f32,
     /// Stack for nested begin_frame overdraw so parent frame is restored.
@@ -378,6 +461,7 @@ impl GpuArena {
             frame_cmd_stack: Vec::new(),
             active_target: None,
             active_target_stack: Vec::new(),
+            rtt_self_draw_logged: false,
             solid_pipeline: None,
             textured_pipeline: None,
             dissolve_pipeline: None,
@@ -415,6 +499,9 @@ impl GpuArena {
             last_frame_sample_textures: Vec::new(),
             last_frame_meshes: Vec::new(),
             last_frame_cmd_count: 0,
+            frame_full_canvas_flag: false,
+            last_re_present_present_ms: 0.0,
+            last_dissolve_pair: (0, 0),
             last_product_cmds: Vec::new(),
             epoch_sample_textures: HashSet::new(),
             epoch_meshes: HashSet::new(),
@@ -717,6 +804,10 @@ impl GpuArena {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        info!(
+            "recreate game RT {}x{} prev={:?} needs_clear(prev)={}",
+            w, h, self.game_rt_size, self.game_rt_needs_clear
+        );
         self.game_rt = Some(texture);
         self.game_rt_view = Some(view);
         self.game_rt_size = (w, h);
@@ -741,6 +832,7 @@ impl GpuArena {
                 expected
             ));
         }
+
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("tex-rgba"),
             size: wgpu::Extent3d {
@@ -752,7 +844,11 @@ impl GpuArena {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: self.color_format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            // COPY_SRC added so parity probes / gates can read back sample
+            // textures (text atlas debugging; negligible GPU impact).
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let upload = maybe_swizzle_rgba(rgba, expected, self.color_format);
@@ -2360,6 +2456,40 @@ impl GpuArena {
     /// thrash when a concurrent force-redraw and product interact interleave
     /// `end_frame_present` (class b / dead_present thrash companion).
     pub fn end_frame_present(&mut self, gpu: &mut GpuState) -> Result<bool, String> {
+        self.end_frame_present_opts(gpu, false)
+    }
+
+    /// end_frame_present with a Python-side full-canvas marker.
+    /// Timing wrapper: captures the entry-frame class (nested
+    /// bake vs product) BEFORE the inner call pops the parent stack, then
+    /// feeds the per-call ms into the throttled PHASE0 efp signal.
+    pub fn end_frame_present_opts(
+        &mut self,
+        gpu: &mut GpuState,
+        full_canvas: bool,
+    ) -> Result<bool, String> {
+        let gate = phase0_signals_enabled();
+        let entry_nested_bake =
+            gate && (self.active_target.is_some() || !self.frame_cmd_stack.is_empty());
+        let t0 = if gate { Some(std::time::Instant::now()) } else { None };
+        let result = self.end_frame_present_opts_inner(gpu, full_canvas);
+        if let (Some(t0), true) = (t0, entry_nested_bake) { // bake unit
+            let us = t0.elapsed().as_nanos() as u64 / 1_000;
+            efp_phase0_maybe_log(us, us, true);
+        } else if let Some(t0) = t0 {
+            let us = t0.elapsed().as_nanos() as u64 / 1_000;
+            efp_phase0_maybe_log(us, 0, false);
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn end_frame_present_opts_inner(
+        &mut self,
+        gpu: &mut GpuState,
+        full_canvas: bool,
+    ) -> Result<bool, String> {
+        self.frame_full_canvas_flag = full_canvas;
         let t0 = std::time::Instant::now();
         // Idle end: never clear the product RT. Concurrent force-redraw paths
         // and prepare recovery can double-call end_frame_present after a good
@@ -2378,13 +2508,38 @@ impl GpuArena {
         self.set_color_format(gpu.surface_format);
         self.ensure_builtin_pipelines(&gpu.device);
 
-        let cmds: Vec<DrawCmd> = self.frame_cmds.drain(..).collect();
+        let mut cmds: Vec<DrawCmd> = self.frame_cmds.drain(..).collect();
         let nested = !self.frame_cmd_stack.is_empty();
         // T3: draw_calls = groups (cmds.len), quads = sum(instance_count), instances same
         let draw_calls = cmds.len() as u32;
         let total_quads: u32 = cmds.iter().map(|c| c.instance_count.max(1)).sum();
         let frame_overdraw = self.frame_overdraw_acc;
         if let Some(tid) = self.active_target {
+            // Guard: a draw cmd whose sampled texture IS the active RTT target
+            // triggers a wgpu validation fatal (RESOURCE + COLOR_TARGET in one
+            // pass scope). Source is a stale Python-side `cached_texture` whose
+            // handle the RTT freelist re-acquired as this bake's target. Drop
+            // that cmd (its content slot renders transparent for this frame —
+            // the stale read would show previous bake garbage anyway); RttPool
+            // fixes the stale cache itself so this stays a rare last-resort.
+            if cmds.iter().any(|c| {
+                c.texture == Some(tid) || c.texture1 == Some(tid) || c.texture2 == Some(tid)
+            }) {
+                let n_before = cmds.len();
+                cmds.retain(|c| {
+                    !(c.texture == Some(tid)
+                        || c.texture1 == Some(tid)
+                        || c.texture2 == Some(tid))
+                });
+                let skipped = n_before - cmds.len();
+                if !self.rtt_self_draw_logged {
+                    info!(
+                        "rtt_self_draw_skip target={} skipped={skipped}/{n_before} (stale cached_texture sample of bake target)",
+                        tid
+                    );
+                    self.rtt_self_draw_logged = true;
+                }
+            }
             let view = self
                 .textures
                 .get(&tid)
@@ -2457,12 +2612,35 @@ impl GpuArena {
         // presents made first_interactive wait 400ms+ for a later full frame.
         // Only suppress *tiny* rebuilds (absolute floor), not half-of-previous.
         let prev_n = self.last_frame_cmd_count;
-        if prev_n >= 64 && cmds.len() < 8 {
+        // Python marks this frame as a full-canvas composite transition bake
+        // (_draw_dissolve_mid -> _frame_full_canvas). Those frames legitimately
+        // have far fewer cmds than the previous full-chrome render because the
+        // old + new subtrees collapse into one baked dissolve mesh — upstream
+        // draws them every frame, so the host must encode them instead of
+        // suppressing (freezing the dissolve for up to 0.2s+ and risking a
+        // chrome-less re-encode from a stale-size last_product_cmds on a fresh
+        // game RT — HuangmeiC prefs 背景闪烁 / 按钮特效失效 residual).
+        let full_canvas = self.frame_full_canvas_flag;
+        self.frame_full_canvas_flag = false;
+        if prev_n >= 64 && cmds.len() < 8 && !full_canvas {
             info!(
                 "suppress product present: sparse cmds={} prev={}",
                 cmds.len(),
                 prev_n
             );
+            if debug_sparse_enabled() {
+                for (i, c) in cmds.iter().take(12).enumerate() {
+                    let pname = self
+                        .pipelines
+                        .get(&c.pipeline)
+                        .map(|p| p.parts_key.clone())
+                        .unwrap_or_else(|| "?".to_string());
+                    info!(
+                        "sparse-cmd[{}] pid={} pipe={} tex{:?} t1{:?} t2{:?}",
+                        i, c.pipeline, pname, c.texture, c.texture1, c.texture2
+                    );
+                }
+            }
             self.in_frame = false;
             self.frame_overdraw_acc = 0.0;
             self.flush_deferred_meshes();
@@ -2530,6 +2708,23 @@ impl GpuArena {
             }
         }
 
+        // Debug: after guards, encode a frame smaller than a full chrome
+        // render — dump the first cmds so gate artifacts (partial chrome) can
+        // be attributed to the walker path that queued them.
+        if debug_sparse_enabled() && cmds.len() < 20 {
+            for (i, c) in cmds.iter().take(12).enumerate() {
+                let pname = self
+                    .pipelines
+                    .get(&c.pipeline)
+                    .map(|p| p.parts_key.clone())
+                    .unwrap_or_else(|| "?".to_string());
+                info!(
+                    "frame-cmd[{}] pid={} pipe={} tex{:?} t1{:?} t2{:?}",
+                    i, c.pipeline, pname, c.texture, c.texture1, c.texture2
+                );
+            }
+        }
+
         self.in_frame = false;
 
         let w = gpu.config.width.max(1);
@@ -2539,10 +2734,18 @@ impl GpuArena {
         // Product present: single command buffer = encode game RT + blit to swapchain.
         // WP3 residual: merging two submits cuts host queue overhead on dense prefs.
         // Load-preserve on game RT is unchanged (thrash AC-R).
-        let frame = gpu
-            .surface
-            .get_current_texture()
-            .map_err(|e| format!("swapchain: {e}"))?;
+        // Headless (RENPY_HOST_HEADLESS=1): encode into the game RT only —
+        // never acquire a swapchain image and never call `frame.present()`.
+        // queue.submit, FrameStats, pins and read_game_rt_rgba all stay live.
+        let frame = if gpu.headless {
+            Option::<wgpu::SurfaceTexture>::None
+        } else {
+            Some(
+                gpu.surface
+                    .get_current_texture()
+                    .map_err(|e| format!("swapchain: {e}"))?,
+            )
+        };
 
         let preserve = !self.game_rt_needs_clear;
         if let Some(view) = self.game_rt_view.clone() {
@@ -2554,16 +2757,20 @@ impl GpuArena {
             self.encode_pass_into(gpu, &mut encoder, &view, &cmds, preserve)?;
             self.game_rt_needs_clear = false;
 
-            self.blit_game_rt_to_swapchain(&mut encoder, gpu, &frame);
+            if let Some(frame_ref) = frame.as_ref() {
+                self.blit_game_rt_to_swapchain(&mut encoder, gpu, frame_ref);
+            }
             gpu.queue.submit(Some(encoder.finish()));
-        } else {
+        } else if let Some(frame_ref) = frame.as_ref() {
             // Fallback: no game RT - encode directly to swapchain.
-            let swap_view = frame
+            let swap_view = frame_ref
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
             self.encode_pass(gpu, &swap_view, &cmds, false)?;
         }
-        frame.present();
+        if let Some(frame) = frame {
+            frame.present();
+        }
         // Wave32 FrameStats: record per-frame counters for perf gate.
         // T3 grouped: draw_calls = groups (cmds.len), quads = sum(instance_count)
         let elapsed_ms = t0.elapsed().as_secs_f32() * 1000.0;
@@ -2608,6 +2815,19 @@ impl GpuArena {
             }
         }
         self.last_frame_meshes = last_meshes;
+        // Record the composite bake pair (first dissolve-pipeline cmd) so a
+        // gate probe can read those RTTs when a chrome-less frame shows up.
+        self.last_dissolve_pair = (0, 0);
+        for c in &cmds {
+            if c.texture.is_some() && c.texture1.is_some() {
+                if let Some(p) = self.pipelines.get(&c.pipeline) {
+                    if p.parts_key == "dissolve" || p.parts_key == "imagedissolve" {
+                        self.last_dissolve_pair = (c.texture.unwrap_or(0), c.texture1.unwrap_or(0));
+                        break;
+                    }
+                }
+            }
+        }
         self.last_frame_cmd_count = cmds.len();
         self.last_product_cmds = cmds;
         // Epoch ends at product present: only last-frame pins remain until the
@@ -2630,12 +2850,77 @@ impl GpuArena {
     /// (prefs_idle p99 hitch residual). Presenting the preserved RT keeps cadence
     /// and zero-glitch chrome while rejecting half-built DrawCmd lists.
     fn present_last_game_rt(&mut self, gpu: &mut GpuState) -> Result<bool, String> {
-        if self.game_rt.is_none() || self.game_rt_needs_clear {
+        if self.game_rt.is_none() {
             return Ok(false);
+        }
+        // Fresh game RT (created by ensure_game_rt after launch or surface
+        // resize): there is no "last good RT" to blit — the texture is empty
+        // and game_rt_needs_clear is set. Returning Ok(false) here silently
+        // converts a closed frame into a present of an all-black game RT
+        // (prefs page-switch black frames: resize -> sparse half-built
+        // rebuild -> suppress -> black readback). Repair: re-encode the last
+        // complete product DrawCmd list into the fresh RT (Clear load, one
+        // time) and then blit. The re-encoded list is the last frame the
+        // product actually completed, so it is the best available truth —
+        // the next full frame replaces it anyway.
+        if self.game_rt_needs_clear {
+            if self.last_product_cmds.is_empty() {
+                // Truly nothing has ever drawn: keep the honest empty/black
+                // RT (startup case).
+                return Ok(false);
+            }
+            info!(
+                "present_last_game_rt: fresh RT after suppress; re-encode last_product_cmds n={} prev_n={}",
+                self.last_product_cmds.len(),
+                self.last_frame_cmd_count
+            );
+            let cmds = self.last_product_cmds.clone();
+            let w = gpu.config.width.max(1);
+            let h = gpu.config.height.max(1);
+            self.ensure_game_rt(&gpu.device, w, h);
+            // Headless: re-encode into game RT only; no swapchain acquire/present.
+            let frame = if gpu.headless {
+                Option::<wgpu::SurfaceTexture>::None
+            } else {
+                Some(
+                    gpu.surface
+                        .get_current_texture()
+                        .map_err(|e| format!("swapchain: {e}"))?,
+                )
+            };
+            if let Some(view) = self.game_rt_view.clone() {
+                let mut encoder = gpu
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("present-last-product-fresh-rt"),
+                    });
+                // preserve=false -> Clear this pass once; handles the fresh RT.
+                self.encode_pass_into(gpu, &mut encoder, &view, &cmds, false)?;
+                self.game_rt_needs_clear = false;
+                if let Some(frame_ref) = frame.as_ref() {
+                    self.blit_game_rt_to_swapchain(&mut encoder, gpu, frame_ref);
+                }
+                gpu.queue.submit(Some(encoder.finish()));
+            } else if let Some(frame_ref) = frame.as_ref() {
+                // No game RT view: encode straight to swapchain (Clear).
+                let swap_view = frame_ref
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                self.encode_pass(gpu, &swap_view, &cmds, false)?;
+            }
+            if let Some(frame) = frame {
+                frame.present();
+            }
+            return Ok(true);
         }
         let w = gpu.config.width.max(1);
         let h = gpu.config.height.max(1);
         self.ensure_game_rt(&gpu.device, w, h);
+        if gpu.headless {
+            // Blit-only path: in headless there is no swapchain to blit to and
+            // the game RT already holds the preserved content. No GPU work.
+            return Ok(true);
+        }
         let frame = gpu
             .surface
             .get_current_texture()
@@ -2659,6 +2944,8 @@ impl GpuArena {
     ///
     /// Returns Ok(true) on swapchain present, Ok(false) when no last cmds / busy.
     pub fn re_present_last_product(&mut self, gpu: &mut GpuState) -> Result<bool, String> {
+        // No swapchain segment was executed this call until proven otherwise.
+        self.last_re_present_present_ms = 0.0;
         // Never interleave with an open product/RTT frame.
         if self.in_frame
             || !self.frame_cmd_stack.is_empty()
@@ -2680,10 +2967,22 @@ impl GpuArena {
         let h = gpu.config.height.max(1);
         self.ensure_game_rt(&gpu.device, w, h);
 
-        let frame = gpu
-            .surface
-            .get_current_texture()
-            .map_err(|e| format!("swapchain: {e}"))?;
+        // PHASE0 attribution: measure only the swapchain/present segment
+        // (acquire → encode → submit → present) so python.rs can report it as
+        // `present_ms` next to the total wall `T_re_present_ms`. Zero semantic
+        // effect; headless skips the segment and leaves 0.0.
+        let present_t0 = std::time::Instant::now();
+
+        // Headless: skip swapchain acquire entirely; game RT re-encode stays live.
+        let frame = if gpu.headless {
+            Option::<wgpu::SurfaceTexture>::None
+        } else {
+            Some(
+                gpu.surface
+                    .get_current_texture()
+                    .map_err(|e| format!("swapchain: {e}"))?,
+            )
+        };
 
         // Always Load-preserve on re-present: we re-draw the same chrome + movie.
         let preserve = !self.game_rt_needs_clear;
@@ -2696,15 +2995,20 @@ impl GpuArena {
             self.encode_pass_into(gpu, &mut encoder, &view, &cmds, preserve)?;
             self.game_rt_needs_clear = false;
 
-            self.blit_game_rt_to_swapchain(&mut encoder, gpu, &frame);
+            if let Some(frame_ref) = frame.as_ref() {
+                self.blit_game_rt_to_swapchain(&mut encoder, gpu, frame_ref);
+            }
             gpu.queue.submit(Some(encoder.finish()));
-        } else {
-            let swap_view = frame
+        } else if let Some(frame_ref) = frame.as_ref() {
+            let swap_view = frame_ref
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
             self.encode_pass(gpu, &swap_view, &cmds, false)?;
         }
-        frame.present();
+        if let Some(frame) = frame {
+            frame.present();
+        }
+        self.last_re_present_present_ms = present_t0.elapsed().as_secs_f32() * 1000.0;
         // Pins already match last_product_cmds; refresh epoch clear only.
         self.epoch_sample_textures.clear();
         self.epoch_meshes.clear();
@@ -2716,6 +3020,11 @@ impl GpuArena {
     /// True when a product DrawCmd list is available for re-present.
     pub fn has_last_product_cmds(&self) -> bool {
         !self.last_product_cmds.is_empty()
+    }
+
+    /// Dissolve/composite bake pair of the last encoded product frame.
+    pub fn last_dissolve_pair(&self) -> (u64, u64) {
+        self.last_dissolve_pair
     }
 
     /// Read pre-present game RT as tightly packed RGBA8 bytes.
@@ -2749,11 +3058,10 @@ impl GpuArena {
             .get(&handle)
             .ok_or_else(|| format!("read_texture_rgba: unknown {handle}"))?;
         if !slot.renderable {
-            // Only guarantee COPY_SRC on render textures + game RT; sample textures
-            // may lack COPY_SRC. Allow if created as RTT.
-            return Err(format!(
-                "read_texture_rgba: texture {handle} has no COPY_SRC (use RTT or game RT)"
-            ));
+            // Sample textures are non-renderable but now always get COPY_SRC
+            // (uploaded with TEXTURE_BINDING|COPY_DST|COPY_SRC), so readback
+            // is safe and useful for parity probes. Reject only true RTTs
+            // without copy usage can't happen; keep slot-exists readback.
         }
         let (rw, rh, mut bytes) = read_texture_rgba(gpu, &slot.texture, slot.width, slot.height)?;
         if matches!(

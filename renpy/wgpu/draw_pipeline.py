@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from .draw_debug import bake_attn
 from .host_texture import HostTexture
 
 
@@ -505,19 +506,43 @@ class PipelineMixin:
                 sw, sh = max(1, int(sw)), max(1, int(sh))
                 rtt = self._acquire_rtt(sw, sh)
                 opaque_rtt, opaque_size = int(rtt), (sw, sh)
-                renpy_host.begin_target(rtt)
-                renpy_host.begin_frame()
+                # Phase 0d bake-attribution: opaque probe RTT (one bake-call
+                # per hit-test; read back right after — never cached).
+                bake_attn(self, "probe_opaque", what, sw, sh)
+                # Instance-group probe isolation (render_to_texture._rtt_pass
+                # contract): pending parent quads stay in the parent target —
+                # never merge into this probe RTT.
+                _grp = getattr(self, "_instance_group", None)
+                if _grp is not None:
+                    try:
+                        if not _grp.empty():
+                            _grp.flush(self)
+                        _grp.push()
+                    except Exception:
+                        _grp = None
+                    # Pending parent batch items belong before the probe RTT
+                    # content; commit them into the parent target first.
+                    self._flush_draw_batch()
                 try:
-                    self._dm(self._tex_pipe, self._quad_mesh, src)
+                    renpy_host.begin_target(rtt)
+                    renpy_host.begin_frame()
+                    try:
+                        self._dm(self._tex_pipe, self._quad_mesh, src)
+                    finally:
+                        try:
+                            self._end_frame_present()
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                            pass
+                        try:
+                            renpy_host.end_target()
+                        except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                            pass
                 finally:
-                    try:
-                        self._end_frame_present()
-                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                        pass
-                    try:
-                        renpy_host.end_target()
-                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                        pass
+                    if _grp is not None:
+                        try:
+                            _grp.pop()
+                        except Exception:
+                            pass
                 handle = int(rtt)
             else:
                 # Render tree / surface / size → render_to_texture (creates RTT).

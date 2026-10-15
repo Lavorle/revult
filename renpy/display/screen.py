@@ -1417,9 +1417,30 @@ def show_screen(_screen_name, *_args, **kwargs):
 
     sls = renpy.display.scenelists.scene_lists()
 
-    sls.add(_layer, d, _tag, zorder=_zorder, transient=_transient, keep_st=True, name=name)
-    if not _transient:
-        sls.shown.predict_show(_layer, name, True)
+    # HOST: hold the render-schedule lock around the scene-list mutation so a
+    # concurrent walker thread's render_screen never reads a half-updated
+    # layer list (upstream show_screen / render are same-thread adjacent, so
+    # upstream needs no lock; host gate probe threads are walkers).
+    try:
+        from renpy.display.renderschedule import schedule_lock_obj as _slock
+
+        _lock = _slock()
+    except Exception:  # noqa: BLE001 — host probe must never abort the gate
+        import contextlib as _ctl
+
+        class _NopLockScreenShow:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        _lock = _NopLockScreenShow()
+
+    with _lock:
+        sls.add(_layer, d, _tag, zorder=_zorder, transient=_transient, keep_st=True, name=name)
+        if not _transient:
+            sls.shown.predict_show(_layer, name, True)
 
 
 def predict_screen(_screen_name, *_args, **kwargs):
@@ -1511,9 +1532,27 @@ def hide_screen(tag, layer=None, immediately=False):
 
     sls = renpy.display.scenelists.scene_lists()
 
+    # HOST: same render-schedule serialization as show_screen (see there).
+    try:
+        from renpy.display.renderschedule import schedule_lock_obj as _slock
+
+        _lock = _slock()
+    except Exception:  # noqa: BLE001 — host probe must never abort the gate
+        import contextlib as _ctl
+
+        class _NopLockScreenHide:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        _lock = _NopLockScreenHide()
+
     if screen is not None:
-        sls.remove(layer, screen.tag, prefix="hide" if not immediately else None)
-        sls.shown.predict_hide(layer, screen.screen_name)
+        with _lock:
+            sls.remove(layer, screen.tag, prefix="hide" if not immediately else None)
+            sls.shown.predict_hide(layer, screen.screen_name)
 
 
 def use_screen(_screen_name, *_args, **kwargs):

@@ -71,32 +71,204 @@ def get_host():
 
 
 class _InstanceGroup:
-    """Grouped instance batch for textured/solid quads (M1 T3).
+    """Grouped instance batch for textured/solid quads (M1 T3 + ordered-stream drain).
 
     map key = (pipeline, texture, texture1, texture2) -> list[float] of packed 12-float instances
     layout per instance: rect_off(2), rect_size(2), uv_off(2), uv_size(2), color(4)
+
+    Painter-order contract (ordered-stream integration, batched `_dm`):
+
+    ``ScreenMixin._dm`` no longer commits each uniform draw immediately; it
+    appends a ``("GRP", snapshot)`` boundary element to the draw stream
+    whenever the group still holds quads at that tree position. The snapshot
+    records, per key, the *cumulative* instance count queued into this epoch's
+    bucket at that exact boundary. Consumption is offset-sliced:
+
+    - each key owns a consumption offset (instances already drained from its
+      bucket in the current epoch);
+    - ``drain_upto(snapshot)`` emits exactly ``total[offset : snapshot_count]``
+      per key (>= one ``draw_instances`` per live key), so nothing queued
+      *after* the boundary is touched;
+    - ``drain_all()`` drains each key's remainder; the bucket+offset view is
+      reset ("drained full") only when every key is fully consumed, which
+      makes every drain idempotent-by-offset — the follow-up
+      ``_end_frame_present`` seam flush cannot double-submit;
+    - ``self.gen`` is an epoch counter bumped on every reset. A boundary
+      snapshot is valid only in its own epoch: after a full reset (or a
+      ``flush`` full drain at an RTT push seam) the epoch moves and stale
+      boundaries are skipped by the gen check instead of re-emitting already
+      committed instances (no double draw).
+
+    push/pop (nested RTT) stack the whole (map, offsets, gen) view so child
+    bakes start a fresh epoch and the parent resumes byte-identical offsets.
     """
+
     def __init__(self):
         self.map: dict[tuple, list[float]] = {}
-        self.stack: list[dict] = []
+        self.offsets: dict[tuple, int] = {}
+        self.gen: int = 0
+        self.stack: list = []
 
     def clear(self):
         self.map.clear()
+        self.offsets.clear()
+        # Epoch moves: any outstanding boundary snapshot must not re-emit or
+        # drain against cleared buckets.
+        self.gen += 1
 
     def empty(self) -> bool:
         return not bool(self.map)
 
     def push(self):
-        """Save current batch for nested frame (RTT) and start fresh."""
-        self.stack.append(self.map)
+        """Save current batch for nested frame (RTT) and start fresh.
+
+        The entire consumption view (buckets, per-key offsets, epoch) is
+        stacked; the child bake runs in a fresh epoch so its boundaries can
+        never alias parent data.
+        """
+        self.stack.append((self.map, self.offsets, self.gen))
         self.map = {}
+        self.offsets = {}
+        self.gen += 1
 
     def pop(self):
         """Restore parent batch after nested frame."""
         if self.stack:
-            self.map = self.stack.pop()
+            self.map, self.offsets, self.gen = self.stack.pop()
         else:
             self.map = {}
+            self.offsets = {}
+
+    def snapshot(self):
+        """Per-key cumulative instance counts of the current epoch, or None.
+
+        Snapshot counts are cumulative-from-bucket-start because bucket data
+        is never removed mid-epoch (only offset-advanced). Two boundaries
+        B1/B2 (counts c1<c2) therefore drain [0,c1) and [c1,c2) in sequence.
+        """
+        out = {}
+        for k, v in self.map.items():
+            n = len(v) // 12
+            if n > 0:
+                out[k] = n
+        if not out:
+            return None
+        return (self.gen, out)
+
+    def drain_upto(self, snap, draw_obj=None):
+        """Consume the boundary slice fixated by ``snap`` (snapshot tuple).
+
+        For each key, emit instances from the current offset up to the
+        snapshot's cumulative count (>= one draw_instances per live key).
+        Data queued after the boundary (snapshot count exceeded) stays put
+        for a later boundary or the tail drain. Stale-epoch snapshots
+        (already fully drained elsewhere) are skipped — idempotency guard.
+        """
+        if not snap or not isinstance(snap, tuple):
+            return
+        try:
+            gen, counts = snap
+        except Exception:
+            return
+        if gen != self.gen:
+            return
+        for key, cnt in counts.items():
+            bucket = self.map.get(key)
+            if not bucket:
+                continue
+            total = len(bucket) // 12
+            if total <= 0:
+                continue
+            start = self.offsets.get(key, 0)
+            end = cnt if cnt < total else total
+            if end <= start:
+                continue
+            data = bucket[start * 12:end * 12]
+            # Advance BEFORE emission (old flush's clear-before-emit contract):
+            # the hermetic fallback path may recursively commit appended quads
+            # (`_flush_instance_fallback` -> `_dm` -> `_flush_draw_batch`), and
+            # that nested runner's tail drain must not re-slice this same
+            # unconsumed window.
+            self.offsets[key] = end
+            self._emit(key, data, draw_obj)
+        self._reap()
+
+    def drain_all(self, draw_obj=None):
+        """Drain every key's unconsumed remainder (stream-runner tail)."""
+        for key, bucket in list(self.map.items()):
+            if not bucket:
+                continue
+            total = len(bucket) // 12
+            start = self.offsets.get(key, 0)
+            if total <= start:
+                continue
+            data = bucket[start * 12:]
+            # Advance BEFORE emission (fallback re-entrancy guard, see
+            # drain_upto): nested fallback commits must not re-slice this
+            # window.
+            self.offsets[key] = total
+            self._emit(key, data, draw_obj)
+        self._reap()
+
+    def _reap(self):
+        """Reset the epoch when every key is fully consumed (drain 满 reset)."""
+        for k, v in self.map.items():
+            if (len(v) // 12) > self.offsets.get(k, 0):
+                return
+        if self.map:
+            self.map.clear()
+            self.offsets.clear()
+            self.gen += 1
+
+    def _emit(self, key, datas, draw_obj=None):
+        """Emit one instance slice (>= 12 floats) via host draw_instances."""
+        if not datas:
+            return
+        pipe, tex, tex1, tex2 = key
+        h = get_host()
+        if h is not None and hasattr(h, "draw_instances"):
+            try:
+                h.draw_instances(int(pipe), tex, tex1, tex2, instances=list(datas))
+                return
+            except Exception:
+                pass
+        # fallback: per-quad via draw_obj if available (hermetic/lint)
+        if draw_obj is not None:
+            try:
+                fallback = getattr(draw_obj, "_flush_instance_fallback", None)
+                if fallback is not None:
+                    # The quads appended by the fallback land in
+                    # draw_obj._draw_batch; the stream runner commits them at
+                    # the current tree position right after the drain
+                    # (residue commit). Do NOT commit here: a nested full
+                    # runner run would also drain the group's tail remainder,
+                    # pulling post-boundary group quads ahead of later stream
+                    # elements (order breach).
+                    fallback(int(pipe), tex, tex1, tex2, list(datas))
+            except Exception:
+                pass
+
+    def flush(self, draw_obj=None):
+        """Seam commit of pending grouped quads (kept contract: full drain).
+
+        When ``draw_obj`` carries the ordered draw stream (ScreenMixin), the
+        painter-order-correct commit is the full stream run: boundaries in
+        stream order slice the group at their exact tree positions, and the
+        tail drain_all commits the remaining group quads after the last
+        stream element. Delegating to ``_flush_draw_batch`` therefore keeps
+        interleaved [batch, group quads, batch] pending content in exact tree
+        order even when a legacy RTT-push seam calls ``_grp.flush()`` first.
+        Without a stream carrier (hermetic/lint), this is the full local
+        drain via draw_instances (legacy semantics).
+        """
+        runner = getattr(draw_obj, "_flush_draw_batch", None) if draw_obj is not None else None
+        if runner is not None:
+            try:
+                runner()
+                return
+            except Exception:
+                pass
+        self.drain_all(draw_obj)
 
     def add(self, pipeline, texture, texture1, texture2, x0, y0, x1, y1, u0, v0, u1, v1, color):
         """Add one quad instance for grouping. Computes 12 floats and appends."""
@@ -133,44 +305,6 @@ class _InstanceGroup:
         usx, vsy = uv_size
         # reconstruct x1,y1,u1,v1
         self.add(pipeline, texture, texture1, texture2, x0, y0, x0 + sx, y0 + sy, u0, v0, u0 + usx, v0 + vsy, color)
-
-    def flush(self, draw_obj=None):
-        """Emit grouped draws via host draw_instances; fallback per-quad if unavailable."""
-        if not self.map:
-            return
-        # snapshot and clear before emission to avoid re-entrancy
-        pending = list(self.map.items())
-        self.map.clear()
-        h = get_host()
-        # path: host draw_instances batch
-        for (pipe, tex, tex1, tex2), datas in pending:
-            if not datas:
-                continue
-            # Filter non-groupable that may have slipped in (should be solid/textured only)
-            # Still emit; host will validate pipeline
-            if h is not None and hasattr(h, "draw_instances"):
-                try:
-                    t = tex if tex is not None else None
-                    t1 = tex1 if tex1 is not None else None
-                    t2 = tex2 if tex2 is not None else None
-                    h.draw_instances(int(pipe), t, t1, t2, instances=list(datas))
-                    continue
-                except Exception:
-                    pass
-            # fallback: per-quad via draw_obj._dm if available (hermetic/lint)
-            if draw_obj is not None:
-                try:
-                    # need to reconstruct individual draws: iterate 12-float chunks
-                    # Fallback requires creating meshes; delegate to draw_obj fallback helper if exists
-                    fallback = getattr(draw_obj, "_flush_instance_fallback", None)
-                    if fallback is not None:
-                        fallback(int(pipe), tex, tex1, tex2, list(datas))
-                    else:
-                        # generic fallback: emit via _dm per quad using unit quad mesh placeholder
-                        # We don't have rect, so skip? In lint we just no-op
-                        pass
-                except Exception:
-                    pass
 
 
 

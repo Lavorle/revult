@@ -45,6 +45,24 @@ surface_file = None
 # The surface to display the movie on, if not fullscreen.
 surface = None
 
+# Global movie frame publish sequence. Bumped by 1 every time a decoded movie
+# frame is successfully published to the display path (get_movie_texture /
+# get_movie_texture_web / frame0 hold load). The wgpu host reads this as a
+# cache-invalidation nonce: movie frames rewrite texture content IN PLACE on
+# the same HostTexture handle, so a structural render-tree key alone would
+# recycle stale pixels (HuangmeiC menu bg main_menu.webm vetoes dissolve
+# transition old-slot bake caching without this nonce).
+_MOVIE_PUBLISH_SEQ: int = 0
+
+
+def _bump_movie_publish_seq() -> None:
+    """Cheap +1 on every successful movie frame publish (no other semantics)."""
+    global _MOVIE_PUBLISH_SEQ
+    try:
+        _MOVIE_PUBLISH_SEQ += 1
+    except Exception:
+        pass
+
 
 def movie_stop(clear=True, only_fullscreen=False):
     """
@@ -196,6 +214,10 @@ def get_movie_texture(channel, mask_channel=None, side_mask=False, mipmap=None):
         renpy.display.render.mutated_surface(surf)
         tex = renpy.display.draw.load_texture(surf, True, {"mipmap": mipmap})
         texture[channel] = tex
+        # A new decoded movie frame was successfully published: bump the
+        # global write sequence so content-cache keys (dissolve transition
+        # old-slot bake cache) can never pin movie pixels as static.
+        _bump_movie_publish_seq()
         new = True
     else:
         tex = texture.get(channel, None)
@@ -249,6 +271,8 @@ def get_movie_texture_web(channel, mask_channel, side_mask, mipmap):
     if tex is not None:
         texture[channel] = tex
         new = True
+        # Web publish path: same content in place → same nonce contract.
+        _bump_movie_publish_seq()
     else:
         tex = texture.get(channel, None)
         new = False
@@ -772,6 +796,9 @@ class Movie(renpy.display.displayable.Displayable):
                         tex = renpy.display.draw.load_texture(
                             surf, True, {"mipmap": self.style.mipmap}
                         )
+                        # frame0 hold publishes fresh pixels on a live handle
+                        # too — bump the publish nonce for the same reason.
+                        _bump_movie_publish_seq()
                         # Override empty path when channel has not started yet.
                         not_playing = False
                         # Phase 0: once-log hold hit so dual-slot readiness is

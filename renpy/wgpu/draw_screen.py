@@ -4,16 +4,72 @@ from __future__ import annotations
 import time as _time
 
 from .draw_debug import (
-    _UI_TRACE_LOGGED,
+    _BAKE_ENABLED,
+    _WALKSTAT_ON,    _UI_TRACE_LOGGED,
     _draw_screen_lock,
     _host_draw_fail,
     _phase0_due_frame,
     _phase0_log,
     _phase0_signals_enabled,
+    _safe_print,
     _ui_trace_once,
+    bake_attn,
+    bake_frame_flush,
 )
 from .host_bridge import host_env_bool
 from .host_texture import HostTexture
+
+
+# Process-static env gates: read once at import (the probe loops re-imported
+# nothing). Surgical: avoids per-draw os.environ reads on the hot path.
+_LEGACY_FLUSH = host_env_bool("RENPY_HOST_LEGACY_FLUSH")
+
+
+def _RENPY_HOST():
+    """Lazy renpy_host handle via a mutable holder (assignment-free global).
+
+    A plain `global X; if X is None: X = ...` pattern triggers UnboundLocal
+    on the first read; keep every cached value in a list cell instead.
+    """
+    cell = _RENPY_HOST_CELL
+    obj = cell[0]
+    if obj is None:
+        try:
+            import renpy_host  # type: ignore
+            obj = renpy_host
+        except Exception:
+            obj = False
+        cell[0] = obj
+    return obj if obj is not False else None
+
+
+def _DRAW_MODELS_FN():
+    cell = _DRAW_MODELS_CELL
+    fn = cell[0]
+    if fn is None:
+        host = _RENPY_HOST()
+        fn = getattr(host, "draw_models", None) if host is not None else None
+        if fn is None:
+            fn = False
+        cell[0] = fn
+    return fn if fn is not False else None
+
+
+def _END_FRAME_PRESENT_OPTS_FN():
+    cell = _END_OPTS_CELL
+    fn = cell[0]
+    if fn is None:
+        host = _RENPY_HOST()
+        fn = getattr(host, "end_frame_present_opts", None) if host is not None else None
+        if fn is None:
+            fn = False
+        cell[0] = fn
+    return fn if fn is not False else None
+
+
+_RENPY_HOST_CELL = [None]
+_DRAW_MODELS_CELL = [None]
+_END_OPTS_CELL = [None]
 
 
 class ScreenMixin:
@@ -28,45 +84,213 @@ class ScreenMixin:
     _rtt_curr_frame: list
 
     def _dm(self, pipeline, mesh, texture=None, texture1=None, uniforms=None, texture2=None):
-        """Queue a draw_model for the current product frame (batched FFI)."""
-        self._draw_batch.append(
-            (int(pipeline), int(mesh), texture, texture1, uniforms, texture2)
-        )
+        """Queue a draw_model for the current product frame (ordered stream).
 
+        Painter-order mechanism (batched commits, exact tree order): the
+        stream in ``self._draw_batch`` keeps elements in tree order —
+
+        - 6-tuples ``(pipeline, mesh, texture, texture1, uniforms, texture2)``
+          = uniform / multi-texture draws (committed later, aggregated);
+        - ``("GRP", snapshot)`` boundaries. Every draw that lands while the
+          instance group still holds unconsumed quads appends a boundary whose
+          snapshot records the per-key cumulative instance count at this
+          exact point. ``_flush_draw_batch`` drains exactly that slice from
+          ``_instance_group`` at its stream position, so grouped
+          solid/textured quads never overtake a uniform draw queued after
+          them — nor does a later batched draw underpaint earlier group quads
+          (HuangmeiC active nav tab: the image_dissolve pill must cover its
+          own text labels).
+
+        No immediate per-draw commit anymore: previously every uniform draw
+        paid one FCI + global lock because the boundary commit destroyed
+        contiguous run batching; the stream runner keeps identical painter
+        order while merging contiguous 6-tuple runs into one ``draw_models``
+        call.
+
+        Safety valve: ``RENPY_HOST_LEGACY_FLUSH=1`` selects the old
+        conservative path (seam group flush + immediate per-draw commit, one
+        FCI per uniform draw) if the streaming path ever regresses.
+        """
+        if not _LEGACY_FLUSH:
+            grp = getattr(self, "_instance_group", None)
+            if (
+                grp is not None
+                and not grp.empty()
+                and not getattr(self, "_in_instance_flush", False)
+            ):
+                try:
+                    snap = grp.snapshot()
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                    _host_draw_fail("dm.snapshot", e)
+                    snap = None
+                if snap:
+                    # Boundary: remember the exact so-far slice of the group;
+                    # the runner drains it before anything appended after.
+                    self._draw_batch.append(("GRP", snap))
+            self._draw_batch.append(
+                (int(pipeline), int(mesh), texture, texture1, uniforms, texture2)
+            )
+        else:
+            # Conservative legacy seam: commit both pending streams at every
+            # boundary — group first (queued earlier), then everything batched
+            # before this call — then append this draw and commit it
+            # immediately. Contiguous instanced runs still batch; every
+            # uniform draw pays one sequence-preserving commit (order >
+            # call count).
+            grp = getattr(self, "_instance_group", None)
+            if grp is not None and not getattr(self, "_in_instance_flush", False):
+                try:
+                    if not grp.empty():
+                        # Ordered-stream flush (delegates to the runner);
+                        # post-run the group is empty.
+                        grp.flush(self)
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                    _host_draw_fail("dm.instance_flush", e)
+            self._draw_batch.append(
+                (int(pipeline), int(mesh), texture, texture1, uniforms, texture2)
+            )
+            # Immediate seam commit: a tree-ordered later instanced draw must
+            # never overtake this uniform draw because of the deferred batch.
+            self._flush_draw_batch()
 
     def _flush_draw_batch(self):
-        """Emit queued draw_model calls via draw_models (or fallback)."""
+        """Ordered-stream commit: merge uniform-run batches with group drains.
+
+        Runner over the accumulated stream (cleared up-front):
+
+        - Contiguous 6-tuple runs aggregate into ONE host ``draw_models`` call
+          (list order == tree order).
+        - ``("GRP", snap)`` boundary at position i: commit the pending run
+          first, then ``_instance_group.drain_upto(snap)`` — exactly the
+          instances queued before the boundary, from the per-key offset, one
+          ``draw_instances`` per live key. Instances queued after stay put.
+        - Tail: commit the last run, then ``drain_all()`` — the group
+          remainder. For ``_end_frame_present`` this is the final commit; the
+          follow-up ``_flush_instance_group`` is a no-op because drains are
+          idempotent by per-key offset.
+        """
         batch = self._draw_batch
-        if not batch:
+        grp = getattr(self, "_instance_group", None)
+        if not batch and (grp is None or grp.empty()):
             return
         self._draw_batch = []
+        was_flush = getattr(self, "_in_instance_flush", False)
+        self._in_instance_flush = True
         try:
-            import renpy_host  # type: ignore
+            if batch:
+                seg: list = []
 
-            dm = getattr(renpy_host, "draw_models", None)
-            if dm is not None:
-                dm(batch)
-                return
-            for item in batch:
-                renpy_host.draw_model(*item)
-        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-            _host_draw_fail("flush_draw_batch", e)
+                def _seg_commit():
+                    """One draw_models call for the contiguous run (fallback loop)."""
+                    if not seg:
+                        return
+                    try:
+                        dm = _DRAW_MODELS_FN()
+                        if dm is not None:
+                            dm(seg)
+                            return
+                        host = _RENPY_HOST()
+                        if host is not None:
+                            for item in seg:
+                                host.draw_model(*item)
+                            return
+                    except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                        _host_draw_fail("flush_draw_batch", e)
+                    finally:
+                        del seg[:]
 
+                def _commit_residue():
+                    """Commit quads appended during a guarded drain (hermetic
+                    fallback path: ``_InstanceGroup._emit`` -> ``_flush_instance_fallback``
+                    -> ``_dm``). They must be committed at the current stream
+                    position — right after their boundary — before any later
+                    stream element; without this they would sink below (or,
+                    via a nested full runner, jump above) the group's tail."""
+                    residue = self._draw_batch
+                    if not residue:
+                        return
+                    self._draw_batch = []
+                    try:
+                        dm = _DRAW_MODELS_FN()
+                        if dm is not None:
+                            dm(residue)
+                            return
+                        host = _RENPY_HOST()
+                        if host is not None:
+                            for item in residue:
+                                host.draw_model(*item)
+                            return
+                    except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                        _host_draw_fail("flush_draw_batch.residue", e)
+                    finally:
+                        del residue[:]
 
-    def _end_frame_present(self):
+                for item in batch:
+                    if (
+                        isinstance(item, tuple)
+                        and item
+                        and isinstance(item[0], str)
+                        and item[0] == "GRP"
+                    ):
+                        # Painter-order boundary: draws queued before it go out
+                        # first, then exactly its group slice (and any quads
+                        # the hermetic fallback appended mid-drain).
+                        _seg_commit()
+                        try:
+                            if grp is not None:
+                                grp.drain_upto(item[1], self)
+                        except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                            _host_draw_fail("flush_draw_batch.grp", e)
+                        _commit_residue()
+                    else:
+                        seg.append(item)
+                _seg_commit()
+            # Tail: the group remainder (covers frames whose last draws were
+            # grouped, and empty-stream tails so nested-bake seams commit all
+            # pending grouped quads into the still-open parent target).
+            if grp is not None:
+                try:
+                    grp.drain_all(self)
+                except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                    _host_draw_fail("flush_draw_batch.grp_all", e)
+            # Residue after the tail drain (hermetic fallback quads must not
+            # leak into the next frame's stream past a present).
+            try:
+                residue = self._draw_batch
+                if residue:
+                    self._draw_batch = []
+                    dm = _DRAW_MODELS_FN()
+                    if dm is not None:
+                        dm(residue)
+                    else:
+                        host = _RENPY_HOST()
+                        if host is not None:
+                            for item in residue:
+                                host.draw_model(*item)
+            except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                _host_draw_fail("flush_draw_batch.residue", e)
+        finally:
+            self._in_instance_flush = was_flush
+
+    def _end_frame_present(self, full_canvas: bool = False):
         """Flush batched draw_model cmds then present (product + nested RTT)."""
-        # M1 T3: flush instance groups before batched models to preserve painter order approximation
-        # Grouped draws represent many quads as single DrawCmd; emit before singletons
-        # (dense prefs blocks are contiguous, so order within map insertion approx preserves painter)
+        # Final tail commit in painter order: the ordered stream already
+        # drains group boundaries at their exact positions and the runner tail
+        # drain_all commits the group remainder — so here the stream is fully
+        # drained (draws + group). The legacy seam flush below is a no-op
+        # (drains are idempotent by per-key offset — nothing double-submits).
+        self._flush_draw_batch()
         try:
             grp_flush = getattr(self, "_flush_instance_group", None)
             if grp_flush is not None:
                 grp_flush()
         except Exception:
             pass
-        self._flush_draw_batch()
-        import renpy_host  # type: ignore
-        renpy_host.end_frame_present()
+        _opts = _END_FRAME_PRESENT_OPTS_FN()
+        if _opts is not None:
+            _opts(bool(full_canvas))
+        else:
+            _RENPY_HOST().end_frame_present()
 
     def draw_screen(self, surftree, flip=True):
 
@@ -132,6 +356,36 @@ class ScreenMixin:
                 pass
 
 
+    def _walk_tree_shelf(self, node, depth, out, maxdepth=3):
+        """Depth-capped child-count skeleton of the render tree (diagnostics)."""
+        if node is None or depth > maxdepth:
+            return
+        n = 0
+        kinds = []
+        try:
+            for _c, _x, _y in self._iter_children(node):
+                n += 1
+                if len(kinds) < 6:
+                    kinds.append(type(_c).__name__[:8])
+        except Exception:
+            return
+        out.append(
+            "%s%s(%d ch=[%s]%s%s)"
+            % (
+                " " * depth,
+                type(node).__name__[:8],
+                n,
+                ",".join(kinds),
+                ", layer=" if getattr(node, "layer_name", None) else "",
+                getattr(node, "layer_name", None) or "",
+            )
+        )
+        try:
+            for _c, _x, _y in self._iter_children(node):
+                self._walk_tree_shelf(_c, depth + 1, out, maxdepth)
+        except Exception:
+            return
+
     def _draw_screen_body(self, surftree, flip=True):
         """Inner product present (caller holds ``_DRAW_SCREEN_LOCK`` + depth)."""
         try:
@@ -159,9 +413,28 @@ class ScreenMixin:
             self._recover_frame_state()
             renpy_host.begin_frame()
             self._draw_batch = []
+            # Walk-stat counters: per-product-frame nodes/bakes/fail list, so a
+            # "frame lost a subtree prefix" flake can be attributed to (a) the
+            # walker visiting too few nodes, (b) an RTT bake path, or (c)
+            # swallowed per-node exceptions (dedup-free via _HOST_FRAME_FAILS).
+            from .draw_debug import (
+                _FRAME_SKIPS,
+                _HOST_FRAME_FAILS,
+                _HOST_FRAME_FAILS_ENABLED as _wd_enabled,
+            )
+
+            self._frame_nodes = 0
+            self._frame_bakes = 0
+            del _HOST_FRAME_FAILS[:]
+            del _FRAME_SKIPS[:]
+            walk_t0 = _time.monotonic() if _wd_enabled else None
             # Fresh clip stack each product present (axis-aligned mesh crop / polygon stencil).
             self._clip_rect = None
             self._clip_poly = None
+            # Full-canvas marker for this frame (transition composite bake /
+            # fullscreen movie quad): lets the host also treat this frame as a
+            # "complete" frame when it has fewer cmds than the last full render.
+            self._frame_full_canvas = False
             walk_ok = True
             try:
                 if surftree is not None:
@@ -182,7 +455,9 @@ class ScreenMixin:
                 try:
                     _pr0 = _time.monotonic() if frame_t0 is not None else None
                     if walk_ok:
-                        self._end_frame_present()
+                        self._end_frame_present(
+                            bool(getattr(self, "_frame_full_canvas", False))
+                        )
                     else:
                         reset = getattr(renpy_host, "reset_frame_state", None)
                         if reset is not None:
@@ -202,6 +477,10 @@ class ScreenMixin:
                         pass
                 # Flush meshes that were evicted from the Python cache while still
                 # referenced by this frame's draw cmds (deferred in _mesh_quad_ndc).
+                # Phase 0d: bake-attribution frame flush — one throttled
+                # (0.5 s) PHASE0_SIGNAL summarizing bakes_in_frame by tag/node
+                # class/size. Diagnostic only; no-ops when instruments are off.
+                bake_frame_flush()
                 try:
                     self._flush_deferred_meshes()
                 except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
@@ -212,6 +491,65 @@ class ScreenMixin:
                     self._recycle_frame_rtts()
                 except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     _host_draw_fail("recycle_frame_rtts", e)
+                # Walk-stat: one line per product frame (O(1)), thread-tagged so
+                # a nested probe-thread present is distinguishable from the
+                # product loop; cmd_count comes from the host's last successful
+                # product encode (0 until the first full present).
+                if walk_t0 is not None:
+                    try:
+                        import threading as _th
+
+                        tn = _th.current_thread().name or ""
+                        th = "probe" if "prefs" in tn or "thrash" in tn else "main"
+                        cc = -1
+                        try:
+                            cc = int(renpy_host.frame_cmd_count())
+                        except Exception:
+                            cc = -1
+                        # Root children type skeleton: tells whether the RENDER
+                        # tree itself lost the chrome subtree (walk nodes tiny
+                        # AND root children tiny => render_screen prune) or the
+                        # walker pruned a complete tree (nodes tiny, ch large).
+                        ch = []
+                        try:
+                            for _c, _x, _y in self._iter_children(surftree):
+                                ch.append(type(_c).__name__)
+                                if len(ch) >= 16:
+                                    break
+                        except Exception:
+                            ch = ["<err>"]
+                        _safe_print(
+                            "[WALKSTAT] th=%s nodes=%d bakes=%d fails=%d walk_ok=%d "
+                            "cmds=%d nodes_ms=%.1f root=%s ch_n=%d ch=%s"
+                            % (
+                                th,
+                                int(self._frame_nodes),
+                                int(self._frame_bakes),
+                                len(_HOST_FRAME_FAILS),
+                                int(walk_ok),
+                                cc,
+                                (_time.monotonic() - walk_t0) * 1000.0,
+                                type(surftree).__name__ if surftree is not None else "None",
+                                len(ch),
+                                ",".join(ch) if ch else "-",
+                            )
+                        )
+                        for _lf in _HOST_FRAME_FAILS[:6]:
+                            _safe_print("[WALKSTAT_FAIL] %s %s: %s" % (_lf[0], _lf[1], _lf[2]))
+                        for _sk in _FRAME_SKIPS[:10]:
+                            _safe_print("[WALKSKIP] %s %s" % (_sk[0], _sk[1]))
+                        # Tree shelf (depth≤3) every frame — cheap (~tens of
+                        # nodes) and lets us tell a render-tree prune from a
+                        # walker skip by printing node counts per level.
+                        shelf = []
+                        try:
+                            self._walk_tree_shelf(surftree, 0, shelf)
+                        except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                            pass
+                        if shelf:
+                            _safe_print("[SHELF] %s" % " | ".join(shelf))
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                        pass
             # Do NOT call renpy_host.request_redraw() after every product present.
             # GL2 flip() only swaps buffers; continuous request_redraw wakes the
             # host event loop every frame and pairs with about_to_wait's redraw
@@ -340,7 +678,7 @@ class ScreenMixin:
             if isinstance(what, HostTexture):
                 return what.handle if what.handle > 0 else what
 
-            def _rtt_pass(w, h, draw_fn):
+            def _rtt_pass(w, h, draw_fn, node=None, where_tag="rtt_pass"):
                 """begin_target → begin_frame → draw_fn → end_frame → end_target.
 
                 RTTs are borrowed from the size-keyed freelist (see
@@ -348,6 +686,13 @@ class ScreenMixin:
                 allocate a new full-screen target every call.
                 """
                 # M1 T3: isolate instance groups between parent and RTT
+                if _WALKSTAT_ON:
+                    try:
+                        self._frame_bakes += 1
+                    except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
+                        pass
+                # Phase 0d bake-attribution stamp (diagnostic only, no semantics).
+                bake_attn(self, where_tag, node, w, h)
                 _grp = getattr(self, "_instance_group", None)
                 if _grp is not None:
                     try:
@@ -357,12 +702,25 @@ class ScreenMixin:
                         _grp.push()
                     except Exception:
                         pass
+                # Pending parent batch items precede this RTT's content in
+                # tree order — commit them into the parent target first.
+                self._flush_draw_batch()
                 rtt = self._acquire_rtt(w, h)
                 renpy_host.begin_target(rtt)
                 renpy_host.begin_frame()
+                # Scope the full-canvas frame marker to this bake: a composite
+                # leaf inside a nested bake must not leak into the enclosing
+                # product frame (its bake covers the RTT box, not the product
+                # canvas), so those product frames keep the honest sparse guard.
+                old_full = getattr(self, "_frame_full_canvas_hop", None)
+                prev_full = getattr(self, "_frame_full_canvas", False)
+                self._frame_full_canvas_hop = True
+                self._frame_full_canvas = False
                 try:
                     draw_fn()
                 finally:
+                    self._frame_full_canvas = bool(prev_full)
+                    self._frame_full_canvas_hop = old_full
                     try:
                         self._end_frame_present()
                     except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
@@ -382,7 +740,9 @@ class ScreenMixin:
             if isinstance(what, (tuple, list)) and len(what) >= 2 and all(
                 isinstance(x, (int, float)) for x in what[:2]
             ):
-                return _rtt_pass(what[0], what[1], lambda: None)
+                return _rtt_pass(
+                    what[0], what[1], lambda: None, node=None, where_tag="rtt_size"
+                )
 
             # Object exposing a pre-built texture handle (leaf, no children needed).
             tex = getattr(what, "texture", None)
@@ -399,7 +759,11 @@ class ScreenMixin:
                         w, h = self.virtual_size
                 handle = tex
                 return _rtt_pass(
-                    w, h, lambda: self._dm(self._tex_pipe, self._quad_mesh, handle)
+                    w,
+                    h,
+                    lambda: self._dm(self._tex_pipe, self._quad_mesh, handle),
+                    node=what,
+                    where_tag="rtt_texleaf",
                 )
 
             # Surface-like leaf (no children): upload + draw into RTT.
@@ -412,7 +776,11 @@ class ScreenMixin:
                 src = self.load_texture(what, transient=True)
                 handle = src.handle if isinstance(src, HostTexture) else src
                 return _rtt_pass(
-                    w, h, lambda: self._dm(self._tex_pipe, self._quad_mesh, handle)
+                    w,
+                    h,
+                    lambda: self._dm(self._tex_pipe, self._quad_mesh, handle),
+                    node=what,
+                    where_tag="rtt_surfleaf",
                 )
 
             # Render/Model tree → walk into RTT (covers mesh=True + children).
@@ -461,7 +829,7 @@ class ScreenMixin:
                     self._clip_rect = old_clip
                     self._clip_poly = old_poly
 
-            return _rtt_pass(w, h, _draw_tree)
+            return _rtt_pass(w, h, _draw_tree, node=what, where_tag="rtt_tree")
         except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("render_to_texture", e)
             return what

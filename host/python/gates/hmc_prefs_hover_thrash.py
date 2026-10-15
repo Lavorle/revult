@@ -139,34 +139,58 @@ def _force_product_redraw():
 
     import renpy
 
-    info = {"path": None, "error": None}
+    # HOST render-schedule serialization: the probe builds its OWN render tree
+    # and walks + presents it. Without the schedule lock the product loop's
+    # Interface.draw_screen mark_sweep can run while this thread is between
+    # render_screen and draw - mark_sweep kills every render not reachable
+    # from the product's screen_render (and Render.kill der children of the
+    # still-live Render objects), so the probe's walk loses a whole subtree
+    # prefix for one frame (whole / partial-chrome black sample). Holding the
+    # same reentrant render_schedule lock as Interface.draw_screen restores
+    # the upstream single-thread invariant across walker threads.
     try:
-        ready, why, iface = ih.interface_ready()
-        if not ready or iface is None:
-            info["error"] = f"iface:{why}"
-            return info
-        root = ih._rebuild_product_root(iface)
-        if root is None:
-            info["error"] = "root_absent"
-            return info
-        w = int(getattr(renpy.config, "screen_width", 1920) or 1920)
-        h = int(getattr(renpy.config, "screen_height", 1080) or 1080)
-        surftree = renpy.display.render.render_screen(root, w, h)
-        draw = getattr(renpy.display, "draw", None)
-        if draw is None or not hasattr(draw, "draw_screen"):
-            info["error"] = "no_draw"
-            return info
-        draw.draw_screen(surftree, flip=True)
-        try:
-            iface.surftree = surftree
-        except Exception:
-            pass
-        info["path"] = "rebuild_render_screen"
-        return info
-    except Exception as e:
-        info["error"] = f"{type(e).__name__}:{e}"
-        return info
+        from renpy.display.renderschedule import schedule_lock_obj as _sched
 
+        _slock = _sched()
+    except Exception:  # noqa: BLE001 - probe must never abort the gate
+        import contextlib as _ctl
+
+        class _NopLock:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        _slock = _NopLock()
+    info = {"path": None, "error": None}
+    with _slock:
+        try:
+            ready, why, iface = ih.interface_ready()
+            if not ready or iface is None:
+                info["error"] = f"iface:{why}"
+                return info
+            root = ih._rebuild_product_root(iface)
+            if root is None:
+                info["error"] = "root_absent"
+                return info
+            w = int(getattr(renpy.config, "screen_width", 1920) or 1920)
+            h = int(getattr(renpy.config, "screen_height", 1080) or 1080)
+            surftree = renpy.display.render.render_screen(root, w, h)
+            draw = getattr(renpy.display, "draw", None)
+            if draw is None or not hasattr(draw, "draw_screen"):
+                info["error"] = "no_draw"
+                return info
+            draw.draw_screen(surftree, flip=True)
+            try:
+                iface.surftree = surftree
+            except Exception:
+                pass
+            info["path"] = "rebuild_render_screen"
+            return info
+        except Exception as e:
+            info["error"] = f"{type(e).__name__}:{e}"
+            return info
 
 def _read_rt():
     import renpy_host

@@ -16,7 +16,34 @@ pub const SWAPCHAIN_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unor
 pub const STAGING_RING_CAP_BYTES: usize = 64 * 1024 * 1024;
 /// Default decode pool workers for YUV file-backed path.
 pub const DECODE_POOL_WORKERS_DEFAULT: usize = 2;
+
+/// Headless flag: `RENPY_HOST_HEADLESS=1` renders into the game RT only and
+/// skips all swapchain present (get_current_texture / blit / present). Read
+/// once at startup (main.rs `init_headless`); never getenv'd in frame loops.
+/// Same OnceLock style as pump.rs `START`.
+static HEADLESS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// Read RENPY_HOST_HEADLESS once and latch it. Call early in main().
+pub fn init_headless() {
+    let on = std::env::var("RENPY_HOST_HEADLESS")
+        .ok()
+        .as_deref()
+        == Some("1");
+    let _ = HEADLESS.set(on);
+}
+
+pub fn headless_enabled() -> bool {
+    *HEADLESS.get_or_init(|| {
+        std::env::var("RENPY_HOST_HEADLESS")
+            .ok()
+            .as_deref()
+            == Some("1")
+    })
+}
+
 pub struct GpuState {
+    /// Headless mode: encode into game RT, skip swapchain present entirely.
+    pub headless: bool,
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -211,7 +238,15 @@ impl GpuState {
             ));
         };
 
-        let (present_mode, frame_latency) = select_present_mode(&caps.present_modes);
+        let (present_mode, frame_latency) = if headless_enabled() {
+            // Headless present skip: Fifo is the only PresentMode guaranteed by
+            // the Vulkan spec on every X11/DRI surface — avoid present_op errors
+            // on the (rarely touched but still configured) swapchain.
+            info!("PresentMode headless forced=fifo desired_maximum_frame_latency=2");
+            (wgpu::PresentMode::Fifo, 2)
+        } else {
+            select_present_mode(&caps.present_modes)
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
             format,
@@ -268,6 +303,7 @@ impl GpuState {
             device,
             queue,
             config,
+            headless: headless_enabled(),
             adapter,
             adapter_name: info.name,
             backend: info.backend,
@@ -304,7 +340,12 @@ impl GpuState {
         self.config.height = size.height;
         // Re-run PresentMode policy on fresh surface caps (plan must-merge: same chain on resize).
         let caps = self.surface.get_capabilities(&self.adapter);
-        let (present_mode, frame_latency) = select_present_mode(&caps.present_modes);
+        let (present_mode, frame_latency) = if self.headless {
+            info!("PresentMode headless forced=fifo desired_maximum_frame_latency=2");
+            (wgpu::PresentMode::Fifo, 2)
+        } else {
+            select_present_mode(&caps.present_modes)
+        };
         self.config.present_mode = present_mode;
         self.config.desired_maximum_frame_latency = frame_latency;
         self.surface.configure(&self.device, &self.config);
@@ -318,6 +359,13 @@ impl GpuState {
     }
 
     pub fn render_clear(&mut self) -> Result<Option<Duration>, wgpu::SurfaceError> {
+        // Headless: idle/resize clears never touch the swapchain. The product
+        // path owns the game RT; an idle clear has nothing to paint into in
+        // present-skipped mode (and get_current_texture on a hidden X11 window
+        // is exactly the surface traffic we want gone).
+        if self.headless {
+            return Ok(None);
+        }
         let frame = self.surface.get_current_texture()?;
         let view = frame
             .texture

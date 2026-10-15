@@ -22,7 +22,9 @@ from .draw_debug import (  # noqa: F401
     _PHASE0_LAST_WRITE_T,
     _PHASE0_WRITE_INTERVAL,
     _UI_TRACE_LOGGED,
+    _WALKSTAT_ON,
     _draw_screen_lock,
+    _walkstat_skip,
     _host_draw_fail,
     _phase0_due,
     _phase0_due_dissolve,
@@ -32,6 +34,10 @@ from .draw_debug import (  # noqa: F401
     _phase0_signals_enabled,
     _safe_print,
     _ui_trace_once,
+    _BAKE_ENABLED,
+    bake_attn,
+    bake_caller_pop,
+    bake_caller_push,
 )
 from .draw_surftree import SurftreeMixin  # T5 shim
 from .host_texture import HostTexture
@@ -56,6 +62,22 @@ class CachedModelPolicy:
         return (multi_tex and not special) or (multi_child and bool_mesh and not special)
 
 
+class SurftreeWalkerCacheGate:
+    """Transition bake cache gate for the walker (old slot only).
+
+    OnceLock parse is owned by draw_debug (RENPY_HOST_TRANS_BAKE_CACHE,
+    default on). Fallback-off keeps walker behavior byte-identical to the
+    pre-cache product: gate never engages, keys are never built, counters
+    never increment.
+    """
+    @staticmethod
+    def enabled() -> bool:
+        try:
+            from .draw_debug import trans_bake_cache_enabled
+            return trans_bake_cache_enabled()
+        except Exception:
+            return False
+
 class DissolveStrategy:
     @staticmethod
     def needs_mid(node) -> bool:
@@ -67,6 +89,8 @@ class DissolveStrategy:
             return False
         except:
             return False
+
+
     @staticmethod
     def ht_count(host_texture_cls, int_cls, iter_children, n, budget) -> int:
         if budget is None:
@@ -251,6 +275,11 @@ class WalkMixin:
         elif getattr(node, "cached_model", None) is not None:
             if host_env_bool("RENPY_HOST_UI_TRACE") and "drop_bake_residual" not in _UI_TRACE_LOGGED and multi_child and not special:
                 _ui_trace_once("drop_bake_residual", f"drop_bake=0 residual_single_slot_bake multi_child=1 multi_tex={int(bool(multi_tex))} bool_mesh={int(bool(bool_mesh))} special=0 children_n={len(children_preview) if children_preview is not None else -1}")
+            if _WALKSTAT_ON:
+                try:
+                    _walkstat_skip("cache_hit", f"{type(node).__name__} tex={len(tuple(c_texs))} mc={int(bool(multi_child))} sp={int(bool(special))}")
+                except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                    pass
             self._draw_model_like(cached, ctx.ox, ctx.oy)
             return True
         return False
@@ -296,17 +325,57 @@ class WalkMixin:
             return True
         old_c, ox0, oy0 = children[0]
         new_c, nx0, ny0 = children[-1]
-        old_n = DissolveStrategy.ht_count(HostTexture, int, self._iter_children, old_c, [120])
-        new_n = DissolveStrategy.ht_count(HostTexture, int, self._iter_children, new_c, [120])
-        textures = []
-        for child, _cx, _cy in children[:2]:
+        # Phase 0d bake-attribution: the two _child_to_texture calls below are
+        # the dissolve transition's bake triggers; push a caller cookie so
+        # nested RTT bakes attribute to "dissolve_mid" instead of rtt_pass.
+        _bkc = bake_caller_push(self, "dissolve_mid")
+        # Transition old-slot cross-frame content cache (hmc_childtrust):
+        # the old child's structural fingerprint is flat across the whole
+        # transition band, so its full-screen RTT bake can be pinned and
+        # reused whenever the key (type tree + deep texture/mesh handles +
+        # uniforms minus u_renpy_dissolve + matrix bits + movie publish seq)
+        # matches. Key build failure / any exception → None → normal bake
+        # (frame order unaffected). The NEW slot never consults the cache.
+        _old_key = None
+        try:
+            # Cross-frame old-slot cache is only engaged in the mid band
+            # (complete is strictly inside (0.001, 0.999) here).
+            if SurftreeWalkerCacheGate.enabled() and old_c is not None:
+                _old_key = self._trans_bake_key(old_c)
+        except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
+            _host_draw_fail("dissolve_mid.trans_bake_key", e)
+            _old_key = None
+        try:
+            old_n = DissolveStrategy.ht_count(HostTexture, int, self._iter_children, old_c, [120])
+            new_n = DissolveStrategy.ht_count(HostTexture, int, self._iter_children, new_c, [120])
+            textures = []
+            for _slot_i, (child, _cx, _cy) in enumerate(children[:2]):
+                try:
+                    # Old slot (children[0]) only — new slot always bakes.
+                    if _slot_i == 0:
+                        tex = self._child_to_texture(child, _trans_key=_old_key)
+                    else:
+                        tex = self._child_to_texture(child)
+                except Exception as e:
+                    _host_draw_fail("dissolve_mid.child_to_texture", e)
+                    tex = None
+                if tex is not None:
+                    textures.append(tex)
+        finally:
+            bake_caller_pop(self, _bkc)
+        if host_env_bool("RENPY_HOST_UI_TRACE"):
             try:
-                tex = self._child_to_texture(child)
-            except Exception as e:
-                _host_draw_fail("dissolve_mid.child_to_texture", e)
-                tex = None
-            if tex is not None:
-                textures.append(tex)
+                if not hasattr(self, "_dissolve_mid_log_n"):
+                    self._dissolve_mid_log_n = 0
+                n = int(self._dissolve_mid_log_n)
+                if n < 12 or (n % 200) == 0:
+                    _safe_print(
+                        "[DISSOLVE_MID] complete=%.4f old_n=%d new_n=%d tex_n=%d"
+                        % (float(complete), old_n, new_n, len(textures))
+                    )
+                self._dissolve_mid_log_n = n + 1
+            except Exception:
+                pass
         if len(textures) >= 2:
             w, h = self._node_size(node)
             if w <= 0 or h <= 0:
@@ -320,6 +389,17 @@ class WalkMixin:
             shaders = getattr(node, "shaders", None) or ("renpy.dissolve",)
             leaf = self._make_model_leaf(w, h, textures[:2], shaders=shaders, uniforms=uniforms)
             _safe_assign_origin(leaf, node)
+            # A transition composite bake covers the frame canvas by
+            # construction (the two baked children share the transition's
+            # full-size box). Mark the frame full-canvas so the host's sparse
+            # cmd guard encodes it (upstream draws every frame; suppressing
+            # froze the dissolve and pinned chrome-less frames in a fresh RT).
+            try:
+                vw, vh = self.virtual_size
+                if int(vw) >= 1 and int(vh) >= 1 and w >= int(vw) - 20 and h >= int(vh) - 20:
+                    self._frame_full_canvas = True
+            except Exception:
+                pass
             self._draw_model_like(leaf, ctx.ox, ctx.oy)
             return True
         if old_n <= 1 and new_n >= 3:
@@ -335,26 +415,38 @@ class WalkMixin:
     def _draw_imagedissolve_fallback(self, node, children, ctx: WalkCtx) -> bool:
         if not self._is_imagedissolve_node(node):
             return False
+        if _WALKSTAT_ON:
+            try:
+                _walkstat_skip("imd_fallback", f"{type(node).__name__} ch={len(children)} baked={int(getattr(node, 'cached_model', None) is not None)}")
+            except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                pass
         try:
             self.load_all_textures(node)
         except Exception as e:
             _host_draw_fail("dissolve_fallback.load_all_textures", e)
-        cm = getattr(node, "cached_model", None)
-        if cm is not None:
-            self._draw_model_like(cm, ctx.ox, ctx.oy)
-            return True
-        textures = []
-        for child, _cx, _cy in children:
-            tex = self._child_to_texture(child)
-            if tex is not None:
-                textures.append(tex)
-        need = 3
-        if len(children) >= need and len(textures) < need:
+        # Phase 0d bake-attribution: imagedissolve fallback bakes its slot
+        # children through _child_to_texture — push a caller cookie so nested
+        # RTT bakes attribute to "imd_fallback" instead of rtt_pass.
+        _bkc = bake_caller_push(self, "imd_fallback")
+        try:
+            cm = getattr(node, "cached_model", None)
+            if cm is not None:
+                self._draw_model_like(cm, ctx.ox, ctx.oy)
+                return True
             textures = []
             for child, _cx, _cy in children:
                 tex = self._child_to_texture(child)
                 if tex is not None:
                     textures.append(tex)
+            need = 3
+            if len(children) >= need and len(textures) < need:
+                textures = []
+                for child, _cx, _cy in children:
+                    tex = self._child_to_texture(child)
+                    if tex is not None:
+                        textures.append(tex)
+        finally:
+            bake_caller_pop(self, _bkc)
         if textures:
             w, h = self._node_size(node)
             uniforms = getattr(node, "uniforms", None)
@@ -396,9 +488,19 @@ class WalkMixin:
             return
         ctex = getattr(node, "cached_texture", None)
         if ctex is not None and not children:
+            if _WALKSTAT_ON:
+                try:
+                    _walkstat_skip("ctex_leaf", f"{type(node).__name__}")
+                except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                    pass
             self._draw_texture_at(ctex, ctx.ox, ctx.oy, self._node_size(node))
             return
         if ctex is not None and len(children) == 1 and isinstance(children[0][0], (HostTexture, int)):
+            if _WALKSTAT_ON:
+                try:
+                    _walkstat_skip("ctex_sub", f"{type(node).__name__}")
+                except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                    pass
             nw, nh = self._node_size(node, default=(0, 0))
             child, cx, cy = children[0]
             self._draw_node(child, ctx.ox + cx, ctx.oy + cy)
@@ -464,6 +566,11 @@ class WalkMixin:
             except (TypeError, ValueError):
                 a_hide = 1.0
             if a_hide <= 0.0:
+                if _WALKSTAT_ON:
+                    try:
+                        _walkstat_skip("alpha0", f"{type(node).__name__} ch={len(children)}")
+                    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                        pass
                 return True
         textures = []
         want_multi = any(s in ("image_dissolve", "renpy.imagedissolve", "imagedissolve", "renpy.dissolve", "dissolve") for s in shaders_attr) or (isinstance(uniforms_attr, dict) and ("u_animation" in uniforms_attr or "u_transition" in uniforms_attr or "u_renpy_dissolve" in uniforms_attr))
@@ -517,6 +624,12 @@ class WalkMixin:
                                 slots.append(ht)
                 if len(slots) >= 2:
                     textures = list(slots)
+                    if len(children) > 1:
+                        if _WALKSTAT_ON:
+                            try:
+                                _walkstat_skip("multi_1child", f"{type(node).__name__} ch={len(children)} sh={list(shaders_attr)[:3]}")
+                            except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                                pass
                     break
         child_draw_ox = ctx.ox
         child_draw_oy = ctx.oy
@@ -550,4 +663,4 @@ class WalkMixin:
         return SurftreeMixin._bake_mesh_children(self, node, children)  # type: ignore[attr-defined]
 
 
-__all__ = ["WalkMixin", "WalkCtx", "CachedModelPolicy", "DissolveStrategy", "ReverseScaler"]
+__all__ = ["WalkMixin", "WalkCtx", "CachedModelPolicy", "DissolveStrategy", "SurftreeWalkerCacheGate", "ReverseScaler"]

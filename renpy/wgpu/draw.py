@@ -305,6 +305,12 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
         self._rtt_free = {}  # (w, h) -> [handle, ...]
         self._rtt_prev_frame = []  # [(handle, w, h), ...]
         self._rtt_curr_frame = []
+        # Bake-generation counter (rtt_pool._recycle_frame_rtts increments per
+        # product frame). Stamps child.cached_texture so a stale pool-RTT
+        # sample (HuangmeiC start-label dissolve: a freelist handle re-acquired
+        # as a bake target while an old cached_texture still points to it →
+        # fatal wgpu RESOURCE/COLOR_TARGET conflict) is refused and re-baked.
+        self._rtt_gen = 0
         # Geometry-keyed mesh cache. Every textured draw used to call
         # create_mesh for an identical NDC quad; HuangmeiC main-menu trees
         # allocate thousands of mesh buffers per second and OOM the process.
@@ -487,7 +493,18 @@ class WgpuDraw(RttPoolMixin, SurftreeMixin, TraversalMixin, ModelMixin, WalkMixi
             grp = getattr(self, "_instance_group", None)
             if grp is None or grp.empty():
                 return
-            grp.flush(self)
+            # Re-entrancy guard: when the instance fallback path (host lacks
+            # draw_instances) queues quads via _dm, that _dm would flush the
+            # group again (painter-order boundary). Mid-flush the group is
+            # already cleared, so re-entry only loops through the fallback —
+            # guard it and let those quads join the batch directly.
+            if getattr(self, "_in_instance_flush", False):
+                return
+            self._in_instance_flush = True
+            try:
+                grp.flush(self)
+            finally:
+                self._in_instance_flush = False
         except Exception:
             pass
 

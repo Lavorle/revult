@@ -28,6 +28,7 @@ import contextlib
 import os
 import re
 import threading
+import time as _time
 from collections import deque
 from typing import Any, List, Optional
 
@@ -40,6 +41,8 @@ except Exception:
 
 _channels: dict[int, dict] = {}
 _inited = False
+# Memoized value of RENPY_HOST_VIDEO_BIND_AUDIO (None until first read).
+_VIDEO_BIND_AUDIO_OPT: Optional[bool] = None
 
 # Match renpysound.pyx video flags used by audio.Channel.
 NO_VIDEO = 0
@@ -434,8 +437,11 @@ def _present_mode_1b() -> bool:
 
     Opt out with RENPY_HOST_MOVIE_PRESENT=1a (single-frame layout buffer).
     """
-    mode = os.environ.get("RENPY_HOST_MOVIE_PRESENT", "1b").strip().lower()
-    return mode not in ("1a", "layout", "s1")
+    global _PRESENT_MODE_1B
+    if _PRESENT_MODE_1B is None:
+        mode = os.environ.get("RENPY_HOST_MOVIE_PRESENT", "1b").strip().lower()
+        _PRESENT_MODE_1B = mode not in ("1a", "layout", "s1")
+    return _PRESENT_MODE_1B
 
 
 def read_video(channel):
@@ -541,34 +547,54 @@ def read_video(channel):
             abs_idx = raw_idx % total
         else:
             abs_idx = min(raw_idx, max(0, total - 1))
-        # While still growing, wall clock often outruns the progressive decode
+        # While still growing, the clock may outrun the progressive decode
         # buffer (1080p RGBA stream). Re-anchor the presentation clock to the
-        # latest available absolute frame so we keep tracking new publishes
-        # instead of clamping to the ring tail for many seconds (sticky feel).
+        # latest available absolute frame — but only when the clamp has been
+        # held for a sustained stretch (>250 ms). When the decoder runs
+        # *ahead* of realtime (the common case for a fast ffmpeg file decode),
+        # re-anchoring on every read yanks the clock to the publish tail and
+        # fast-forwards the early prefix at >1x for the whole growth window
+        # (observed +4 idx / 105 ms ≈ 1.3x startup fast-forward); a simple
+        # clamp-hold presents the prefix once at 1x and lets buffer decode
+        # catch up, with no multi-second freeze.
         # Suppressed once a full loop has played: post-wrap refills serve the
         # prefix at 1x, and yanking would fast-forward through it.
-        if (not ready_full) and total > 0 and raw_idx > (total - 1) and not ch.get(
+        now_clamped = (not ready_full) and total > 0 and raw_idx > (total - 1) and not ch.get(
             "_looped_once"
-        ):
+        )
+        if now_clamped:
             try:
-                set_pos = getattr(renpy_host, "video_clock_set_pos", None)
-                if callable(set_pos):
-                    # Keep a tiny lead so the next published frame advances
-                    # presentation immediately without a multi-second freeze.
-                    set_pos(channel, float(max(0, total - 1)) / float(fps))
-                    ch["_clock_starved"] = True
-                elif not ch.get("_clock_starved"):
-                    # Fallback: pause once when starved (legacy hosts).
-                    renpy_host.video_clock_pause(channel)
-                    ch["_clock_starved"] = True
+
+                _now_m = _time.monotonic()
+                if ch.get("_clock_clamped_t0") is None:
+                    ch["_clock_clamped_t0"] = _now_m
+                sustained = (_now_m - float(ch["_clock_clamped_t0"])) > 0.25
             except Exception:
-                pass
-        elif ch.get("_clock_starved"):
-            try:
-                renpy_host.video_clock_unpause(channel)
-            except Exception:
-                pass
-            ch["_clock_starved"] = False
+                _now_m = 0.0
+                sustained = True
+            if sustained:
+                try:
+                    set_pos = getattr(renpy_host, "video_clock_set_pos", None)
+                    if callable(set_pos):
+                        # Keep a tiny lead so the next published frame advances
+                        # presentation immediately without a multi-second freeze.
+                        set_pos(channel, float(max(0, total - 1)) / float(fps))
+                        ch["_clock_starved"] = True
+                        ch["_clock_clamped_t0"] = _now_m
+                    elif not ch.get("_clock_starved"):
+                        # Fallback: pause once when starved (legacy hosts).
+                        renpy_host.video_clock_pause(channel)
+                        ch["_clock_starved"] = True
+                except Exception:
+                    pass
+        else:
+            ch["_clock_clamped_t0"] = None
+            if ch.get("_clock_starved"):
+                try:
+                    renpy_host.video_clock_unpause(channel)
+                except Exception:
+                    pass
+                ch["_clock_starved"] = False
         # Seam-crossing wrap detection: a true loop wrap is the wrapped
         # absolute index DECREASING across the end seam (359 -> 0). A mere
         # ``abs < base`` is NOT a wrap: while a refill fills faster than the
@@ -626,6 +652,11 @@ def read_video(channel):
     # not skip pixel rewrite / GPU upload when the absolute frame advanced.
     ch["frame_index"] = int(abs_idx)
     ch["frame_index_local"] = int(idx)
+    if _movie_timing_enabled():
+        try:
+            _timing_tick(channel, ch, int(abs_idx), _time.monotonic())
+        except Exception:
+            pass
     if not ch.get("_logged_first_read"):
         ch["_logged_first_read"] = True
         _phase0_log(
@@ -652,7 +683,6 @@ def read_video(channel):
         except Exception:
             pass
         if _phase0_signals_enabled():
-            import time as _time
 
             now = _time.monotonic()
             last_t = float(ch.get("_phase0_last_t") or 0.0)
@@ -675,7 +705,6 @@ def read_video(channel):
     s1_ms = 0.0
     s1_t0 = None
     if _phase0_signals_enabled():
-        import time as _time
 
         s1_t0 = _time.monotonic()
 
@@ -713,7 +742,6 @@ def read_video(channel):
             rgba = bytes(buf)
 
     if s1_t0 is not None:
-        import time as _time
 
         s1_ms = (_time.monotonic() - s1_t0) * 1000.0
 
@@ -728,7 +756,6 @@ def read_video(channel):
 
     # Phase 0 present keys: s1_ms, frame_index, layout_cached, present w×h.
     if _phase0_signals_enabled():
-        import time as _time
 
         now = _time.monotonic()
         last_idx = ch.get("_phase0_last_idx")
@@ -1236,12 +1263,150 @@ def _movie_assert_enabled() -> bool:
     return os.environ.get("RENPY_HOST_MOVIE_ASSERT", "").strip() in ("1", "true", "yes")
 
 
+def _movie_timing_enabled() -> bool:
+    """Frame-pacing telemetry (distinct abs_idx present intervals).
+
+    Env-gated diagnostics only (RENPY_HOST_MOVIE_TIMING=1); product default
+    quiet. Determines p50/p95/p99/max interval between *distinct* presented
+    video frames plus read_video call cadence, dumped every N seconds so
+    playback smoothness can be verified numerically.
+    Cached on first call: this sits on the read_video hot path (~4k calls/s).
+    """
+    global _MOVIE_TIMING_ENABLED
+    if _MOVIE_TIMING_ENABLED is None:
+        _MOVIE_TIMING_ENABLED = os.environ.get("RENPY_HOST_MOVIE_TIMING", "").strip() in (
+            "1", "true", "yes",
+        )
+    return _MOVIE_TIMING_ENABLED
+
+
+_PRESENT_MODE_1B: Optional[bool] = None
+
+
+_MOVIE_TIMING_ENABLED: Optional[bool] = None
+
+
+def _timing_report(channel: int, ch: dict) -> None:
+    """Summarize per-channel pacing ring; called at most once per second."""
+    import statistics
+
+    st = ch.get("_timing")
+    if not isinstance(st, dict):
+        return
+    intervals = st.get("intervals")
+    if not intervals:
+        return
+    s = sorted(intervals)
+    n = len(s)
+    p50 = statistics.median(s)
+
+    def pct(p):
+        return s[min(n - 1, int(p * n))]
+
+    if p50 <= 0.0:
+        return
+    p95 = pct(0.95)
+    p99 = pct(0.99)
+    imax = s[-1]
+    imin = s[0]
+    mean = sum(s) / n
+    fps = n * 1000.0 / max(1e-9, st.get("win", 0.0) * 1000.0)
+    speed = 33.333 / p50 if p50 > 0 else 0.0
+    if not _movie_timing_enabled():
+        return
+    import sys
+
+    try:
+
+        print(
+            f"PHASE0_SIGNAL t={_time.monotonic():.3f} "
+            f"MOVIE_TIMING channel={channel} n={n} win_s={st.get('win', 0.0):.2f} "
+            f"eff_fps={fps:.2f} speed_vs_src={speed:.2f}x "
+            f"interval_ms p50={p50:.2f} p95={p95:.2f} p99={p99:.2f} "
+            f"min={imin:.2f} max={imax:.2f} mean={mean:.2f} "
+            f"read_video_calls={st.get('n_calls', 0)} "
+            f"present_skips={st.get('n_same', 0)}",
+            file=sys.stderr,
+            flush=True,
+        )
+    except Exception:
+        pass
+
+
+def _timing_tick(channel: int, ch: dict, present_key: int, now: float) -> None:
+    """Record one read_video call: distinct-frame interval ring + call counter."""
+    st = ch.get("_timing")
+    if not isinstance(st, dict):
+        st = {
+            "intervals": deque(maxlen=4096),
+            "n_calls": 0,
+            "n_same": 0,
+            "win": 0.0,
+            "win_t0": now,
+            "last_idx": None,
+            "last_t": None,
+            "last_change_t": None,
+            "due": now,
+        }
+        ch["_timing"] = st
+    st["n_calls"] = st["n_calls"] + 1
+    last_idx = st.get("last_idx")
+    changed = last_idx is None or int(last_idx) != int(present_key)
+    if last_idx is not None and changed:
+        last_change_t = st.get("last_change_t")
+        if last_change_t is not None:
+            st["intervals"].append((now - last_change_t) * 1000.0)
+        st["last_change_t"] = now
+    try:
+        ev = st.get("events")
+        if ev is None:
+            ev = deque(maxlen=400)
+            st["events"] = ev
+        if last_idx is None or changed:
+            try:
+                p = float(renpy_host.video_clock_pos(channel))
+                ptxt = "p=%.2f d=%.1f" % (p, float(renpy_host.video_clock_drift_ms(channel)))
+            except Exception:
+                ptxt = "p=?"
+            ev.append((now, int(present_key), ptxt))
+    except Exception:
+        pass
+    st["last_idx"] = int(present_key)
+    st["last_t"] = now
+    if now - st["due"] >= 4.0:
+        st["due"] = now
+        st["win"] = now - st.get("win_t0", now)
+        st["win_t0"] = now
+        _timing_report(channel, ch)
+        ev = st.get("events")
+        if ev:
+            t0 = float(ev[0][0])
+            seq = " ".join(
+                "%.0f:%d%s" % ((float(t) - t0) * 1000.0, int(i) % 1000, info) for (t, i, info) in list(ev)
+            )
+            try:
+                import sys as _sys
+
+                print(
+                    f"PHASE0_SIGNAL t={now:.3f} MOVIE_TIMING_EVENTS channel={channel} "
+                    f"span_ms={(now - t0) * 1000.0:.2f} {seq}",
+                    file=_sys.stderr,
+                    flush=True,
+                )
+            except Exception:
+                pass
+            ev.clear()
+        st["n_calls"] = 0
+        st["n_same"] = 0
+        st["win"] = 0.0
+        st["intervals"].clear()
+
+
 def _phase0_log(msg: str) -> None:
     if not _phase0_signals_enabled() and not _movie_assert_enabled():
         return
     try:
         import sys
-        import time as _time
 
         print(
             f"PHASE0_SIGNAL t={_time.monotonic():.3f} {msg}",
@@ -1709,7 +1874,6 @@ def _decode_path_worker_impl(path: str) -> None:
         fps = float(entry["fps"])
     stage = max(int(getattr(existing, "_abs_total", 0) or len(existing)), min(stage, target))
 
-    import time as _time
 
     t0 = _time.monotonic()
     _phase0_log(
@@ -2011,7 +2175,6 @@ def _reset_entry_for_reloop(path: str) -> bool:
 
 def _wait_entry_partial(entry: dict, timeout: float = 30.0) -> None:
     """Block until ready_partial or ready_full or timeout (play attach)."""
-    import time as _time
 
     deadline = _time.monotonic() + max(0.1, float(timeout))
     while _time.monotonic() < deadline:
@@ -2180,22 +2343,62 @@ def _maybe_arm_clock(channel: int) -> None:
     )
     # T1: bind audio sample clock as master when channel is playing and clock exists.
     # Only bind once when master is Wall; AudioSample master is set via video_clock_bind_audio.
+    #
+    # HuangmeiC main-menu stutter root cause: the video presentation clock was
+    # always switched to the AudioSample master even for video-only Movie
+    # channels. The cpal device callback delivers its consumed-frame counter
+    # in ~40-100ms quanta (measured video_clock_pos advance in ~100ms bursts,
+    # sample-clock rate p50 == 0 between bursts while overall == 1.0x wall),
+    # so the audio-master presentation clock lurches +0.1s / snaps back at
+    # every callback: read_video emits new frame indexes in clusters
+    # (+3/+4 steps near each callback, p95/p99 gap 100-108ms) instead of the
+    # steady 33ms cadence the wall master gives. Video-only movie paths keep
+    # the **wall** master (smooth 30fps presentation); opt back into the
+    # audio master only when the MediaEntry reports it actually decodes
+    # sound (``has_audio`` — currently never for the CLI ffmpeg path), or
+    # explicitly via RENPY_HOST_VIDEO_BIND_AUDIO=1.
     try:
         ch2 = _channels.get(channel)
         if _inited and ch2 and ch2.get("playing") and ch2.get("video"):
-            # Check video_clock exists (pos >=0) and not yet bound
-            try:
-                # If drift probe exists, we can infer master; otherwise just attempt bind
-                _has_bind = hasattr(renpy_host, "video_clock_bind_audio")
-                _has_rate = hasattr(renpy_host, "audio_sample_rate")
-                if _has_bind:
-                    # Only bind if not already AudioSample (use flag or check drift? try bind idempotently)
-                    if not ch2.get("_audio_clock_bound"):
-                        _rate = int(renpy_host.audio_sample_rate() if _has_rate else 48000)
-                        renpy_host.video_clock_bind_audio(int(channel), int(_rate))
-                        ch2["_audio_clock_bound"] = True
-            except Exception:
-                pass
+            if not ch2.get("_audio_clock_bound"):
+                global _VIDEO_BIND_AUDIO_OPT
+                if _VIDEO_BIND_AUDIO_OPT is None:
+                    _VIDEO_BIND_AUDIO_OPT = bool(
+                        os.environ.get("RENPY_HOST_VIDEO_BIND_AUDIO", "").strip()
+                        in ("1", "true", "yes", "on")
+                    )
+                entry2 = (
+                    _lookup_path_entry(ch2.get("media_path"))
+                    if ch2.get("media_path")
+                    else None
+                )
+                if entry2 is not None:
+                    with entry2["lock"]:
+                        has_audio = bool(entry2.get("has_audio"))
+                else:
+                    has_audio = False
+                if _VIDEO_BIND_AUDIO_OPT or has_audio:
+                    if hasattr(renpy_host, "video_clock_bind_audio"):
+                        _has_rate = hasattr(renpy_host, "audio_sample_rate")
+                        try:
+                            _rate = int(
+                                renpy_host.audio_sample_rate() if _has_rate else 48000
+                            )
+                            renpy_host.video_clock_bind_audio(int(channel), int(_rate))
+                            ch2["_audio_clock_bound"] = True
+                        except Exception as e:
+                            _phase0_log(
+                                f"T_clock_yaw_audio channel={channel} bind_error={e!r}"
+                            )
+                else:
+                    _phase0_log(
+                        f"T_clock_yaw_audio channel={channel} "
+                        "(video-only movie kept wall master; "
+                        "bind_audio intentionally skipped)"
+                    )
+                    # Sticky marker: never re-evaluate per read_video call.
+                    ch2["_audio_clock_bound"] = False
+                    ch2["_audio_clock_skipped"] = True
     except Exception:
         pass
 

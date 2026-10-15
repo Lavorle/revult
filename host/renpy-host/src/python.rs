@@ -2,11 +2,12 @@
 
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use log::info;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyModule};
+use pyo3::types::{PyAny, PyDict, PyInt, PyList, PyModule};
 use pyo3::Bound;
 
 use crate::event_queue::{types, EventValue, HostEvent, EVENT_QUEUE};
@@ -1293,6 +1294,7 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(inject_mouse, &module)?)?;
     module.add_function(wrap_pyfunction!(inject_text, &module)?)?;
     module.add_function(wrap_pyfunction!(frame_count, &module)?)?;
+    module.add_function(wrap_pyfunction!(frame_cmd_count, &module)?)?;
     // Phase 2 GPU FFI (draw_model primary path)
     module.add_function(wrap_pyfunction!(create_texture_rgba, &module)?)?;
     module.add_function(wrap_pyfunction!(write_texture_rgba, &module)?)?;
@@ -1315,6 +1317,10 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
         mesh_map_len,
         mesh_order_len
     );
+    // probe_touch: batch `texture_alive` + `touch_texture` under one host lock.
+    // The per-handle FFI exports above stay unchanged so existing gates keep
+    // probing exactly as before.
+    module.add_function(wrap_pyfunction!(probe_touch, &module)?)?;
     module.add_function(wrap_pyfunction!(solid_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(textured_pipeline, &module)?)?;
     module.add_function(wrap_pyfunction!(dissolve_pipeline, &module)?)?;
@@ -1345,6 +1351,8 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(draw_models, &module)?)?;
     module.add_function(wrap_pyfunction!(draw_instances, &module)?)?;
     module.add_function(wrap_pyfunction!(end_frame_present, &module)?)?;
+    module.add_function(wrap_pyfunction!(end_frame_present_opts, &module)?)?;
+    module.add_function(wrap_pyfunction!(last_dissolve_pair, &module)?)?;
     module.add_function(wrap_pyfunction!(re_present_last_product, &module)?)?;
     module.add_function(wrap_pyfunction!(has_last_product_cmds, &module)?)?;
     module.add_function(wrap_pyfunction!(frame_depth, &module)?)?;
@@ -1382,6 +1390,7 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(video_clock_drift_ms, &module)?)?;
     module.add_function(wrap_pyfunction!(video_seek, &module)?)?;
     module.add_function(wrap_pyfunction!(audio_sample_rate, &module)?)?;
+    module.add_function(wrap_pyfunction!(audio_sample_clock_frames, &module)?)?;
     // M2 B3 T4: host decode probe + host decode stub
     module.add_function(wrap_pyfunction!(video_host_probe, &module)?)?;
     module.add_function(wrap_pyfunction!(video_decode_host, &module)?)?;
@@ -1425,6 +1434,14 @@ fn get_ticks_ms_py() -> u64 {
 #[pyfunction]
 fn frame_count() -> u64 {
     with_host_state(|st| st.frames)
+}
+
+/// Debug: count of DrawCmds in the last successfully encoded product frame
+/// (0 until the first product present; suppress paths leave it unchanged).
+/// Feeds [WALKSTAT] frames so the frame-cmd dump can be correlated per frame.
+#[pyfunction]
+fn frame_cmd_count() -> u64 {
+    with_host_state(|st| st.arena.last_frame_stats().draw_calls as u64)
 }
 
 #[pyfunction]
@@ -2124,6 +2141,58 @@ delegate_host! {
     texture_order_len: texture_order_len: u32,
 }
 
+/// Parse a single `probe_touch` list element into an arena handle.
+/// Returns `None` for anything that is not an exact positive `int` —
+/// `None`, `bool`, `float`, `str`, subclass/numpy ints, and `<= 0` — so the
+/// caller reports `False` for that slot instead of raising (draw batching
+/// must never throw on leftover probe/garbage data).
+fn probe_touch_parse_handle(item: &Bound<'_, PyAny>) -> Option<u64> {
+    if !item.is_exact_instance_of::<PyInt>() {
+        return None;
+    }
+    let v: i64 = item.extract().ok()?;
+    if v <= 0 {
+        return None;
+    }
+    u64::try_from(v).ok()
+}
+
+/// Batch variant of `texture_alive(h)` + `touch_texture(h)`.
+///
+/// Per-handle semantics are byte-for-byte the existing single-harness pair:
+/// probe `arena.texture_alive(h)` from the live slot map, then run
+/// `arena.touch_texture(h)` (FIFO `touch_order` move-to-back + prepare-epoch
+/// pin for non-renderable sample textures; no-op for unknown, zero, or
+/// renderable-only handles — arena.rs stays untouched). The whole list runs
+/// inside one `with_host_state_mut` acquisition instead of two FFI rounds per
+/// handle. Invalid handles (`<= 0`, non-int, non-text) yield `False` without
+/// raising; the returned list always matches `len(handles)`.
+#[pyfunction]
+fn probe_touch(handles: &Bound<'_, PyList>) -> PyResult<Vec<bool>> {
+    // Parse under the GIL only (no host lock held across Python object
+    // access), then probe + touch every handle in a single host-state lock.
+    let parsed: Vec<Option<u64>> = handles
+        .iter()
+        .map(|item| probe_touch_parse_handle(&item))
+        .collect();
+    let results = with_host_state_mut(|st| {
+        parsed
+            .iter()
+            .map(|h| {
+                let Some(id) = h else {
+                    return false;
+                };
+                // Mirrors the live pattern: texture_alive probe then
+                // touch_texture on the same locked arena (FIFO + epoch pin).
+                let alive = st.arena.texture_alive(*id);
+                st.arena.touch_texture(*id);
+                alive
+            })
+            .collect::<Vec<bool>>()
+    });
+    Ok(results)
+}
+
 #[pyfunction]
 fn create_mesh(vertices: Vec<f32>, indices: Option<Vec<u32>>) -> PyResult<u64> {
     with_host_state_mut(|st| {
@@ -2312,13 +2381,23 @@ fn draw_instances(
 
 #[pyfunction]
 fn end_frame_present(py: Python<'_>) -> PyResult<()> {
+    end_frame_present_opts(py, false)
+}
+
+/// end_frame_present with the Python-side full-canvas frame marker.
+/// See arena.rs end_frame_present_opts: a transition composite (movie tiles +
+/// dissolve bake) and fullscreen movie frames cover the whole canvas, so the
+/// host sparse-cmd guard must encode them rather than suppress.
+#[pyfunction]
+#[pyo3(signature = (full_canvas=false))]
+fn end_frame_present_opts(py: Python<'_>, full_canvas: bool) -> PyResult<()> {
     py.detach(|| {
         with_host_state_mut(|st| {
             let mut gpu = st
                 .gpu
                 .take()
                 .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
-            let result = st.arena.end_frame_present(&mut gpu);
+            let result = st.arena.end_frame_present_opts(&mut gpu, full_canvas);
             st.gpu = Some(gpu);
             st.frames = st.frames.saturating_add(1);
             match result {
@@ -2356,8 +2435,58 @@ fn end_frame_present(py: Python<'_>) -> PyResult<()> {
 /// Re-present last product cmds (Movie-only / cadence fast path).
 /// Returns True when the swapchain was presented (gap accounting applied).
 #[pyfunction]
+fn last_dissolve_pair() -> PyResult<(u64, u64)> {
+    Ok(host_state()
+        .lock()
+        .map(|s| s.arena.last_dissolve_pair())
+        .unwrap_or((0, 0)))
+}
+
+/// PHASE0 signal for the re_present fast path (`RENPY_HOST_PHASE0_SIGNALS=1`).
+/// Same OnceLock env-gate + throttled-emit pattern as `clock_probe_maybe_log`:
+/// after a transition the steady-state product presents all come through
+/// `re_present_last_product`, which previously had zero Phase 0 timing, so
+/// `draw_frame_ms` vanished from the transition band (frame-budget chain break).
+/// `T_re_present_ms` = full FFI wall (lock + re-encode + blit + present);
+/// `present_ms` = swapchain-acquire→present segment measured inside
+/// `GpuArena::re_present_last_product` (headless stays 0.00).
+fn re_present_phase0_maybe_log(t_total_ms: f64, present_ms: f32) {
+    static ON: OnceLock<bool> = OnceLock::new();
+    let on = *ON.get_or_init(|| {
+        matches!(
+            std::env::var("RENPY_HOST_PHASE0_SIGNALS").ok().as_deref(),
+            Some("1") | Some("true") | Some("yes")
+        )
+    });
+    if !on {
+        return;
+    }
+    static ANCHOR: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    static LAST_EMIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let anchor = ANCHOR.get_or_init(Instant::now);
+    let now_ms = (anchor.elapsed().as_secs_f64() * 1000.0) as u64;
+    let last = LAST_EMIT_MS.load(std::sync::atomic::Ordering::Relaxed);
+    if now_ms.saturating_sub(last) < 500 {
+        return;
+    }
+    LAST_EMIT_MS.store(now_ms, std::sync::atomic::Ordering::Relaxed);
+    eprintln!(
+        "PHASE0_SIGNAL t={:.3} T_re_present_ms={:.2} present_ms={:.2}",
+        anchor.elapsed().as_secs_f64(),
+        t_total_ms,
+        present_ms
+    );
+}
+
+#[pyfunction]
 fn re_present_last_product(py: Python<'_>) -> PyResult<bool> {
-    py.detach(|| {
+    // PHASE0: wall from FFI entry (Python attempt tail) to return; zero
+    // semantic change — the measurement wraps the pre-existing path.
+    let rp_t0 = Instant::now();
+    // `present_ms` is filled inside the host-state closure from the arena's
+    // last re-present swapchain segment.
+    let mut present_ms: f32 = 0.0;
+    let out = py.detach(|| {
         with_host_state_mut(|st| {
             let mut gpu = st
                 .gpu
@@ -2384,13 +2513,16 @@ fn re_present_last_product(py: Python<'_>) -> PyResult<bool> {
                             }
                         }
                         st.last_product_present_at = Some(now);
+                        present_ms = st.arena.last_re_present_present_ms;
                     }
                     Ok(presented_swapchain)
                 }
                 Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
             }
         })
-    })
+    });
+    re_present_phase0_maybe_log(rp_t0.elapsed().as_secs_f64() * 1000.0, present_ms);
+    out
 }
 
 /// True when last successful product DrawCmd list can be re-presented.
@@ -2614,18 +2746,22 @@ fn audio_mixer_probe() -> PyResult<String> {
 fn video_clock_start(channel: i32) {
     use crate::state::{ClockMaster, VideoClock};
     let now = get_ticks_ms();
+    // Anchor = device sample counter at start so pos==0 when the clock arms,
+    // regardless of how long the audio device has been open (HuangmeiC opens
+    // cpal ~9 s before the menu video arms; without the anchor the presented
+    // index started ~9.5 s into the content and `drift` never converged).
+    let anchor = crate::audio::GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed);
     with_host_state_mut(|st| {
         st.video_clocks.insert(
             channel,
             VideoClock {
                 start_ms: now,
-                paused: false,
-                pause_started_ms: None,
-                pause_accum_ms: 0,
+                anchor_frames: anchor,
+                audio_last_frames: std::cell::Cell::new(anchor),
+                audio_last_ms: std::cell::Cell::new(now),
+                started: true,
                 master: ClockMaster::Wall,
-                drift_ms: 0.0,
-                dropped: 0,
-                repeated: 0,
+                ..Default::default()
             },
         );
     });
@@ -2640,27 +2776,14 @@ fn video_clock_stop(channel: i32) {
 fn video_clock_pos(channel: i32) -> f64 {
     let now = get_ticks_ms();
     with_host_state_mut(|st| {
-        if let Some(c) = st.video_clocks.get_mut(&channel) {
-            // Compute wall vs audio for drift probe (ms)
-            let mut wall_ms = now
-                .saturating_sub(c.start_ms)
-                .saturating_sub(c.pause_accum_ms);
-            if let Some(ps) = c.pause_started_ms {
-                wall_ms = wall_ms.saturating_sub(now.saturating_sub(ps));
-            }
-            let wall_ms_f = wall_ms as f64;
-            let audio_ms = match c.master {
-                crate::state::ClockMaster::Wall => wall_ms_f,
-                crate::state::ClockMaster::AudioSample { rate } => {
-                    let frames = crate::audio::GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed);
-                    if rate != 0 {
-                        frames as f64 / rate as f64 * 1000.0
-                    } else {
-                        wall_ms_f
-                    }
-                }
-            };
-            c.drift_ms = (wall_ms_f - audio_ms) as f32;
+        let pos_ms = if let Some(c) = st.video_clocks.get_mut(&channel) {
+            let pos_ms = c.pos_ms(now);
+            // Drift = wall overlap vs presentation position (both start-anchored).
+            // With a device-age-free anchor this starts near 0 and measures
+            // real wall/audio divergence instead of the large fixed offset.
+            let wall_ms_f = c.wall_elapsed_ms(now);
+            // pos_ms is seconds; wall is ms — compare like-for-like.
+            c.drift_ms = (wall_ms_f - pos_ms * 1000.0) as f32;
             // Dropped/repeated probes on drift threshold (>30ms)
             if c.drift_ms > 30.0 {
                 c.dropped = c.dropped.saturating_add(1);
@@ -2674,43 +2797,91 @@ fn video_clock_pos(channel: i32) -> f64 {
             // Sync sample_clock from global for probe consistency
             let sc = crate::audio::GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed);
             st.audio.sample_clock.store(sc, Ordering::Relaxed);
-            if c.drift_ms.abs() > 0.5 {
-                log::info!(
-                    "[renpy-host] drift_ms={:.2} sample_clock={} master={:?} channel={}",
-                    c.drift_ms,
-                    sc,
-                    c.master,
-                    channel
-                );
-            }
-            c.pos_ms(now)
+            clock_probe_maybe_log(c.drift_ms, sc, c.master, channel);
+            pos_ms
         } else {
             0.0
-        }
+        };
+        pos_ms
     })
+}
+
+/// Product-quiet clock probe. Previously every `video_clock_pos` call with
+/// |drift| > 0.5 ms emitted a log line (~1804 lines/s in the HuangmeiC menu,
+/// 90k lines per 60 s smoke — a stderr mutex/flush storm on the render thread).
+/// Semantics now:
+///   - RENPY_HOST_CLOCK_PROBE=1 → per-call line (explicit operator diagnostics).
+///   - otherwise → anomaly-only: |drift| > 250 ms, deduped to one line per 5 s.
+fn clock_probe_maybe_log(drift_ms: f32, sc: u64, master: crate::state::ClockMaster, channel: i32) {
+    static PROBE_ON: OnceLock<bool> = OnceLock::new();
+    let probe_on = *PROBE_ON.get_or_init(|| {
+        matches!(
+            std::env::var("RENPY_HOST_CLOCK_PROBE").ok().as_deref(),
+            Some("1") | Some("true") | Some("yes")
+        )
+    });
+    static LAST_ANOMALY_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    if probe_on {
+        log::info!(
+            "[renpy-host] drift_ms={:.2} sample_clock={} master={:?} channel={}",
+            drift_ms,
+            sc,
+            master,
+            channel
+        );
+        return;
+    }
+    if drift_ms.abs() <= 250.0 {
+        return;
+    }
+    let now = get_ticks_ms();
+    let last = LAST_ANOMALY_MS.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < 5000 {
+        return;
+    }
+    LAST_ANOMALY_MS.store(now, Ordering::Relaxed);
+    log::warn!(
+        "[renpy-host] clock inventory drift_ms={:.2} sample_clock={} master={:?} channel={} (anomaly; RENPY_HOST_CLOCK_PROBE=1 for per-call)",
+        drift_ms,
+        sc,
+        master,
+        channel
+    );
 }
 
 /// Force presentation clock to pos_s seconds (wall-relative, pause-aware).
 /// Used by host Movie when the wall clock outruns the progressive decode
 /// buffer so playback tracks available frames instead of freezing on the
 /// ring tail until ready_full.
+///
+/// AudioSample master: re-anchors the device counter (`set_pos_audio`) so the
+/// presentation clock actually moves — previously this rewrote `start_ms`,
+/// which the audio master ignores, making starved-presenter re-anchoring a
+/// silent no-op and leaving the index pinned ~9.5 s ahead (HuangmeiC bug).
 #[pyfunction]
 fn video_clock_set_pos(channel: i32, pos_s: f64) {
     let now = get_ticks_ms();
     with_host_state_mut(|st| {
         if let Some(c) = st.video_clocks.get_mut(&channel) {
-            let pos_ms = if pos_s.is_finite() && pos_s > 0.0 {
-                (pos_s * 1000.0).round() as u64
-            } else {
-                0
-            };
-            let mut pause_extra = c.pause_accum_ms;
-            if let Some(ps) = c.pause_started_ms {
-                pause_extra = pause_extra.saturating_add(now.saturating_sub(ps));
+            match c.master {
+                crate::state::ClockMaster::AudioSample { rate } => {
+                    c.set_pos_audio(pos_s, rate, now);
+                }
+                crate::state::ClockMaster::Wall => {
+                    let pos_ms = if pos_s.is_finite() && pos_s > 0.0 {
+                        (pos_s * 1000.0).round() as u64
+                    } else {
+                        0
+                    };
+                    let mut pause_extra = c.pause_accum_ms;
+                    if let Some(ps) = c.pause_started_ms {
+                        pause_extra = pause_extra.saturating_add(now.saturating_sub(ps));
+                    }
+                    // elapsed = now - start - pause_extra == pos_ms
+                    // start   = now - pause_extra - pos_ms
+                    c.start_ms = now.saturating_sub(pause_extra).saturating_sub(pos_ms);
+                }
             }
-            // elapsed = now - start - pause_extra == pos_ms
-            // start   = now - pause_extra - pos_ms
-            c.start_ms = now.saturating_sub(pause_extra).saturating_sub(pos_ms);
         }
     });
 }
@@ -2723,6 +2894,15 @@ fn video_clock_pause(channel: i32) {
             if !c.paused {
                 c.paused = true;
                 c.pause_started_ms = Some(now);
+                // Audio master: freeze the presentation position now so un-
+                // pausing resumes from the paused frame (audio callback keeps
+                // draining silence, so the raw counter would run ahead).
+                if let crate::state::ClockMaster::AudioSample { rate } = c.master {
+                    let pos = c.audio_pos_s(now, rate);
+                    let anchor = c.anchor_frames;
+                    c.pause_frozen_frames =
+                        Some(anchor + (pos.max(0.0) * rate as f64).round() as u64);
+                }
             }
         }
     });
@@ -2738,6 +2918,12 @@ fn video_clock_unpause(channel: i32) {
                     c.pause_accum_ms = c.pause_accum_ms.saturating_add(now.saturating_sub(ps));
                 }
                 c.paused = false;
+                c.pause_frozen_frames = None;
+                // Resample interpolation from the resume instant so a
+                // mid-pause callback step does not fast-forward the clip.
+                let frames = crate::audio::GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed);
+                c.audio_last_frames.set(frames);
+                c.audio_last_ms.set(now);
             }
         }
     });
@@ -2745,9 +2931,10 @@ fn video_clock_unpause(channel: i32) {
 
 #[pyfunction]
 fn video_clock_bind_audio(channel: i32, rate: u32) {
+    let now = get_ticks_ms();
     with_host_state_mut(|st| {
         if let Some(clock) = st.video_clocks.get_mut(&channel) {
-            clock.bind_audio(rate);
+            clock.bind_audio(rate, now);
         }
         st.audio.sample_rate.store(rate, Ordering::Relaxed);
         // Keep global channels in sync
@@ -2791,6 +2978,14 @@ fn video_seek(channel: i32, pos_ms: f64) -> PyResult<bool> {
 #[pyfunction]
 fn audio_sample_rate() -> u32 {
     with_host_state(|st| st.audio.sample_rate.load(Ordering::Relaxed))
+}
+
+/// Read-only probe: the raw cpal device-consumed frame counter that drives the
+/// AudioSample master video clock. Used by the video-cadence probe to verify
+/// whether output callbacks stall (>100ms gaps) — the direct stutter signal.
+#[pyfunction]
+fn audio_sample_clock_frames() -> u64 {
+    crate::audio::GLOBAL_SAMPLE_CLOCK.load(Ordering::Relaxed)
 }
 
 // --- M2 B3 T4: host video decode probe + decode stub (V1 桩) --------------
@@ -2873,6 +3068,68 @@ fn try_nested_pump(timeout: Duration) -> bool {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod probe_touch_tests {
+    use super::*;
+    use pyo3::types::PyList;
+
+    /// Invalid list values — `None`, `bool`, `<= 0`, non-`int` text/float —
+    /// must parse to `None` (→ slot False, no exception), only exact positive
+    /// ints become handles.
+    #[test]
+    fn probe_touch_parse_rejects_invalid_values() {
+        Python::attach(|py| {
+            let bad = py
+                .eval(c"[None, True, False, -1, 0, \"3\", 2.5, 3.0]", None, None)
+                .map(|v| v.cast_into::<PyList>())
+                .map(|r| r.expect("probeTouch cast list"))
+                .expect("eval $1");
+            for item in bad.iter() {
+                assert!(
+                    probe_touch_parse_handle(&item).is_none(),
+                    "expected invalid: {:?}",
+                    item
+                );
+            }
+            let good = py
+                .eval(c"[7, 0xdead, 1]", None, None)
+                .map(|v| v.cast_into::<PyList>())
+                .map(|r| r.expect("probeTouch cast list"))
+                .expect("eval $1");
+            let parsed: Vec<Option<u64>> =
+                good.iter().map(|it| probe_touch_parse_handle(&it)).collect();
+            assert_eq!(parsed, vec![Some(7), Some(0xdead), Some(1)]);
+        });
+    }
+
+    /// End-to-end batch: output length always equals `len(handles)`, invalid
+    /// slots are False, and touch_texture stays a strict no-op for unknown
+    /// handles (FIFO order + map unchanged — exactly the single-harness
+    /// `touch_texture` behavior in arena.rs).
+    #[test]
+    fn probe_touch_batch_len_and_noop_unknown() {
+        Python::attach(|py| {
+            let before = with_host_state_mut(|st| {
+                (st.arena.texture_order_len(), st.arena.texture_map_len())
+            });
+            let handles = py
+                .eval(c"[0, -5, True, 7, 7, 0xdead]", None, None)
+                .map(|v| v.cast_into::<PyList>())
+                .map(|r| r.expect("probeTouch cast list"))
+                .expect("eval $1");
+            let out = probe_touch(&handles).expect("probe_touch raised");
+            assert_eq!(out.len(), handles.len());
+            assert!(out.iter().take(3).all(|b| !b), "invalid slots must be False");
+            // touch on unknown handles must not enter the FIFO touch order or
+            // materialize arena map entries.
+            let after = with_host_state_mut(|st| {
+                (st.arena.texture_order_len(), st.arena.texture_map_len())
+            });
+            assert_eq!(before, after);
+        });
+    }
 }
 
 // end of module

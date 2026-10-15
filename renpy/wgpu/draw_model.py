@@ -486,6 +486,15 @@ class ModelMixin:
                 return nx, ny
             # If host exposes begin_stencil_pass, use it
             if hasattr(renpy_host, "begin_stencil_pass"):
+                # M2 (hmcreview): commit the ordered _draw_batch backlog FIRST.
+                # The stencil pass draws are handed straight to renpy_host
+                # (outside _dm), so without this pre-pass flush the host
+                # encoded them ahead of pending tree-order batch items and
+                # broke painter order. This is a no-op on an empty backlog.
+                try:
+                    self._flush_draw_batch()  # type: ignore[attr-defined]
+                except Exception as e:  # noqa: BLE001 -- logged, pass order kept
+                    _host_draw_fail("stencil.flush_pre", e)
                 renpy_host.begin_stencil_pass()
                 # Build polygon mask mesh: triangulate via fan from poly[0]
                 verts: list[float] = []
@@ -532,6 +541,15 @@ class ModelMixin:
                 else:
                     if hasattr(renpy_host, "end_stencil"):
                         renpy_host.end_stencil()
+                # M2 (hmcreview): drain at the pass boundary as well — the
+                # direct renpy_host.draw_model calls above bypass the batch,
+                # so any backlog produced before them was committed pre-pass;
+                # flushing here keeps the boundary seam symmetric (no-op when
+                # the batch is empty).
+                try:
+                    self._flush_draw_batch()  # type: ignore[attr-defined]
+                except Exception as e:  # noqa: BLE001 -- logged, order kept
+                    _host_draw_fail("stencil.flush_post", e)
                 # cleanup mask mesh
                 try:
                     if hasattr(renpy_host, "destroy_mesh"):
@@ -544,6 +562,11 @@ class ModelMixin:
         except Exception as e:  # noqa: BLE001
             raise ComposerError(str(e)) from e
         # Fallback: no host stencil support → approximate with AABB scissor via _dm after scissor rect
+        # M2 note (hmcreview): the host `set_scissor_rect`/`clear_scissor` API is a
+        # write-only state in arena.rs (scissor_rect/stencil_active are never consumed
+        # by the encode pass), i.e. GPU-side scissor clipping is a no-op today. No fix
+        # here by contract: this fallback draw goes through _dm/_draw_batch (ordered
+        # backlog) and the real content crop happens via _clip_rect UV crop upstream.
         try:
             import renpy_host  # type: ignore
             if hasattr(renpy_host, "set_scissor_rect"):

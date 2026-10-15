@@ -404,6 +404,12 @@ pub struct GpuArena {
     rtt_free: HashMap<(u32, u32), Vec<u64>>,
     /// Live RTT handles keyed by (w, h) (still may be referenced by Python).
     rtt_live: HashMap<(u32, u32), Vec<u64>>,
+    /// Pinned/private RTT handles (hmcreview H1): created via
+    /// `create_render_texture_pinned`, excluded from every reuse pool —
+    /// freelist hit, step-2 oldest-live re-target, and MAX_RTTS_PER_SIZE
+    /// candidate counting. Removed (real destroy, never freelisted) by
+    /// `destroy_texture`; the caller owns the lifetime in between.
+    pub pinned_rtts: HashSet<u64>,
     /// Hard cap of RTTs per size. Further requests reuse the oldest live handle.
     max_rtts_per_size: usize,
     /// Color format for sample textures, RTTs, game RT, and pipelines.
@@ -507,6 +513,7 @@ impl GpuArena {
             epoch_meshes: HashSet::new(),
             rtt_free: HashMap::new(),
             rtt_live: HashMap::new(),
+            pinned_rtts: HashSet::new(),
             // Full-screen RTT thrash (mesh bake / dissolve) without recycle
             // OOMs the process; reuse oldest once this many live per size.
             max_rtts_per_size: MAX_RTTS_PER_SIZE,
@@ -1597,23 +1604,7 @@ impl GpuArena {
         width: u32,
         height: u32,
     ) -> Result<u64, String> {
-        let mut w = width.max(1);
-        let mut h = height.max(1);
-        // Feel residual H3 RTT cap: reverse-inflated sizes allocate
-        // multi-megapixel targets during prefs page switches. Cap strictly
-        // to the live game RT / drawable, never inflate with 1920/1080 floors.
-        let (cw, ch) = self.game_rt_size;
-        if cw > 0 && ch > 0 {
-            if w > cw {
-                w = cw;
-            }
-            if h > ch {
-                h = ch;
-            }
-        } else {
-            w = w.min(1920);
-            h = h.min(1080);
-        }
+        let (w, h) = self._cap_rtt_size(width, height);
         let key = (w, h);
 
         // 1) Freelist hit.
@@ -1637,9 +1628,54 @@ impl GpuArena {
             return Ok(id);
         }
 
-        // 3) Allocate new.
+        // 3) Allocate new. Pinned handles never sit in rtt_live, so no pinned
+        // id can ever be picked as a step-2 reuse candidate or participate in
+        // the per-size cap accounting.
+        let id = self._alloc_rtt(device, w, h, "rtt")?;
+        self.rtt_live.entry(key).or_default().push(id);
+        // Log only when the pool for this size grows (not every thrash call).
+        info!(
+            "created render texture id={id} {w}x{h} (live={})",
+            self.rtt_live.get(&key).map(|v| v.len()).unwrap_or(0)
+        );
+        Ok(id)
+    }
+
+    /// Clamp an RTT request to the live game RT / drawable (shared cap logic
+    /// of `create_render_texture` and `create_render_texture_pinned`).
+    fn _cap_rtt_size(&self, width: u32, height: u32) -> (u32, u32) {
+        let mut w = width.max(1);
+        let mut h = height.max(1);
+        // Feel residual H3 RTT cap: reverse-inflated sizes allocate
+        // multi-megapixel targets during prefs page switches. Cap strictly
+        // to the live game RT / drawable, never inflate with 1920/1080 floors.
+        let (cw, ch) = self.game_rt_size;
+        if cw > 0 && ch > 0 {
+            if w > cw {
+                w = cw;
+            }
+            if h > ch {
+                h = ch;
+            }
+        } else {
+            w = w.min(1920);
+            h = h.min(1080);
+        }
+        (w, h)
+    }
+
+    /// Allocate one fresh RTT slot (same Rgba8Unorm + RENDER_ATTACHMENT |
+    /// TEXTURE_BINDING | COPY_SRC | COPY_DST pipeline as the pool path) and
+    /// return its handle. No pool bookkeeping — callers own registration.
+    fn _alloc_rtt(
+        &mut self,
+        device: &wgpu::Device,
+        w: u32,
+        h: u32,
+        label: &str,
+    ) -> Result<u64, String> {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rtt"),
+            label: Some(label),
             size: wgpu::Extent3d {
                 width: w,
                 height: h,
@@ -1667,11 +1703,33 @@ impl GpuArena {
                 renderable: true,
             },
         );
-        self.rtt_live.entry(key).or_default().push(id);
-        // Log only when the pool for this size grows (not every thrash call).
+        Ok(id)
+    }
+
+    /// Pinned/private RTT (hmcreview H1): the transition bake cache's target.
+    ///
+    /// Same allocation pipeline (`_cap_rtt_size` clamp + `_alloc_rtt`) as the
+    /// pooled `create_render_texture`, but the handle is arena-pinned in
+    /// `pinned_rtts` and NEVER joins a reuse pool:
+    /// - no step-1 freelist reuse,
+    /// - not a step-2 `live.remove(0)` candidate (never registered in
+    ///   `rtt_live`, so it is also not counted against MAX_RTTS_PER_SIZE),
+    /// - `destroy_texture` removes it from `pinned_rtts` and real-destroys
+    ///   (never hands it back to the freelist).
+    /// `texture_alive` stays True for the whole pinned lifetime (alive in the
+    /// slot map).
+    pub fn create_render_texture_pinned(
+        &mut self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> Result<u64, String> {
+        let (w, h) = self._cap_rtt_size(width, height);
+        let id = self._alloc_rtt(device, w, h, "rtt-pinned")?;
+        self.pinned_rtts.insert(id);
         info!(
-            "created render texture id={id} {w}x{h} (live={})",
-            self.rtt_live.get(&key).map(|v| v.len()).unwrap_or(0)
+            "created pinned render texture id={id} {w}x{h} (pinned={})",
+            self.pinned_rtts.len()
         );
         Ok(id)
     }
@@ -1683,6 +1741,15 @@ impl GpuArena {
             return;
         };
         if !slot.renderable {
+            return;
+        }
+        // Pinned RTTs must never re-enter a reuse pool (H1): destroy instead.
+        if self.pinned_rtts.remove(&id) {
+            info!(
+                "destroyed pinned render texture id={id} (pinned={})",
+                self.pinned_rtts.len()
+            );
+            self.textures.remove(&id);
             return;
         }
         let key = (slot.width, slot.height);
@@ -1711,14 +1778,25 @@ impl GpuArena {
                 if let Some(live) = self.rtt_live.get_mut(&key) {
                     live.retain(|&x| x != id);
                 }
-                let free = self.rtt_free.entry(key).or_default();
-                if free.len() < self.max_rtts_per_size && !free.contains(&id) {
-                    free.push(id);
-                    return;
-                }
-                // Pool full — fall through to real destroy.
-                if let Some(free) = self.rtt_free.get_mut(&key) {
-                    free.retain(|&x| x != id);
+                if self.pinned_rtts.remove(&id) {
+                    // Pinned RTT (H1): real destroy — never handed back to
+                    // the freelist, so a later pool hit cannot re-target VRAM
+                    // whose pinned content the caller still owns.
+                    info!(
+                        "destroyed pinned render texture id={id} (pinned={})",
+                        self.pinned_rtts.len()
+                    );
+                    // Fall through to the shared real-destroy tail below.
+                } else {
+                    let free = self.rtt_free.entry(key).or_default();
+                    if free.len() < self.max_rtts_per_size && !free.contains(&id) {
+                        free.push(id);
+                        return;
+                    }
+                    // Pool full — fall through to real destroy.
+                    if let Some(free) = self.rtt_free.get_mut(&key) {
+                        free.retain(|&x| x != id);
+                    }
                 }
             } else {
                 // Sample texture still needed by open / last product frame.

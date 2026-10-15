@@ -333,7 +333,7 @@ def bake_frame_flush(now: float = 0.0) -> None:
     accumulated window since the previous emit (≥ one present frame).
     """
     global _BAKE_LAST_EMIT_T
-    global _TRANS_CACHE_HITS, _TRANS_CACHE_MISSES
+    global _TRANS_CACHE_HITS, _TRANS_CACHE_MISSES, _TRANS_CACHE_UNCACHEABLE
     if not _BAKE_ENABLED:
         return
     try:
@@ -355,8 +355,20 @@ def bake_frame_flush(now: float = 0.0) -> None:
         # (cleared on emit so slow-band values aggregate like bake tags do).
         tch = _TRANS_CACHE_HITS
         tcm = _TRANS_CACHE_MISSES
+        tu = _TRANS_CACHE_UNCACHEABLE
         _TRANS_CACHE_HITS = 0
         _TRANS_CACHE_MISSES = 0
+        _TRANS_CACHE_UNCACHEABLE = 0
+        why = _TRANS_CACHE_UNCACHEABLE_WHY
+        why_parts = []
+        if why:
+            try:
+                for k, v in sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))[:3]:
+                    why_parts.append("%s=%d" % (k, v))
+            except Exception:  # noqa: BLE001, S110
+                why_parts = []
+            why.clear()
+        why_s = ("," + ",".join(why_parts)) if why_parts else ""
         total = sum(tags.values())
         top_det = sorted(detail.items(), key=lambda kv: (-kv[1], kv[0]))[:6]
         det_s = ",".join(
@@ -365,7 +377,7 @@ def bake_frame_flush(now: float = 0.0) -> None:
         msg = (
             f"bakes_in_frame={total} tags={_fmt_counts(tags)} "
             f"cls={_fmt_counts(ncls)} sizes={_fmt_counts(sizes)} detail={det_s} "
-            f"cache_hit={tch} miss={tcm}"
+            f"cache_hit={tch} miss={tcm} uncache={tu}{why_s}"
         )
         if _phase0_signals_enabled():
             _phase0_log(msg)
@@ -392,6 +404,10 @@ _TRANS_CACHE_HIT_TOTAL = 0
 _TRANS_CACHE_MISS_TOTAL = 0
 _TRANS_CACHE_KEY_FAILS = 0
 _TRANS_CACHE_CLEAR_TOTAL = 0
+# H2 conservative-miss counter (depth/node budget or >64-vert mesh → no key).
+_TRANS_CACHE_UNCACHEABLE = 0
+# Why-counters for the above (top reasons printed with the bake telemetry line).
+_TRANS_CACHE_UNCACHEABLE_WHY: dict[str, int] = {}
 
 
 def trans_bake_cache_enabled() -> bool:
@@ -410,6 +426,7 @@ def trans_cache_count(kind: str) -> None:
     global _TRANS_CACHE_HITS, _TRANS_CACHE_MISSES
     global _TRANS_CACHE_HIT_TOTAL, _TRANS_CACHE_MISS_TOTAL
     global _TRANS_CACHE_KEY_FAILS, _TRANS_CACHE_CLEAR_TOTAL
+    global _TRANS_CACHE_UNCACHEABLE
     try:
         if kind == "hit":
             _TRANS_CACHE_HITS += 1
@@ -419,8 +436,19 @@ def trans_cache_count(kind: str) -> None:
             _TRANS_CACHE_MISS_TOTAL += 1
         elif kind == "key_fail":
             _TRANS_CACHE_KEY_FAILS += 1
+        elif kind == "uncacheable":
+            _TRANS_CACHE_UNCACHEABLE += 1
         elif kind == "clear":
             _TRANS_CACHE_CLEAR_TOTAL += 1
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+        pass
+
+
+def trans_cache_why(reason: str) -> None:
+    """Attribute one conservative miss to a reason class (diagnostics only)."""
+    try:
+        k = reason[:64] or "unknown"
+        _TRANS_CACHE_UNCACHEABLE_WHY[k] = _TRANS_CACHE_UNCACHEABLE_WHY.get(k, 0) + 1
     except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
         pass
 

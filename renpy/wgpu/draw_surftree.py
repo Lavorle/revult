@@ -12,6 +12,7 @@ Usage:
 """
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence  # noqa: F401
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,7 @@ from .draw_debug import (  # noqa: F401
     _ui_trace_once,
     trans_bake_cache_enabled,
     trans_cache_count,
+    trans_cache_why,
     bake_attn,
 )
 from .host_bridge import host_env_bool
@@ -56,6 +58,16 @@ if TYPE_CHECKING:
 # =============================================================================
 _MOVIE_VIDEO_MOD = None
 _MOVIE_SEQ_FAIL: bool = False
+# Sentinel for the depth>5 unvisited-children probe (never a real child tag).
+_KIDS_END = object()
+# Fingerprint walk node budget (key construction cost ceiling).
+# Upper bound on how many surftree nodes one _trans_fp_node walk may visit:
+# at 512 nodes the Python walk cost stays well under the ~5 ms/frame bake it
+# replaces (checked on the 60s headless TC=1 band; see report). Budget
+# exhaustion still raises ValueError → key=None → no cache, the conservative
+# direction has not regressed — it merely becomes reachable for much larger
+# real trees than the old 64-node cap allowed (HuangmeiC recovery).
+_TRANS_FP_MAX_NODES = 512
 
 
 def _movie_publish_seq() -> int:
@@ -86,6 +98,32 @@ def _movie_publish_seq() -> int:
     except Exception:
         _MOVIE_SEQ_FAIL = True
         return -1
+
+
+class _TransBakeUncacheable(Exception):
+    """H2: subtree must not be fingerprint-cached (budget / >64-vert mesh).
+
+    Raised inside the recursion and caught by ``_trans_bake_key`` so the
+    affected key simply becomes None — no cache entry, every frame re-bakes
+    through the normal path (never a stale hit).
+    """
+
+
+def _trans_fp_attr(v):
+    """Cache-key-safe bit for a clip-ish node attribute (best-effort)."""
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return ("b", v)
+    if isinstance(v, (int, float)):
+        return ("n", round(float(v), 4))
+    if isinstance(v, str):
+        return ("s", v)
+    try:
+        n = len(v)  # type: ignore[arg-type]
+    except Exception:  # noqa: BLE001 -- opaque object: type tag only
+        n = None
+    return ("o", type(v).__name__, n)
 
 
 class SurftreeMixin:
@@ -1062,7 +1100,7 @@ class SurftreeMixin:
 
     # --- Dissolve transition old-slot bake cache ------------------------------
 
-    _TRANS_BAKE_FP_MAX_NODES = 64  # node budget for fingerprint construction
+    _TRANS_BAKE_FP_MAX_NODES = _TRANS_FP_MAX_NODES  # module-level budget (key-cost ceiling)
     _TRANS_BAKE_CACHE_CAP = 4      # LRU pinned entries (task contract)
 
     def _trans_bake_key(self, child):
@@ -1070,7 +1108,7 @@ class SurftreeMixin:
 
         key = ("trb1", _MOVIE_PUBLISH_SEQ, drawable_size, layout_virtual_size,
                fingerprint)
-        with fingerprint = type tree (NodeClassName, depth ≤ 3, kid counts +
+        with fingerprint = type tree (NodeClassName, depth ≤ 5, kid counts +
         child offsets) + deep texture/mesh handles + uniform bits minus
         ``u_renpy_dissolve`` + matrix2d/matrixcolor bits + node size.
 
@@ -1087,6 +1125,19 @@ class SurftreeMixin:
             drawable = tuple(int(x) for x in (getattr(self, "drawable_size", None) or (0, 0)))
             layout = tuple(int(x) for x in (getattr(self, "layout_virtual_size", None) or (0, 0)))
             return ("trb1", _movie_publish_seq(), drawable, layout, body)
+        except _TransBakeUncacheable as e:
+            # H2: conservative miss — depth/node budget exhausted or an
+            # over-cap mesh; the subtree re-bakes every frame instead of
+            # risking a stale pinned bake. Not a failure, a designed miss.
+            try:
+                trans_cache_count("uncacheable")
+            except Exception:  # noqa: BLE001, S110
+                pass
+            try:
+                trans_cache_why(str(e))
+            except Exception:  # noqa: BLE001, S110
+                pass
+            return None
         except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
             try:
                 trans_cache_count("key_fail")
@@ -1158,7 +1209,13 @@ class SurftreeMixin:
         return tuple(th)
 
     def _trans_mesh_bits(self, node):
-        """Mesh attribute fingerprint bits (mesh handles at depth ≥ 1)."""
+        """Mesh attribute fingerprint bits (mesh handles at depth ≥ 1).
+
+        H2 (hmcreview): a full ≤64-vertex ("quad") mesh is hashed completely
+        (blake2b 8-byte digest) so any vertex/color/uv drift is keyed; an
+        over-cap mesh raises :class:`_TransBakeUncacheable` — the key becomes
+        None and the subtree re-bakes every frame (conservative direction).
+        """
         m = getattr(node, "mesh", None)
         if m is None:
             return None
@@ -1173,15 +1230,53 @@ class SurftreeMixin:
                 verts = list(m.vertices) or []
             except Exception:  # noqa: BLE001, S110
                 verts = []
-            head = tuple(round(float(v), 3) for v in verts[:16])
-            return ("v", len(verts), head)
+            # H2: content drift used to hide in the 16-float head; hash the
+            # whole vertex blob (exact float repr → stable for identical
+            # content, distinct for any change).
+            if len(verts) > 64:
+                # Content is effectively opaque to the key — do not cache.
+                raise _TransBakeUncacheable(
+                    "trans fingerprint mesh > 64 verts: not cacheable"
+                )
+            digest = hashlib.blake2b(digest_size=8)
+            digest.update(",".join(repr(float(v)) for v in verts).encode("ascii", "replace"))
+            return ("vh", len(verts), digest.hexdigest())
         if hasattr(m, "get_points") or hasattr(m, "points"):
             return ("p", type(m).__name__)
         return ("o", type(m).__name__)
 
     def _trans_fp_node(self, node, depth, cap):
-        """Recursive fingerprint tuple; depth ≤ 3, bounded by cap[0] nodes."""
-        if node is None or depth > 3:
+        """Recursive fingerprint tuple; depth ≤ 5, bounded by cap[0] nodes.
+
+        H2 (hmcreview): conservative fingerprint.
+        - Depth budget exhausted (a subtree at depth > 5 exists): raise
+          _TransBakeUncacheable only when that node still has children —
+          their content can drift without entering the key, so the whole key
+          becomes None (no cache entry, per-frame bake; never a stale bake).
+          A depth>5 LEAF (scalar / terminal Render with no children) carries
+          no unvisited state and must not disable the cache.
+        - Node budget exhausted (cap[0] < 0): ValueError, caught by
+          _trans_bake_key → None (same conservative outcome).
+        - Per-layer clip state (xclipping/yclipping and any roughly-known
+          clip attributes on the node) is part of the key: clipping changes
+          what is actually drawn without touching handles/mats/uniforms.
+        """
+        if node is None or depth > 5:
+            if node is not None and depth > 5:
+                # H2: unvisited children test — only a depth>5 node that
+                # still HAS children can hide drifting content; a terminal
+                # leaf is fully represented by its own (earlier) key bits.
+                try:
+                    first_kid = next(iter(self._iter_children(node)), _KIDS_END)
+                    has_kids = first_kid is not _KIDS_END
+                    kid_desc = type(first_kid).__name__ if has_kids else "-"
+                except Exception:  # noqa: BLE001 -- probe failure → conservative miss
+                    has_kids = True
+                    kid_desc = "!probe"
+                if has_kids:
+                    raise _TransBakeUncacheable(
+                        f"trans fp deep node d={depth} {type(node).__name__} kid={kid_desc}"
+                    )
             return None
         if isinstance(node, bool):
             return ("b", node)
@@ -1203,6 +1298,22 @@ class SurftreeMixin:
             nw = nh = 0
         parts.append((int(nw), int(nh)))
         parts.append(self._trans_matrix_bits(getattr(node, "reverse", None)))
+        # H2: clip state per layer (read the same attributes the walk's
+        # _clip_push_from_node consults, plus defensively-known clip variants).
+        try:
+            xc = bool(getattr(node, "xclipping", False))
+            yc = bool(getattr(node, "yclipping", False))
+            cattrs = None
+            if xc or yc:
+                cattrs = tuple(
+                    _trans_fp_attr(getattr(node, a, None))
+                    for a in ("xclip", "yclip", "xclip_rect", "yclip_rect")
+                )
+            parts.append(("c", xc, yc, cattrs))
+        except Exception:  # noqa: BLE001 -- clip probe failure → force miss
+            raise _TransBakeUncacheable(
+                "trans fingerprint clip-state probe failed"
+            ) from None
         uniforms = getattr(node, "uniforms", None)
         if isinstance(uniforms, dict):
             ub = []
@@ -1371,9 +1482,12 @@ class SurftreeMixin:
 
         Mirrors render_to_texture._rtt_pass exactly (instance-group isolation,
         parent batch flush, nested frame + full-canvas scoping, virtual/clip
-        restore) except the target comes from renpy_host.create_render_texture
-        directly — never handed to _acquire_rtt/_recycle_frame_rtts, never
-        gen-stamped, never refused. Lifetime: pinned until eviction / clear.
+        restore) except the target comes from the pinned/private RTT FFI
+        (``renpy_host.create_render_texture_pinned`` when the host exposes it,
+        else legacy ``create_render_texture``) — never handed to
+        _acquire_rtt/_recycle_frame_rtts, never gen-stamped, never refused.
+        Lifetime: pinned until eviction / clear. H3: the _grp.push→pop span is
+        fully try/finally-wrapped; any exception path pops exactly once.
         """
         import renpy_host  # type: ignore
 
@@ -1383,72 +1497,102 @@ class SurftreeMixin:
         bake_attn(self, "trans_bake_pin", child, w, h)
         rtt = 0
         _grp = getattr(self, "_instance_group", None)
-        if _grp is not None:
-            try:
-                if not _grp.empty():
-                    _grp.flush(self)
-                _grp.push()
-            except Exception:  # noqa: BLE001, S110
-                _grp = None
-            # Pending parent batch items precede the bake content in tree
-            # order; commit them into the parent target first (painter order).
-            self._flush_draw_batch()  # type: ignore[attr-defined]
-        try:
-            rtt = int(renpy_host.create_render_texture(w, h))
-            if rtt <= 0:
-                raise ValueError("trans_bake_pin: bad private RTT handle")
-            bw, bh = self._node_size(child)
-            if bw <= 0 or bh <= 0:
-                bw, bh = self.virtual_size
-            renpy_host.begin_target(rtt)
-            renpy_host.begin_frame()
-            old_vs = self.virtual_size
-            old_clip = self._clip_rect
-            old_poly = getattr(self, "_clip_poly", None)
-            old_full = getattr(self, "_frame_full_canvas_hop", None)
-            prev_full = getattr(self, "_frame_full_canvas", False)
-            self._frame_full_canvas_hop = True
-            self._frame_full_canvas = False
-            try:
-                # Honest bake count: the pinned bake is a real RTT pass (so
-                # WALKSTAT bakes= stays truthful; hit frames simply skip it).
+        # H3 (hmcreview): the _grp.push → _grp.pop span is the WHOLE scheme —
+        # an early failure (create_render_texture* / begin_target / begin_frame
+        # raising) previously skipped pop, pairing a child epoch against the
+        # parent group and corrupting painter order until the next RTT push
+        # restored it. Wrap the entire span in try/finally; the finally pop
+        # must run on every exit path and must never itself raise.
+        _grp_pushed = False
+        try:  # instance-group epoch: push → pop strictly paired over this span
+            if _grp is not None:
                 try:
-                    self._frame_bakes = getattr(self, "_frame_bakes", 0) + 1
-                except Exception:  # noqa: BLE001, S110 -- counter is diagnostics-only
-                    pass
+                    if not _grp.empty():
+                        _grp.flush(self)
+                    _grp.push()
+                    _grp_pushed = True
+                except Exception:  # noqa: BLE001, S110 -- push failure → no epoch to pop
+                    _grp = None
+                # Pending parent batch items precede the bake content in tree
+                # order; commit them into the parent target first (painter order).
+                self._flush_draw_batch()  # type: ignore[attr-defined]
+            try:
+                # H1: prefer the pinned/private FFI when the host exposes it —
+                # the resulting RTT is excluded from arena reuse pools
+                # (freelist hit / step-2 oldest-live re-target / per-size cap),
+                # so a later same-size bake cannot re-target and overwrite the
+                # pinned content. Missing function → keep the legacy path.
+                _crt_pinned = getattr(renpy_host, "create_render_texture_pinned", None)
+                if _crt_pinned is not None:
+                    rtt = int(_crt_pinned(w, h))
+                else:
+                    rtt = int(renpy_host.create_render_texture(w, h))
+                if rtt <= 0:
+                    raise ValueError("trans_bake_pin: bad private RTT handle")
+                # Non-pool validation (same as lookup): a pool member here
+                # means external state corruption — refuse + drop rather than
+                # bake into some other pass's target.
+                if self._rtt_hot_pool_handle(rtt):
+                    raise ValueError("trans_bake_pin: handle leaked into rtt pool")
+                bw, bh = self._node_size(child)
+                if bw <= 0 or bh <= 0:
+                    bw, bh = self.virtual_size
+                renpy_host.begin_target(rtt)
+                renpy_host.begin_frame()
+                old_vs = self.virtual_size
+                old_clip = self._clip_rect
+                old_poly = getattr(self, "_clip_poly", None)
+                old_full = getattr(self, "_frame_full_canvas_hop", None)
+                prev_full = getattr(self, "_frame_full_canvas", False)
+                self._frame_full_canvas_hop = True
+                self._frame_full_canvas = False
                 try:
-                    self.virtual_size = (bw, bh)
-                    self._clip_rect = None
-                    self._clip_poly = None
-                    self._draw_node(child, 0.0, 0.0)  # type: ignore[attr-defined]
-                finally:
-                    self.virtual_size = old_vs
-                    self._clip_rect = old_clip
-                    self._clip_poly = old_poly
+                    # Honest bake count: the pinned bake is a real RTT pass (so
+                    # WALKSTAT bakes= stays truthful; hit frames simply skip it).
                     try:
-                        self._end_frame_present()  # type: ignore[attr-defined]
-                    except Exception as e:  # noqa: BLE001 -- logged, frame order kept
-                        _host_draw_fail("trans_bake_pin.end_frame", e)
-                    try:
-                        renpy_host.end_target()
-                    except Exception as e:  # noqa: BLE001 -- logged
-                        _host_draw_fail("trans_bake_pin.end_target", e)
-            finally:
-                self._frame_full_canvas = bool(prev_full)
-                self._frame_full_canvas_hop = old_full
-                if _grp is not None:
-                    try:
-                        _grp.pop()
-                    except Exception:  # noqa: BLE001, S110
+                        self._frame_bakes = getattr(self, "_frame_bakes", 0) + 1
+                    except Exception:  # noqa: BLE001, S110 -- counter is diagnostics-only
                         pass
-            self._trans_cache_store(key, rtt, int(bw), int(bh))
-            return HostTexture(rtt, int(bw), int(bh))
-        except Exception as e:  # noqa: BLE001 -- pin failure falls back to pooled path
-            _host_draw_fail("trans_bake_pin", e)
-            if rtt:
-                self._trans_cache_destroy_handle(rtt)
-                rtt = 0
-            return None
+                    try:
+                        self.virtual_size = (bw, bh)
+                        self._clip_rect = None
+                        self._clip_poly = None
+                        self._draw_node(child, 0.0, 0.0)  # type: ignore[attr-defined]
+                    finally:
+                        self.virtual_size = old_vs
+                        self._clip_rect = old_clip
+                        self._clip_poly = old_poly
+                        try:
+                            self._end_frame_present()  # type: ignore[attr-defined]
+                        except Exception as e:  # noqa: BLE001 -- logged, frame order kept
+                            _host_draw_fail("trans_bake_pin.end_frame", e)
+                        try:
+                            renpy_host.end_target()
+                        except Exception as e:  # noqa: BLE001 -- logged
+                            _host_draw_fail("trans_bake_pin.end_target", e)
+                finally:
+                    self._frame_full_canvas = bool(prev_full)
+                    self._frame_full_canvas_hop = old_full
+                self._trans_cache_store(key, rtt, int(bw), int(bh))
+                return HostTexture(rtt, int(bw), int(bh))
+            except Exception as e:  # noqa: BLE001 -- pin failure falls back to pooled path
+                _host_draw_fail("trans_bake_pin", e)
+                if rtt:
+                    self._trans_cache_destroy_handle(rtt)
+                    rtt = 0
+                return None
+        finally:
+            # H3: pop runs on EVERY exit path — including the early-failure
+            # returns above — restoring the parent epoch before the pooled
+            # fallback bake runs. The pop itself must never raise.
+            if _grp_pushed:
+                try:
+                    _grp.pop()
+                except Exception as e:  # noqa: BLE001 -- log-only; propagate nothing
+                    try:
+                        _host_draw_fail("trans_bake_pin.grp_pop", e)
+                    except Exception:  # noqa: BLE001, S110 -- DRAW_RAISE tolerated
+                        pass
 
     def kill_textures(self):
         """Surftree pre-hook: clear the transition bake cache before the

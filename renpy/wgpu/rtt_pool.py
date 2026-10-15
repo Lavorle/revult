@@ -160,6 +160,14 @@ class RttPoolMixin:
 
         handle = int(renpy_host.create_render_texture(w, h))
         self._rtt_curr_frame.append((handle, w, h))
+        # M1 (hmcreview): register the fresh handle as pool member — without
+        # this the first-generation window had _pool_handles ⊊ freelist ∪
+        # frame rings, so _rtt_hot_pool_handle went False and the gen stamp
+        # was short-circuited into the "non-pool chrome" accept branch.
+        try:
+            self._pool_handles_set().add(handle)
+        except Exception:  # noqa: BLE001, S110 -- bookkeeping only
+            pass
         return handle
 
     def _release_rtt_now(self, handle, w=None, h=None):
@@ -186,6 +194,13 @@ class RttPoolMixin:
             bucket = self._rtt_free.setdefault(key, [])
             if len(bucket) < self._rtt_pool_cap:
                 bucket.append(handle)
+                # M1 (hmcreview): freelist push is also a pool-membership
+                # transition — keep _pool_handles in sync here like every
+                # other add site, else the gen-stamp refusal is short-circuited.
+                try:
+                    self._pool_handles_set().add(handle)
+                except Exception:  # noqa: BLE001, S110 -- bookkeeping only
+                    pass
                 return
         try:
             import renpy_host  # type: ignore

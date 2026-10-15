@@ -1366,6 +1366,7 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(inter_present_gaps_ms, &module)?)?;
     module.add_function(wrap_pyfunction!(get_frame_stats, &module)?)?;
     module.add_function(wrap_pyfunction!(create_render_texture, &module)?)?;
+    module.add_function(wrap_pyfunction!(create_render_texture_pinned, &module)?)?;
     module.add_function(wrap_pyfunction!(begin_target, &module)?)?;
     module.add_function(wrap_pyfunction!(end_target, &module)?)?;
     module.add_function(wrap_pyfunction!(read_game_rt_rgba, &module)?)?;
@@ -2632,6 +2633,25 @@ fn create_render_texture(width: u32, height: u32) -> PyResult<u64> {
             .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
         st.arena.set_color_format(gpu.surface_format);
         let result = st.arena.create_render_texture(&gpu.device, width, height);
+        st.gpu = Some(gpu);
+        result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
+    })
+}
+
+/// Pinned/private RTT (hmcreview H1): same pipeline as create_render_texture
+/// but the handle never joins any arena reuse pool (freelist / step-2
+/// oldest-live re-target / per-size cap candidates). Used by the transition
+/// bake cache so a later same-size pooled bake cannot overwrite pinned
+/// content.
+#[pyfunction]
+fn create_render_texture_pinned(width: u32, height: u32) -> PyResult<u64> {
+    with_host_state_mut(|st| {
+        let gpu = st
+            .gpu
+            .take()
+            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("gpu not ready"))?;
+        st.arena.set_color_format(gpu.surface_format);
+        let result = st.arena.create_render_texture_pinned(&gpu.device, width, height);
         st.gpu = Some(gpu);
         result.map_err(pyo3::exceptions::PyRuntimeError::new_err)
     })

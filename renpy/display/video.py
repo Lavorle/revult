@@ -26,6 +26,7 @@ import math
 import collections
 import re
 import os
+import sys
 
 import renpy
 
@@ -62,6 +63,83 @@ def _bump_movie_publish_seq() -> None:
         _MOVIE_PUBLISH_SEQ += 1
     except Exception:
         pass
+
+
+# =============================================================================
+# Movie self-redraw beat — RENPY_HOST_MOVIE_REDRAW_S (OnceLock parse).
+#
+# Upstream Movie.render schedules itself with
+# ``renpy.display.render.redraw(self, 0.1)`` — "redraw no later than 0.1 s".
+# Inside a transition band (e.g. the HuangmeiC intro dissolve chains) that
+# beat upper-bounds the renpy frame rate (~10 fps scheduling root of the
+# band frame-stepping complaint). The env var overrides the beat while the
+# DEFAULT path stays byte-identical to upstream (0.1): the value is parsed
+# once per process (module-level once-lock), accepts any float in
+# [0.0, 1.0], and any unset/invalid/out-of-range value falls back to the
+# upstream 0.1 with a ONE-LINE ``renpy-host`` warning on the underlying
+# stderr (``sys.__stderr__`` — the same safe channel renpy.log redirection
+# cannot clobber). draw_debug.py mirrors this value in PHASE0 telemetry.
+# =============================================================================
+_MOVIE_REDRAW_S: float = 0.1
+_MOVIE_REDRAW_S_PARSED: bool = False
+_MOVIE_REDRAW_S_WARNED: bool = False
+
+
+def _movie_redraw_env_warn(raw, reason) -> None:
+    """One-shot stderr note (``renpy-host`` prefix); never aborts engine init."""
+    global _MOVIE_REDRAW_S_WARNED
+    if _MOVIE_REDRAW_S_WARNED:
+        return
+    _MOVIE_REDRAW_S_WARNED = True
+    try:
+        msg = (
+            "renpy-host movie redraw beat: %s RENPY_HOST_MOVIE_REDRAW_S=%r "
+            "-> default 0.1" % (reason, raw)
+        )
+        out = getattr(sys, "__stderr__", None)
+        if out is None:
+            try:
+                import renpy.log as _rlog
+
+                out = getattr(_rlog, "real_stderr", None)
+            except Exception:
+                out = None
+        if out is None:
+            return
+        out.write(msg + "\n")
+        out.flush()
+    except Exception:
+        pass
+
+
+def host_movie_redraw_s() -> float:
+    """Once-lock parse of ``RENPY_HOST_MOVIE_REDRAW_S``; default "0.1".
+
+    The semantics are the upstream "redraw no later than X seconds" beat used
+    by :meth:`Movie.render` (which also decides the in-band renpy frame-rate
+    ceiling). Accepted range is [0.0, 1.0] seconds inclusive; anything unset,
+    non-numeric, or out-of-range yields the upstream 0.1 (invalid values warn
+    once to ``sys.__stderr__`` with a ``renpy-host`` prefix).
+    """
+    global _MOVIE_REDRAW_S, _MOVIE_REDRAW_S_PARSED
+    if _MOVIE_REDRAW_S_PARSED:
+        return _MOVIE_REDRAW_S
+    raw = os.environ.get("RENPY_HOST_MOVIE_REDRAW_S")
+    if raw is None or not raw.strip():
+        _MOVIE_REDRAW_S = 0.1
+    else:
+        try:
+            v = float(raw.strip())
+            if 0.0 <= v <= 1.0:
+                _MOVIE_REDRAW_S = v
+            else:
+                _MOVIE_REDRAW_S = 0.1
+                _movie_redraw_env_warn(raw.strip(), "out-of-range (accepted 0.0-1.0)")
+        except Exception:
+            _MOVIE_REDRAW_S = 0.1
+            _movie_redraw_env_warn(raw.strip(), "non-numeric")
+    _MOVIE_REDRAW_S_PARSED = True
+    return _MOVIE_REDRAW_S
 
 
 def movie_stop(clear=True, only_fullscreen=False):
@@ -878,7 +956,12 @@ class Movie(renpy.display.displayable.Displayable):
         # Usually we get redrawn when the frame is ready - but we want
         # the movie to disappear if it's ended, or if it hasn't started
         # yet.
-        renpy.display.render.redraw(self, 0.1)
+        #
+        # The 0.1 is the upstream "no later than 0.1 s" self-redraw beat; it
+        # is also the transition-band renpy frame-rate ceiling, so it is
+        # read from the once-lock RENPY_HOST_MOVIE_REDRAW_S parse (default
+        # byte-identical 0.1).
+        renpy.display.render.redraw(self, host_movie_redraw_s())
 
         return rv
 

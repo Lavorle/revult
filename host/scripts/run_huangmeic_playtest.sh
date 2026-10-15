@@ -163,6 +163,12 @@ _initialize_runtime_env() {
   # Staged warm prefix (splash). 0 = warm full target immediately.
   export RENPY_HOST_MOVIE_WARM_FRAMES="${RENPY_HOST_MOVIE_WARM_FRAMES:-90}"
   export RENPY_HOST_MOVIE_LAYOUT_CACHE="${RENPY_HOST_MOVIE_LAYOUT_CACHE:-0}"
+  # Product movie redraw beat: engines default 0.1s (upstream), which makes the
+  # intro dissolve band render the 30fps menu movie in ~10fps steps. 1/30s
+  # covers the 30fps source at full frame-rate without raising the per-band
+  # RTT bake pressure (measured 2026-10-16: band unique idx 29.97/s vs 9.5Hz
+  # steps; no draw/efp/STALL cadence regression; goldens PASS).
+  export RENPY_HOST_MOVIE_REDRAW_S="${RENPY_HOST_MOVIE_REDRAW_S:-0.03}"
   export RENPY_HOST_MOVIE_RSS_MB="${RENPY_HOST_MOVIE_RSS_MB:-4096}"
   export RENPY_HOST_WARM_MENU_VIDEO="${RENPY_HOST_WARM_MENU_VIDEO:-1}"
   export RENPY_HOST_MOVIE_PREFER_AT2="${RENPY_HOST_MOVIE_PREFER_AT2:-0}"

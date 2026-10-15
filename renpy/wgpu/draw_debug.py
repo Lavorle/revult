@@ -336,6 +336,11 @@ def bake_frame_flush(now: float = 0.0) -> None:
     global _TRANS_CACHE_HITS, _TRANS_CACHE_MISSES, _TRANS_CACHE_UNCACHEABLE
     if not _BAKE_ENABLED:
         return
+    # Movie redraw-beat telemetry rides this per-frame site (own throttle).
+    try:
+        movie_band_frame_flush(now)
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+        pass
     try:
         if not _BAKE_TAGS:
             return
@@ -463,6 +468,68 @@ def trans_cache_totals() -> tuple[int, int, int, int]:
     )
 
 
+# =============================================================================
+# Movie redraw-beat telemetry (Phase 0, pure instrumentation). Under
+# RENPY_HOST_PHASE0_SIGNALS=1, rides the bake_frame_flush cadence with its own
+# 0.5 s throttle and emits ONE line per window:
+#
+#   movie_redraw_s=<beat> band_frames=<n>
+#
+# movie_redraw_s mirrors the once-lock parsed
+# renpy.display.video.host_movie_redraw_s() — the beat given to
+# renpy.display.render.redraw(Movie) ("no later than X seconds" self-redraw,
+# which is also the in-transition-band renpy frame-rate ceiling). band_frames
+# is the delta of renpy.display.video._MOVIE_PUBLISH_SEQ (the existing global
+# movie-frame publish counter) accumulated across the window — i.e. how many
+# movie idx changes were published inside the band; no new counter is added,
+# no video.py call sites are touched. Both are read lazily via getattr so
+# hermetic / bare-module imports never depend on renpy.display.video.
+# =============================================================================
+_MOVIE_BAND_LAST_SEQ: int = -1
+_MOVIE_BAND_LAST_EMIT_T: float = 0.0
+
+
+def _movie_band_value() -> tuple[float, int, bool]:
+    """(movie_redraw_s, _MOVIE_PUBLISH_SEQ, available). Zero DASH when absent."""
+    try:
+        from renpy.display import video as _mv  # type: ignore
+
+        redraw_s = float(_mv.host_movie_redraw_s())
+        seq = int(getattr(_mv, "_MOVIE_PUBLISH_SEQ", 0))
+        return redraw_s, seq, True
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+        return -1.0, -1, False
+
+
+def movie_band_frame_flush(now: float = 0.0) -> None:
+    """Emit ``movie_redraw_s=<v> band_frames=<n>`` (0.5 s throttle, PHASE0 only).
+
+    Called from :func:`bake_frame_flush` so it rides the per-frame flush site
+    without any new per-frame call in the product path. band_frames counts
+    movie-frame publishes (video._MOVIE_PUBLISH_SEQ delta) since the previous
+    emitted line; the first emit seeds the baseline (0). If the video module
+    is not importable (hermetic gates), the line is skipped entirely.
+    """
+    global _MOVIE_BAND_LAST_SEQ, _MOVIE_BAND_LAST_EMIT_T
+    if not _phase0_signals_enabled():
+        return
+    try:
+        _now = float(now) if now else _time.monotonic()
+        if (_now - _MOVIE_BAND_LAST_EMIT_T) < _PHASE0_FRAME_INTERVAL:
+            return
+        redraw_s, seq, ok = _movie_band_value()
+        if not ok:
+            return
+        n = 0 if (_MOVIE_BAND_LAST_SEQ < 0 or seq < 0) else max(0, seq - _MOVIE_BAND_LAST_SEQ)
+        _MOVIE_BAND_LAST_SEQ = seq
+        _MOVIE_BAND_LAST_EMIT_T = _now
+        _phase0_log(
+            "movie_redraw_s=%s band_frames=%d" % (("%.4f" % redraw_s).rstrip("0").rstrip("."), n)
+        )
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+        pass
+
+
 def _host_draw_fail(where: str, exc: BaseException) -> None:
     """Log a host-draw failure once per (where, type); optionally re-raise.
 
@@ -530,4 +597,5 @@ __all__ = [
     "_phase0_signals_enabled",
     "_safe_print",
     "_ui_trace_once",
+    "movie_band_frame_flush",
 ]

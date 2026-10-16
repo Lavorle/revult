@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import os
+import time as _time
 
 try:
     from PIL import Image, ImageDraw, ImageFont  # type: ignore
@@ -56,6 +57,39 @@ def _ui_trace_once(key: str, msg: str) -> None:
 _GLYPH_SKIN_CACHE: dict[tuple, tuple] = {}
 _GLYPH_SKIN_CAP = 2048
 _GLYPH_SKIN_ENV: int | None = None
+_GLYPH_SKIN_STATS: dict[str, int] = {"stamp": 0, "hit": 0, "miss": 0, "live": 0}
+_GLYPH_SKIN_STATS_LAST_T: list[float] = []
+
+
+def _glyph_skin_stats_tick():
+    """10s cadence skin hit/miss telemetry (PHASE0 opt-in only)."""
+    if not _glyph_skin_enabled():
+        return
+    if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") != "1":
+        return
+    try:
+        now = _time_now()
+    except Exception:  # noqa: BLE001
+        return
+    if not _GLYPH_SKIN_STATS_LAST_T:
+        _GLYPH_SKIN_STATS_LAST_T.append(now)
+        return
+    if (now - _GLYPH_SKIN_STATS_LAST_T[0]) < 10.0:
+        return
+    s = _GLYPH_SKIN_STATS
+    total = s["stamp"]
+    try:
+        print(
+            f"[GLYPHSKIN] t={now - _GLYPH_SKIN_STATS_LAST_T[0]:.1f} "
+            f"stamp={total} hit={s['hit']} miss={s['miss']} live={s['live']} "
+            f"cache={len(_GLYPH_SKIN_CACHE)}",
+            flush=True,
+        )
+    except Exception:  # noqa: BLE001
+        return
+    for k in ("stamp", "hit", "miss", "live"):
+        s[k] = 0
+    _GLYPH_SKIN_STATS_LAST_T[0] = now
 
 
 def _glyph_skin_enabled() -> bool:
@@ -70,12 +104,19 @@ def _glyph_skin_enabled() -> bool:
 
 
 def _phase_q(f: float) -> int:
-    """Quantize the fractional pixel coordinate to Pillow's subpixel grid."""
+    """Quantize the fractional pixel coordinate to the freetype subpixel grid.
+
+    Pillow passes the raw fraction into getmask2 ``start``; FreeType's subpixel
+    positioning precision is the 26.6 fixed-point grid (/64), so keys are
+    quantized at /64 with the same rounding Pillow uses (round-to-nearest;
+    empirically byte-equal per the golden A/B below). /256 wasted 4x cache
+    entries on rasterizations FreeType produces identically.
+    """
     try:
         frac = f - float(int(f))
     except Exception:  # noqa: BLE001
         return 0
-    return int(round(frac * 256.0)) & 0xFF
+    return int(round(frac * 64.0)) & 0x3F
 
 
 def _glyph_skin(font_key, font, ch, fill, outline_fill, r, fx, fy, asc, desc, size, vertical):
@@ -143,6 +184,9 @@ def _glyph_skin(font_key, font, ch, fill, outline_fill, r, fx, fy, asc, desc, si
 def init():
     global _initialized
     _initialized = True
+def _time_now() -> float:
+    return _time.monotonic()
+
 
 
 class FreetypeError(Exception):
@@ -416,6 +460,7 @@ class FTFont:
         iy1 = min(h, int(maxy) + 1)
         if ix1 <= ix0 or iy1 <= iy0:
             return
+        _glyph_skin_stats_tick()
         cw, chh = ix1 - ix0, iy1 - iy0
         # ---- 2. crop overlay (same draw.text calls, crop-relative origin) ----
         img = Image.new("RGBA", (cw, chh), (0, 0, 0, 0))
@@ -447,6 +492,13 @@ class FTFont:
                         self.size,
                         self.vertical,
                     )
+                    st = _GLYPH_SKIN_STATS
+                    st["stamp"] += 1
+                    if skin is not None:
+                        st["hit"] += 1
+                    else:
+                        st["miss"] += 1
+                        st["live"] += 1
                 if skin is not None:
                     skin_img, spad_x, spad_y = skin
                     # paste uses the same per-channel linear blend as

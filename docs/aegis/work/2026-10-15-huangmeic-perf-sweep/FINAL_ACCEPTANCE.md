@@ -101,6 +101,7 @@
 - `ldd` 无 libSDL（AC2）✅
 - 真机 RADV 全屏可见（dyn 门 26 场景）：S0 视频带 present **237.31 fps**、设置各页 **237–252 fps**、iv_p95 ≤4.9ms、movie 内容 32fps 稳定 ✅
 - 系统状态：/tmp 1.5G/16G；空闲内存 ~16Gi；无残留引擎实例 ✅
+- **一键回归脚本落地（HEAD 4bef5db31），全程路径全绿**：`bash host/scripts/verify_all.sh` → cargo check ✓ / cargo test 6 套 ✓ / pytest 177 ✓ / release+ldd AC2 ✓ / phase9 金库 20 门 ✓（ legit EXIT=0）；后续任意改动后可用同一命令自证。✅
 
 goal 数量级结论（相对报障基线）：
 1. 设置界面：~15fps（感知）→ 237–252fps present（同口径合成输入全屏直测）；

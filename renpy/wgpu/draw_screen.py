@@ -19,6 +19,23 @@ from .draw_debug import (
 from .host_bridge import host_env_bool
 from .host_texture import HostTexture
 
+# Resolved lazily (draw_surftree imports this module) — cache the accessor so
+# the per-frame WALKSTAT tail costs one global lookup, not an import.
+_SM_COST_FN = None
+
+
+def _sm_cost_accessor():
+    """``draw_surftree._sm_frame_cost`` or None when the mixin is unavailable."""
+    global _SM_COST_FN
+    fn = _SM_COST_FN
+    if fn is None:
+        try:
+            from .draw_surftree import _sm_frame_cost as fn
+        except Exception:  # noqa: BLE001 -- instrumentation only
+            return None
+        _SM_COST_FN = fn
+    return fn
+
 
 def bake_frame_flush(now: float = 0.0) -> None:
     """hmc_fix3 F3: bake PHASE0 cadence + rev-cache drain verbatim here.
@@ -551,9 +568,61 @@ class ScreenMixin:
                                     break
                         except Exception:
                             ch = ["<err>"]
+                        _smf = None
+                        try:
+                            _acc = _sm_cost_accessor()
+                            if _acc is not None:
+                                _smf = _acc(self)
+                        except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                            _smf = None
+                        _smtxt = ""
+                        if _smf is not None:
+                            try:
+                                # Per-frame stable-model-cache ledger (see
+                                # draw_surftree._SM_F_* index contract):
+                                # sm_ms = the frame's own accounting cost.
+                                _smtxt = (
+                                    " sm_ms=%.3f sm_tail_ms=%.3f sm_cnt_ms=%.3f"
+                                    " sm_fp_ms=%.3f sm_bake_ms=%.3f sm_alive_ms=%.3f"
+                                    " sm_calls=%d sm_cnt_n=%d sm_fp_n=%d sm_hit=%d"
+                                    " sm_miss=%d sm_cnt_none=%d sm_key_none=%d"
+                                    " sm_gate=%d sm_pins=%d sm_budget=%d sm_fp_n_none=%d"
+                                    " sm_neg=%d sm_small=%d sm_acct_cap=%d sm_fp_budget=%d"
+                                    % (
+                                        (
+                                            float(_smf[0])
+                                            + float(_smf[1])
+                                            + float(_smf[2])
+                                            + float(_smf[3])
+                                        )
+                                        * 1000.0,
+                                        float(_smf[4]) * 1000.0,
+                                        float(_smf[0]) * 1000.0,
+                                        float(_smf[1]) * 1000.0,
+                                        float(_smf[2]) * 1000.0,
+                                        float(_smf[3]) * 1000.0,
+                                        int(_smf[6]),
+                                        int(_smf[7]),
+                                        int(_smf[8]),
+                                        int(_smf[11]),
+                                        int(_smf[12]),
+                                        int(_smf[9]),
+                                        int(_smf[10]),
+                                        int(_smf[13]),
+                                        int(_smf[14]),
+                                        int(_smf[15]),
+                                        int(_smf[16]),
+                                        int(_smf[17]),
+                                        int(_smf[18]),
+                                        int(_smf[19]),
+                                        int(getattr(self, "_sm_fp_budget", 0)),
+                                    )
+                                )
+                            except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                                _smtxt = ""
                         _safe_print(
                             "[WALKSTAT] th=%s nodes=%d bakes=%d fails=%d walk_ok=%d "
-                            "cmds=%d nodes_ms=%.1f root=%s ch_n=%d ch=%s"
+                            "cmds=%d nodes_ms=%.1f root=%s ch_n=%d ch=%s%s"
                             % (
                                 th,
                                 int(self._frame_nodes),
@@ -565,6 +634,7 @@ class ScreenMixin:
                                 type(surftree).__name__ if surftree is not None else "None",
                                 len(ch),
                                 ",".join(ch) if ch else "-",
+                                _smtxt,
                             )
                         )
                         for _lf in _HOST_FRAME_FAILS[:6]:

@@ -950,6 +950,15 @@ class _TransBakeUncacheable(Exception):
     """
 
 
+class _SmFpBudgetExceeded(_TransBakeUncacheable):
+    """The stable-model-cache fingerprint hit a *frame* ceiling, not a verdict.
+
+    Distinct from a plain ``_TransBakeUncacheable`` so the caller can tell a
+    cut-off walk (says nothing about the subtree — never remembered across
+    frames) from a real "this subtree can never be baked" verdict.
+    """
+
+
 def _trans_fp_attr(v):
     """Cache-key-safe bit for a clip-ish node attribute (best-effort)."""
     if v is None:
@@ -1028,9 +1037,44 @@ _SM_SEEN_CAP = 48             # stale-entry / churn bookkeeping table cap
 _SM_BUDGET_FACTOR = 3         # byte budget = factor × drawable area × 4
 _SM_FALLBACK_DRAWABLE = (2560, 1440)
 _SM_UNSTABLE_BACKOFF = 45     # frames a key-churning candidate slot is skipped
+_SM_NEG_TTL = 15              # frames a "small"/"uncacheable" verdict is remembered
+_SM_FP_FRAME_BUDGET = 3072    # hard per-product-frame ceiling on fingerprint node visits
+_SM_ACCT_FRAME_MS = 6.0       # per-frame accounting (count+fingerprint) time ceiling (ms)
+_SM_FP_US_PER_NODE = 1.6      # per-node cost estimate used before a frame has samples
+_SM_SMALL = -1                # _sm_count_nodes: subtree is below the eligibility floor
 _SM_CHURN_STREAK = 3          # consecutive key changes before the backoff engages
 # Absent-attribute sentinel: distinct from None (a real None attribute value).
 _SM_ABSENT = object()
+
+# Names the *specialised* fingerprint path (``_sm_fp_render_fast``) may assume
+# are absent on the class. The fast path hard-codes the value the generic body
+# would read for an absent attribute (``_SM_ABSENT`` → ``None``); a class that
+# carries any of these names takes the generic path instead, so the fast body
+# stays provably identical to the generic one (see ``_SM_FP_SELFCHECK``).
+_SM_FAST_ABSENT = (
+    "color",
+    "matrixcolor",
+    "position",
+    "motion",
+    "at",
+    "textures",
+    "texture",
+    "ndc",
+    "pipeline",
+    "vertices",
+    "indices",
+    "xclip",
+    "yclip",
+    "xclip_rect",
+    "yclip_rect",
+)
+# Empty texture-slot bits: exactly what ``_sm_tex_bits`` returns for a node with
+# no ``texture``/``textures`` (two ``_sm_one_tex`` calls on absent values → 0).
+_SM_TEX_EMPTY = (0, 0)
+# Dev gate: recompute every fast fingerprint with the generic body and compare
+# (mismatch ⇒ log + use the generic value). Off in product; costs ~2x when on.
+_SM_FP_SELFCHECK = bool(os.environ.get("RENPY_HOST_SM_FP_SELFCHECK"))
+_SM_FP_MISMATCH_TOTAL = 0   # dev: fast-vs-generic body mismatches under selfcheck
 
 # Render attributes the draw path reads (present on the engine's Render cdef
 # class → absence means "not a node the walker understands" → uncacheable).
@@ -1205,6 +1249,63 @@ def _sm_cost(cnt_nodes: int, fp_nodes: int, cnt_s: float, key_s: float) -> None:
         _SM_CNT_US_TOTAL += float(cnt_s) * 1e6
     except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort
         pass
+
+
+# --- per-frame cost ledger ---------------------------------------------------
+# The window counters above are throttled (0.5 s) and therefore can not answer
+# "which single frame paid the accounting cost?". These slots are a per-draw,
+# per-PRODUCT-FRAME ledger: ``_sm_f`` accumulates during the walk of one frame,
+# ``_sm_frame_boundary`` snapshots it into ``_sm_pf`` and zeroes it, and the
+# [WALKSTAT] line (draw_screen) reads ``_sm_pf`` so every frame carries its own
+# eligibility-count / fingerprint / bake / liveness-probe cost. Index order is
+# the contract shared with the WALKSTAT tail; keep it stable.
+# UNIT CONTRACT: the float slots hold SECONDS (raw ``perf_counter`` deltas);
+# the [WALKSTAT] tail converts to milliseconds when it prints them.
+_SM_F_CNT_MS = 0     # float s: eligibility count walk (_sm_count_nodes)
+_SM_F_FP_MS = 1      # float s: key/fingerprint walk (_sm_key)
+_SM_F_BAKE_MS = 2    # float s: pinned bake + draw of a fresh entry
+_SM_F_ALIVE_MS = 3   # float s: entry liveness probe on the reuse path
+_SM_F_TAIL_MS = 4    # float s: gate/box/store/entry-lookup tail
+_SM_F_REST_MS = 5    # float s: reserved (unwrapped residual)
+_SM_F_CALLS = 6      # int: candidate slots that reached the accounting path
+_SM_F_CNT_N = 7      # int: node visits inside count walks
+_SM_F_FP_N = 8       # int: node visits inside fingerprint walks
+_SM_F_CNT_NONE = 9   # int: candidates dropped by the eligibility floor/budget
+_SM_F_KEY_NONE = 10  # int: candidates whose subtree proved uncacheable
+_SM_F_HIT = 11       # int: entries served from the pinned RTT
+_SM_F_MISS = 12      # int: candidates walked instead of served
+_SM_F_GATE = 13      # int: candidates skipped by a churn gate (no accounting)
+_SM_F_PINS = 14      # int: pinned RTTs baked this frame
+_SM_F_BUDGET = 15    # int: eligibility-count budget left at frame end
+_SM_F_FP_N_NONE = 16  # int: fp node visits inside walks that proved uncacheable
+_SM_F_NEG = 17       # int: candidates skipped by a remembered negative verdict
+_SM_F_SMALL = 18     # int: candidates proven below the eligibility floor
+_SM_F_ACCT_CAP = 19  # int: candidates skipped because the frame's time ceiling hit
+
+_SM_F_SLOTS = 20
+_SM_F_FLOATS = 6
+
+
+def _sm_fresh_f() -> list:
+    return [0.0] * _SM_F_FLOATS + [0] * (_SM_F_SLOTS - _SM_F_FLOATS)
+
+
+def _sm_reset_frame_cost(obj) -> None:
+    """Zero the per-frame ledger on ``obj`` (and its snapshot slot)."""
+    try:
+        obj._sm_f = _sm_fresh_f()
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort
+        pass
+
+
+def _sm_frame_cost(obj):
+    """Last completed product frame's ledger (list, index order above) or None.
+
+    ``sum`` of the four float stages is the frame's stable-model-cache
+    accounting cost; the counters tell whether the frame was a discovery burst
+    (``CALLS``/``FP_N`` high) or an idle frame (all zero).
+    """
+    return getattr(obj, "_sm_pf", None)
 
 
 def _sm_miss_count() -> None:
@@ -3047,7 +3148,11 @@ class SurftreeMixin:
             self._sm_stamp = None            # (drawable, layout) geometry stamp
             self._sm_in_bake = False         # re-entrancy guard for our own bake
             self._sm_count_budget = _SM_COUNT_FRAME_BUDGET
+            self._sm_fp_budget = _SM_FP_FRAME_BUDGET
+            self._sm_neg = {}                # slot/nid → (until_frame, kind)
             self._sm_pol = {}                # class → fingerprint policy
+            _sm_reset_frame_cost(self)
+            self._sm_pf = _sm_fresh_f()
             _sm_install_hooks()
             _sm_register(self)
         return st
@@ -3063,6 +3168,14 @@ class SurftreeMixin:
         try:
             self._sm_frame = int(getattr(self, "_sm_frame", 0)) + 1
             self._sm_count_budget = _SM_COUNT_FRAME_BUDGET
+            self._sm_fp_budget = _SM_FP_FRAME_BUDGET
+            # Per-frame cost ledger: publish the frame that just ended (the
+            # [WALKSTAT] line for it is printed after this hook) and reset.
+            _f = getattr(self, "_sm_f", None)
+            if _f is not None:
+                _f[_SM_F_BUDGET] = int(self._sm_count_budget)
+                self._sm_pf = _f
+                self._sm_f = _sm_fresh_f()
             pend = getattr(self, "_sm_pending", None)
             if pend:
                 for h in list(pend):
@@ -3090,6 +3203,15 @@ class SurftreeMixin:
                 if g:
                     for k in [k for k, until in g.items() if int(until) <= f]:
                         g.pop(k, None)
+            neg = getattr(self, "_sm_neg", None)
+            if neg:
+                for k in [k for k, v in neg.items() if int(v[0]) <= f]:
+                    neg.pop(k, None)
+                while len(neg) > _SM_SEEN_CAP * 4:
+                    try:
+                        neg.pop(next(iter(neg)), None)
+                    except StopIteration:
+                        break
             self._sm_prune_seen()
         except Exception:  # noqa: BLE001, S110 -- boundary work must never abort
             pass
@@ -3134,37 +3256,85 @@ class SurftreeMixin:
         """Budgeted subtree node count; only proves ``>= _SM_MIN_NODES``.
 
         Returns ``_SM_MIN_NODES`` as soon as the floor is reached (the exact
-        count is produced by the fingerprint walk used for the key), or None
-        when the subtree is smaller / the per-frame count budget ran out.
+        count comes from the fingerprint walk that produces the key),
+        ``_SM_SMALL`` when the subtree provably holds fewer nodes than the
+        floor, and ``None`` when only the per-frame count budget ran out. That
+        distinction matters: a budget verdict is a property of the *frame* and
+        must never be remembered across frames, while a "small" verdict is a
+        property of the subtree and may be cached (see ``_sm_neg``).
+
+        The traversal is inlined instead of driven through ``_iter_children``:
+        this loop runs for every candidate on every frame, and the generator
+        (two ``getattr`` + two ``isinstance`` + a ``yield`` per node) was the
+        dominant part of its cost. Visit order is identical to the generator's
+        (children then blits, in order), so the subtree size it proves is
+        unchanged.
+
+        The budget is spent on *work* (visits + child pushes), not on visits
+        alone: a single node with a very large fan-out used to push all of its
+        children before the next budget check, so one call could cost tens of
+        milliseconds while "visiting" well under the budget (measured: 6.4 ms
+        for a 64-visit call on the settings page). Charging the pushes closes
+        that hole and makes the per-frame count cost proportional to the
+        budget.
         """
         budget = int(getattr(self, "_sm_count_budget", _SM_COUNT_FRAME_BUDGET))
         if budget <= 0:
             sm_cache_why("count_budget_exhausted")
             return None
         floor = _SM_MIN_NODES
-        n = 0
-        visited = 0
+        n = 0          # nodes discovered (the eligibility proof)
+        work = 0       # budget units spent (visits + child pushes)
         stack = [node]
         while stack:
             cur = stack.pop()
             if cur is None:
                 continue
             n += 1
-            visited += 1
+            work += 1
             if n >= floor:
-                self._sm_count_budget = budget - visited
+                self._sm_count_budget = budget - work
                 return floor
-            if visited >= budget:
-                break
+            if work >= budget:
+                self._sm_count_budget = budget - work
+                return None
             try:
-                for child, _xo, _yo in self._iter_children(cur):
-                    if child is not None:
-                        stack.append(child)
+                entries = getattr(cur, "children", None)
+                if entries:
+                    for entry in entries:
+                        if entry is None:
+                            continue
+                        if type(entry) is tuple:
+                            child = entry[0]
+                        elif isinstance(entry, list):
+                            child = entry[0]
+                        else:
+                            child = entry
+                        if child is not None:
+                            stack.append(child)
+                            work += 1
+                entries = getattr(cur, "blits", None)
+                if entries:
+                    for entry in entries:
+                        if entry is None:
+                            continue
+                        if type(entry) is tuple:
+                            child = entry[0]
+                        elif isinstance(entry, list):
+                            child = entry[0]
+                        else:
+                            child = entry
+                        if child is not None:
+                            stack.append(child)
+                            work += 1
+                if work >= budget:
+                    self._sm_count_budget = budget - work
+                    return None
             except Exception:  # noqa: BLE001 -- probe failure → conservative miss
                 sm_cache_why("count_probe_failed")
                 return None
-        self._sm_count_budget = budget - visited
-        return None
+        self._sm_count_budget = budget - work
+        return _SM_SMALL
 
     # --- fingerprint ---------------------------------------------------------
 
@@ -3487,17 +3657,27 @@ class SurftreeMixin:
         if pol is None:
             # __dictoffset__ < 0 ⇒ instances have a (managed) instance dict.
             if getattr(cls, "__dictoffset__", 0) != 0:
-                pol = (2, _SM_RENDER_OPTIONAL_FULL, True)
+                pol = (2, _SM_RENDER_OPTIONAL_FULL, True, False)
             else:
                 req_ok = True
                 for name in _SM_RENDER_REQUIRED:
                     if not hasattr(cls, name):
                         req_ok = False
                         break
+                opt_names = tuple(n for n in _SM_RENDER_OPTIONAL if hasattr(cls, n))
+                # Specialised-path gate: cdef surface, no optional state names,
+                # and none of the attributes the fast body hard-codes as absent.
+                fast = bool(req_ok) and not opt_names
+                if fast:
+                    for name in _SM_FAST_ABSENT:
+                        if hasattr(cls, name):
+                            fast = False
+                            break
                 pol = (
                     0 if req_ok else 3,
-                    tuple(n for n in _SM_RENDER_OPTIONAL if hasattr(cls, n)),
+                    opt_names,
                     hasattr(cls, "blits"),
+                    fast,
                 )
             self._sm_pol_map()[cls] = pol
         return pol
@@ -3688,18 +3868,22 @@ class SurftreeMixin:
             return None
         cap[0] -= 1
         if cap[0] < 0:
-            raise _TransBakeUncacheable("sm fp node budget exceeded")
+            raise _SmFpBudgetExceeded("sm fp node budget exceeded")
         t = type(node)
         if t in _SM_SCALAR_TYPES:
             return node
         if depth > _SM_FP_MAX_DEPTH:
             raise _TransBakeUncacheable("sm fp depth budget %s" % t.__name__)
-        if t is HostTexture or isinstance(node, HostTexture):
+        if t is HostTexture:
             return self._sm_one_tex(node, "node")
         cls = t
         pol = pol_map.get(cls)
         if pol is None:
+            if t is HostTexture or isinstance(node, HostTexture):
+                return self._sm_one_tex(node, "node")
             pol = self._sm_class_policy(cls)
+        if pol[3]:
+            return self._sm_fp_render_fast(node, depth, cap, pol_map, pol[2])
         if pol[0] <= 2:
             return self._sm_fp_render(node, pol, depth, cap, pol_map)
         # Unknown class: Render-like (children + mesh) but not a class surface
@@ -3715,16 +3899,261 @@ class SurftreeMixin:
             raise _TransBakeUncacheable("sm fp non-render container %s" % cls.__name__)
         return self._sm_fp_leaf(node)
 
-    def _sm_key(self, node):
-        """(key, node_count) for ``node``; (None, 0) when not cacheable."""
+    def _sm_fp_render_fast(self, node, depth, cap, pol_map, has_blits):
+        """Specialised ``_sm_fp_render`` for the engine's cdef ``Render`` surface.
+
+        Same 20-slot body, byte for byte, as the generic path — but the class
+        policy (``pol[3]``) has already proved that ``color``/``ndc``/
+        ``pipeline``/``texture(s)``/``w``/``h``/``vertices``/``indices``/
+        ``texture1``/``xclip*``/``yclip*`` and the whole optional-name tuple are
+        absent on this class, so the body can hard-code the constants the
+        generic path would compute (``None`` / ``(0, 0)``) and read the rest
+        inline. Only the calls that carry state — dissolve detection, uniforms,
+        shaders, mesh, cached model/texture, matrix bits, children — remain, and
+        the two matrix reads plus the child recursion are inlined.
+
+        Cost matters here: this body runs once per node per frame for every
+        cache candidate, and the walk is ~1.7k nodes on the settings page. The
+        generic body makes ~9.5 Python calls per node; this one makes ~2.
+
+        ``_SM_FP_SELFCHECK`` (dev) recomputes the generic body and compares: on
+        mismatch the generic value wins (and the reason is recorded), so the
+        specialised path can never introduce a divergent key silently.
+        """
+        fpn = self._sm_fp_node
+        shaders = node.shaders
+        uniforms = node.uniforms
+        mesh = node.mesh
+        op = node.operation
+        op_complete = node.operation_complete
+        if shaders or uniforms or op or op_complete:
+            special = False
+            if shaders:
+                for _s in shaders:
+                    if _s in _SM_EFFECT_SHADERS:
+                        special = True
+                        break
+            if not special and uniforms:
+                for _k in _SM_EFFECT_UNIFORMS:
+                    if _k in uniforms:
+                        special = True
+                        break
+            if not special and (op or op_complete):
+                special = bool(
+                    self._is_dissolve_node(node) or self._is_imagedissolve_node(node)
+                )
+            if special:
+                raise _TransBakeUncacheable("sm fp dissolve node %s" % type(node).__name__)
+            if getattr(node, "_dissolve_origin", None) is not None:
+                raise _TransBakeUncacheable("sm fp node with _dissolve_origin")
+        fwd = node.forward
+        rev = node.reverse
+        ct = node.cached_texture
+        cm = node.cached_model
+        props = node.properties
+        nearest = node.nearest
+        if type(nearest) is not bool and nearest is not None:
+            nearest = self._sm_value_bits(nearest, "nearest")
+        xc = node.xclipping
+        yc = node.yclipping
+        if xc or yc:
+            # xclip / yclip / xclip_rect / yclip_rect are absent on this class
+            # (gate) → the generic body reads None for all four.
+            clip_bits = (True, bool(xc), bool(yc), None, None, None, None)
+        else:
+            clip_bits = False
+        kids = []
+        append = kids.append
+        children = node.children
+        if children:
+            for entry in children:
+                if entry is None:
+                    continue
+                if type(entry) is tuple:
+                    nent = len(entry)
+                    if nent > 2:
+                        child = entry[0]
+                        kx = entry[1]
+                        ky = entry[2]
+                    elif nent == 2:
+                        child = entry[0]
+                        kx = entry[1]
+                        ky = 0.0
+                    else:
+                        continue
+                elif isinstance(entry, list):
+                    nent = len(entry)
+                    if nent > 2:
+                        child = entry[0]
+                        kx = entry[1]
+                        ky = entry[2]
+                    elif nent == 2:
+                        child = entry[0]
+                        kx = entry[1]
+                        ky = 0.0
+                    else:
+                        continue
+                else:
+                    child = entry
+                    kx = 0.0
+                    ky = 0.0
+                append((kx, ky, fpn(child, depth + 1, cap, pol_map)))
+        if has_blits:
+            blits = node.blits
+            if blits:
+                for entry in blits:
+                    if entry is None:
+                        continue
+                    if type(entry) is tuple:
+                        nent = len(entry)
+                        if nent > 2:
+                            child = entry[0]
+                            kx = entry[1]
+                            ky = entry[2]
+                        elif nent == 2:
+                            child = entry[0]
+                            kx = entry[1]
+                            ky = 0.0
+                        else:
+                            continue
+                    elif isinstance(entry, list):
+                        nent = len(entry)
+                        if nent > 2:
+                            child = entry[0]
+                            kx = entry[1]
+                            ky = entry[2]
+                        elif nent == 2:
+                            child = entry[0]
+                            kx = entry[1]
+                            ky = 0.0
+                        else:
+                            continue
+                    else:
+                        child = entry
+                        kx = 0.0
+                        ky = 0.0
+                    append((kx, ky, fpn(child, depth + 1, cap, pol_map)))
+        # Matrix bits, inlined: one hasattr + 14 reads (3D) or 6 reads (2D).
+        if fwd is None:
+            fwd_bits = 0
+        else:
+            try:
+                fwd_bits = (
+                    fwd.xdx, fwd.xdy, fwd.ydx, fwd.ydy, fwd.xdw, fwd.ydw,
+                    fwd.zdx, fwd.zdy, fwd.zdz, fwd.zdw, fwd.wdx, fwd.wdy, fwd.wdz, fwd.wdw,
+                )
+            except AttributeError:
+                try:
+                    fwd_bits = (fwd.xdx, fwd.xdy, fwd.ydx, fwd.ydy, fwd.xdw, fwd.ydw)
+                except Exception:  # noqa: BLE001 -- unknown transform type → no key
+                    raise _TransBakeUncacheable(
+                        "sm fp matrix type %s" % type(fwd).__name__
+                    ) from None
+            except Exception:  # noqa: BLE001 -- unreadable transform → no key
+                raise _TransBakeUncacheable(
+                    "sm fp matrix type %s" % type(fwd).__name__
+                ) from None
+        if rev is None:
+            rev_bits = 0
+        else:
+            try:
+                rev_bits = (
+                    rev.xdx, rev.xdy, rev.ydx, rev.ydy, rev.xdw, rev.ydw,
+                    rev.zdx, rev.zdy, rev.zdz, rev.zdw, rev.wdx, rev.wdy, rev.wdz, rev.wdw,
+                )
+            except AttributeError:
+                try:
+                    rev_bits = (rev.xdx, rev.xdy, rev.ydx, rev.ydy, rev.xdw, rev.ydw)
+                except Exception:  # noqa: BLE001 -- unknown transform type → no key
+                    raise _TransBakeUncacheable(
+                        "sm fp matrix type %s" % type(rev).__name__
+                    ) from None
+            except Exception:  # noqa: BLE001 -- unreadable transform → no key
+                raise _TransBakeUncacheable(
+                    "sm fp matrix type %s" % type(rev).__name__
+                ) from None
+        w_a = node.width
+        h_a = node.height
+        body = (
+            type(node).__name__,
+            int(w_a),
+            int(h_a),
+            round(node.alpha, 4),
+            round(node.over, 4),
+            node.matrix_kind,
+            fwd_bits,
+            rev_bits,
+            clip_bits,
+            None if uniforms is None else self._sm_uniform_bits(uniforms, "u"),
+            None if shaders is None else self._sm_basic_bits(shaders, "shaders"),
+            None if mesh is None else self._sm_mesh_bits_by_value(mesh, "mesh"),
+            0 if ct is None else self._sm_one_tex(ct, "cached_texture"),
+            None if cm is None else self._sm_model_shape_bits(cm),
+            nearest,
+            None if props is None else self._sm_uniform_bits(props, "properties"),
+            (op, round(op_complete, 4), node.operation_alpha, node.operation_parameter),
+            (int(node.cropped_width), int(node.cropped_height)),
+            None,
+            tuple(kids),
+        )
+        if _SM_FP_SELFCHECK:
+            ref = self._sm_fp_render(
+                node, (0, (), has_blits, False), depth, [cap[0]], pol_map
+            )
+            if ref != body:
+                global _SM_FP_MISMATCH_TOTAL
+                try:
+                    _SM_FP_MISMATCH_TOTAL += 1
+                except Exception:  # noqa: BLE001, S110
+                    pass
+                try:
+                    sm_cache_why("fp_selfcheck_mismatch")
+                except Exception:  # noqa: BLE001, S110
+                    pass
+                return ref
+        return body
+
+    def _sm_key(self, allowance=None):
+        """(key, node_count, budget_limited) for ``node``.
+
+        ``key is None`` ⇒ the subtree can never be served from a pinned RTT.
+        ``budget_limited`` is True when the walk was cut off by the per-frame
+        node ceiling rather than by a property of the subtree: such a verdict
+        must not be remembered across frames (see the negative memory in
+        ``_sm_try_draw``). ``allowance`` caps the number of visited nodes for
+        this call (``None`` ⇒ the per-candidate ceiling only) and the nodes
+        actually visited are charged to the frame's fingerprint budget.
+        """
+        cap_nodes = _SM_FP_MAX_NODES
+        if allowance is not None:
+            allowance = int(allowance)
+            if allowance <= 0:
+                sm_cache_why("fp_frame_budget")
+                return None, 0, True
+            if allowance < cap_nodes:
+                cap_nodes = allowance
+        limited = False
         try:
             handles = set()
-            cap = [_SM_FP_MAX_NODES, handles, 0]
-            body = self._sm_fp_node(node, 0, cap, self._sm_pol_map())
+            cap = [cap_nodes, handles, 0]
+            try:
+                body = self._sm_fp_node(node, 0, cap, self._sm_pol_map())
+            except _SmFpBudgetExceeded:
+                sm_cache_why("fp_frame_budget")
+                return None, max(1, cap_nodes - max(0, int(cap[0]))), True
+            finally:
+                _spent = cap_nodes - max(0, int(cap[0]))
+                if _spent > 0:
+                    try:
+                        self._sm_fp_budget = max(
+                            0, int(getattr(self, "_sm_fp_budget", _SM_FP_FRAME_BUDGET)) - _spent
+                        )
+                    except Exception:  # noqa: BLE001, S110
+                        pass
             if body is None:
                 sm_cache_why("fp_none")
-                return None, 0
-            nodes = max(1, int(_SM_FP_MAX_NODES) - int(cap[0]))
+                return None, 0, limited
+            nodes = max(1, int(cap_nodes) - int(cap[0]))
             drawable = tuple(int(x) for x in (getattr(self, "drawable_size", None) or (0, 0)))
             layout = tuple(int(x) for x in (getattr(self, "layout_virtual_size", None) or (0, 0)))
             _vids = _movie_tex_handles() if _subtree_movie_veto_enabled() else None
@@ -3733,9 +4162,9 @@ class SurftreeMixin:
             else:
                 if handles and (handles & set(_vids)):
                     sm_cache_why("movie_texture_in_subtree")
-                    return None, 0
+                    return None, 0, limited
                 _nonce = 0
-            return ("sm1", _nonce, drawable, layout, body), nodes
+            return ("sm1", _nonce, drawable, layout, body), nodes, limited
         except _TransBakeUncacheable as e:
             global _SM_UNCACHEABLE_TOTAL
             try:
@@ -3746,7 +4175,10 @@ class SurftreeMixin:
                 sm_cache_why(str(e)[:48])
             except Exception:  # noqa: BLE001, S110
                 pass
-            return None, 0
+            # Visited-node count is returned on the refusal path too: the
+            # per-frame ledger must see the cost of a walk that proved the
+            # subtree uncacheable (it is charged to sm_fp_n_none).
+            return None, max(1, int(cap_nodes) - max(0, int(cap[0]))), limited
         except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
             global _SM_KEY_FAIL_TOTAL
             try:
@@ -3754,7 +4186,7 @@ class SurftreeMixin:
             except Exception:  # noqa: BLE001, S110
                 pass
             _host_draw_fail("sm_key", e)
-            return None, 0
+            return None, 0, False
 
     # --- store / eviction ----------------------------------------------------
 
@@ -3860,6 +4292,7 @@ class SurftreeMixin:
                 "_sm_cur_pos",
                 "_sm_prev_pos",
                 "_sm_streak",
+                "_sm_neg",
             ):
                 d = getattr(self, name, None)
                 if d:
@@ -3868,6 +4301,41 @@ class SurftreeMixin:
             pass
 
     # --- bake / draw ---------------------------------------------------------
+
+    def _sm_fp_allowance(self, acct_ms: float) -> int:
+        """Per-candidate fingerprint node ceiling for this frame.
+
+        Hard bound: ``sum(allowed nodes) <= _SM_FP_FRAME_BUDGET`` per product
+        frame, further trimmed by the accounting time left in the frame
+        (``_SM_ACCT_FRAME_MS`` minus what the frame already spent), using the
+        frame's own measured per-node cost. A candidate that would need more
+        than its allowance is cut off mid-walk and simply not cached this
+        frame — the walk then draws it as usual, so nothing about the rendered
+        pixels depends on this bound; only *when* (or whether) a subtree gets
+        a pinned RTT does.
+        """
+        try:
+            left = int(getattr(self, "_sm_fp_budget", _SM_FP_FRAME_BUDGET))
+        except Exception:  # noqa: BLE001, S110
+            left = _SM_FP_FRAME_BUDGET
+        if left <= 0:
+            return 0
+        _f = getattr(self, "_sm_f", None)
+        if _f is None:
+            return min(left, _SM_FP_MAX_NODES)
+        rem_ms = float(_SM_ACCT_FRAME_MS) - float(acct_ms)
+        if rem_ms <= 0.0:
+            return 0
+        fpn = int(_f[_SM_F_FP_N])
+        us = (_f[_SM_F_FP_MS] * 1e6 / fpn) if fpn >= 32 else float(_SM_FP_US_PER_NODE)
+        if us < 0.2:
+            us = 0.2
+        allow = int((rem_ms * 1000.0) / us)
+        if allow > left:
+            allow = left
+        if allow > _SM_FP_MAX_NODES:
+            allow = _SM_FP_MAX_NODES
+        return allow if allow > 0 else 0
 
     def _sm_bake_box(self, node):
         """Bake box (w, h) or (0, 0) when the box would not fit the surface."""
@@ -4046,6 +4514,10 @@ class SurftreeMixin:
             if self._is_dissolve_node(node) or self._is_imagedissolve_node(node):
                 return False
             st = self._sm_state()
+            _smf = getattr(self, "_sm_f", None)
+            if _smf is None:
+                _smf = _sm_fresh_f()
+                self._sm_f = _smf
             stamp = self._sm_geometry_stamp()
             if stamp != getattr(self, "_sm_stamp", None):
                 # Resize / layout change: a pinned bake can not survive it.
@@ -4066,20 +4538,71 @@ class SurftreeMixin:
             if gate is not None and int(gate.get(nid, 0)) > frame:
                 sm_cache_why("churn_gated_node")
                 _sm_miss_count()
+                _smf[_SM_F_GATE] += 1
                 return False
             if slot is not None and pos_gate is not None and int(pos_gate.get(slot, 0)) > frame:
                 sm_cache_why("churn_gated_slot")
                 _sm_miss_count()
+                _smf[_SM_F_GATE] += 1
+                return False
+            # Negative memory (sound: it can only DELAY a bake, never serve a
+            # stale RTT). Two verdicts are remembered per candidate identity
+            # for _SM_NEG_TTL frames:
+            #   * "small"       — the subtree provably holds < _SM_MIN_NODES
+            #                     nodes, so neither the count nor the
+            #                     fingerprint walk can pay off;
+            #   * "uncacheable" — the fingerprint proved the subtree can never
+            #                     be served from a pinned RTT (dissolve node,
+            #                     surface-like leaf, ...), so every frame used
+            #                     to re-walk it just to re-learn that.
+            # A verdict reached only because the per-frame budget ran out is
+            # NOT remembered (it says nothing about the subtree).
+            neg = self._sm_neg
+            nkey = slot if slot is not None else nid
+            v = neg.get(nkey)
+            if v is not None:
+                if int(v[0]) > frame:
+                    _smf[_SM_F_NEG] += 1
+                    _sm_miss_count()
+                    return False
+                neg.pop(nkey, None)
+            # Accounting ceiling: this frame has already spent its count +
+            # fingerprint budget of wall time, so no further candidate is
+            # evaluated (the leftover nodes fall back to the plain walk).
+            _acct_ms = (_smf[_SM_F_CNT_MS] + _smf[_SM_F_FP_MS]) * 1000.0
+            if _acct_ms >= _SM_ACCT_FRAME_MS:
+                sm_cache_why("acct_frame_budget")
+                _smf[_SM_F_ACCT_CAP] += 1
                 return False
             _t0 = _time.perf_counter()
+            _b0 = int(getattr(self, "_sm_count_budget", _SM_COUNT_FRAME_BUDGET))
             cnt = self._sm_count_nodes(node)
             _t1 = _time.perf_counter()
+            _smf[_SM_F_CALLS] += 1
+            _smf[_SM_F_CNT_N] += _b0 - int(getattr(self, "_sm_count_budget", _b0))
+            _smf[_SM_F_CNT_MS] += _t1 - _t0
             if cnt is None:
+                _smf[_SM_F_CNT_NONE] += 1
                 return False
-            key, nodes = self._sm_key(node)
+            if cnt == _SM_SMALL:
+                # Subtree below the eligibility floor: remember it briefly so
+                # the next frames skip the count walk as well.
+                _smf[_SM_F_SMALL] += 1
+                neg[nkey] = (frame + _SM_NEG_TTL, 1)
+                return False
+            key, nodes, limited = self._sm_key(self._sm_fp_allowance(_acct_ms))
             _t2 = _time.perf_counter()
+            _smf[_SM_F_FP_N] += int(nodes)
+            _smf[_SM_F_FP_MS] += _t2 - _t1
             _sm_cost(cnt, nodes, (_t1 - _t0), (_t2 - _t1))
             if key is None:
+                _smf[_SM_F_KEY_NONE] += 1
+                _smf[_SM_F_FP_N_NONE] += int(nodes)
+                if int(nodes) > 1 and not limited:
+                    # The refusal is a property of the subtree, not of the
+                    # frame: do not pay for the same walk every frame. A walk
+                    # cut off by the frame ceiling is NOT remembered.
+                    neg[nkey] = (frame + _SM_NEG_TTL, 2)
                 return False
             nw, nh = self._sm_bake_box(node)
             if nw <= 0 or nh <= 0:
@@ -4091,11 +4614,17 @@ class SurftreeMixin:
             ent = st.get(key)
             if ent is not None and int(ent.frame) == frame - 1:
                 # 2nd consecutive frame with the same key → reuse is allowed.
-                if self._sm_entry_alive(ent):
+                _t3 = _time.perf_counter()
+                _alive = self._sm_entry_alive(ent)
+                _t4 = _time.perf_counter()
+                _smf[_SM_F_ALIVE_MS] += _t4 - _t3
+                if _alive:
                     ent.frame = frame
                     st.pop(key, None)
                     st[key] = ent
                     self._sm_draw_entry(ent, ctx)
+                    _smf[_SM_F_TAIL_MS] += _time.perf_counter() - _t4
+                    _smf[_SM_F_HIT] += 1
                     _SM_HITS += 1
                     _SM_HIT_TOTAL += 1
                     _SM_NODES_SAVED += max(0, int(ent.nodes) - 1)
@@ -4138,17 +4667,24 @@ class SurftreeMixin:
                 streak.pop(skey, None)
                 sm_cache_why("churn_backoff")
                 _sm_miss_count()
+                _smf[_SM_F_MISS] += 1
                 return False
             if ent is not None:
                 # Same key seen, but not on the previous frame: stale entry.
                 sm_cache_why("stale_entry_rebake")
                 st.pop(key, None)
                 self._sm_retire(ent, defer=True)
+            _t5 = _time.perf_counter()
             baked = self._sm_bake_pin(node, key, nw, nh, nodes, frame)
+            _t6 = _time.perf_counter()
+            _smf[_SM_F_BAKE_MS] += _t6 - _t5
             if baked is None:
                 sm_cache_why("bake_refused")
+                _smf[_SM_F_MISS] += 1
                 return False
             self._sm_draw_entry(baked, ctx)
+            _smf[_SM_F_PINS] += 1
+            _smf[_SM_F_MISS] += 1
             _sm_miss_count()
             return True
         except Exception as e:  # noqa: BLE001 -- cache failure must never abort frame

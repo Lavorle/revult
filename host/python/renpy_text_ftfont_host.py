@@ -93,13 +93,21 @@ def _glyph_skin_stats_tick():
 
 
 def _glyph_skin_enabled() -> bool:
+    """Default ON (proven bit-equal by the golden A/B in c2892491e/0b397c7a7).
+
+    ``RENPY_HOST_TEXT_GLYPH_SKIN=0`` rolls back to the live draw.text path
+    for measurement A/B; the value is parsed once per process.
+    """
     global _GLYPH_SKIN_ENV
     if _GLYPH_SKIN_ENV is None:
-        raw = os.environ.get("RENPY_HOST_TEXT_GLYPH_SKIN", "0")
-        try:
-            _GLYPH_SKIN_ENV = 1 if str(raw).strip().lower() in ("1", "true", "yes", "on") else 0
-        except Exception:  # noqa: BLE001 — malformed env must not abort frames
-            _GLYPH_SKIN_ENV = 0
+        raw = os.environ.get("RENPY_HOST_TEXT_GLYPH_SKIN")
+        if raw is None:
+            _GLYPH_SKIN_ENV = 1
+        else:
+            try:
+                _GLYPH_SKIN_ENV = 0 if str(raw).strip().lower() in ("0", "false", "no", "off") else 1
+            except Exception:  # noqa: BLE001 — malformed env must not abort frames
+                _GLYPH_SKIN_ENV = 1
     return _GLYPH_SKIN_ENV == 1
 
 

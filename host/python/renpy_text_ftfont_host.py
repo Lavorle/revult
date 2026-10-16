@@ -32,6 +32,114 @@ def _ui_trace_once(key: str, msg: str) -> None:
     print(f"[UI_TRACE {key}] {msg}", flush=True)
 
 
+# ============================================================================
+# Glyph skin cache (project O1, default OFF).
+#
+# Left in USS is the Pillow ``draw.text`` C-side rasterizer for each glyph —
+# even after the tight-crop change (commit 8bf89af92) it still owns ~6.4ms of
+# the 19.3ms/frame settings-page python budget, mostly re-rasterizing the same
+# (font, character, ink-color, outline params, subpixel phase) tuples every
+# frame (hover/typewriter/UI labels share the same shapes frame after frame).
+#
+# The cache keys on the *quantized subpixel phase* (Pillow's freetype
+# getmask2 ``start`` fraction grid / 256) so a hit draws the identical
+# rasterization Pillow would produce live; the skin is stamped with
+# ``Image.paste`` which uses the same per-channel linear blend math as
+# draw.text's draw_bitmap. Bit-equality is verified by gate Q-AB
+# (RENPY_HOST_TEXT_GLYPH_SKIN=1 runs are compared to =0 runs on the text
+# heavy settings pages) before the default may flip to ON.
+#
+# Fallbacks: sized conservatively (asc+desc facing box), ring-pass kept inside
+# the skin so ring-vs-silhouette z-order stays as drawn live; underline /
+# strikethrough lines stay out of the cache (they depend on glyph width lines).
+# ============================================================================
+_GLYPH_SKIN_CACHE: dict[tuple, tuple] = {}
+_GLYPH_SKIN_CAP = 2048
+_GLYPH_SKIN_ENV: int | None = None
+
+
+def _glyph_skin_enabled() -> bool:
+    global _GLYPH_SKIN_ENV
+    if _GLYPH_SKIN_ENV is None:
+        raw = os.environ.get("RENPY_HOST_TEXT_GLYPH_SKIN", "0")
+        try:
+            _GLYPH_SKIN_ENV = 1 if str(raw).strip().lower() in ("1", "true", "yes", "on") else 0
+        except Exception:  # noqa: BLE001 — malformed env must not abort frames
+            _GLYPH_SKIN_ENV = 0
+    return _GLYPH_SKIN_ENV == 1
+
+
+def _phase_q(f: float) -> int:
+    """Quantize the fractional pixel coordinate to Pillow's subpixel grid."""
+    try:
+        frac = f - float(int(f))
+    except Exception:  # noqa: BLE001
+        return 0
+    return int(round(frac * 256.0)) & 0xFF
+
+
+def _glyph_skin(font_key, font, ch, fill, outline_fill, r, fx, fy, asc, desc, size, vertical):
+    """Rasterize (and cache) one glyph incl. the outline ring; return
+    (skin_img, pad_x, pad_y) or None when Pillow is unavailable."""
+    if font is None:
+        return None
+    key = (
+        font_key,
+        ch,
+        fill,
+        outline_fill,
+        r,
+        _phase_q(fx),
+        _phase_q(fy),
+    )
+    hit = _GLYPH_SKIN_CACHE.get(key)
+    if hit is not None:
+        return hit
+    pad = r + 2 + int(size / 16) + 1
+    try:
+        sw = max(2, int(float(font.getlength(ch))) + 2 * pad)
+    except Exception:  # noqa: BLE001
+        sw = max(2, int(size * 0.8) + 2 * pad)
+    if vertical:
+        sh = int(size) * 2 + 2 * pad
+    else:
+        sh = int(asc + desc) + 2 * pad
+    if sw <= 2 * pad or sh <= 2 * pad:
+        return None
+    try:
+        skin = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(skin)
+        if outline_fill is not None and r > 0:
+            if r <= 1:
+                offsets = (
+                    (-1, 0), (1, 0), (0, -1), (0, 1),
+                    (-1, -1), (-1, 1), (1, -1), (1, 1),
+                )
+            else:
+                offsets = [
+                    (-r, 0), (r, 0), (0, -r), (0, r),
+                    (-r, -r), (-r, r), (r, -r), (r, r),
+                ]
+                m = max(1, round(r * 0.707))
+                offsets.extend(
+                    [
+                        (-m, -r), (m, -r), (-m, r), (m, r),
+                        (-r, -m), (-r, m), (r, -m), (r, m),
+                    ]
+                )
+            for dx, dy in offsets:
+                sd.text((pad + fx + dx, pad + fy + dy), ch, font=font, fill=outline_fill)
+        sd.text((pad + fx, pad + fy), ch, font=font, fill=fill)
+        if _GLYPH_SKIN_CACHE and len(_GLYPH_SKIN_CACHE) >= _GLYPH_SKIN_CAP:
+            _GLYPH_SKIN_CACHE.clear()
+        _GLYPH_SKIN_CACHE[key] = (skin, pad, pad)
+        return _GLYPH_SKIN_CACHE[key]
+    except Exception:  # noqa: BLE001  (draw fail -> live path)
+        return None
+
+
+
+
 def init():
     global _initialized
     _initialized = True
@@ -114,6 +222,20 @@ class FTFont:
         self._apply_outline_metrics()
         self.underline_offset = int(self.size * 0.1)
         self.underline_thickness = max(1, self.size // 16)
+        # Glyph-skin cache key identity (stable string, never a recycled id()).
+        try:
+            self.skin_font_key = (
+                getattr(face, "fn", "") or "",
+                int(getattr(face, "index", 0) or 0),
+                int(size),
+                int(bool(bold)),
+                int(bool(italic)),
+                int(self.outline),
+                int(bool(antialias)),
+                int(bool(vertical)),
+            )
+        except Exception:  # noqa: BLE001 — identity fallback avoids blocking product
+            self.skin_font_key = (getattr(face, "fn", "") or "", int(size), "fallback")
 
     def _apply_outline_metrics(self):
         """Expand ascent/descent/height after raw metrics (or VF recompute)."""
@@ -305,7 +427,39 @@ class FTFont:
             x = float(xo) + float(g.x) + float(getattr(g, "x_offset", 0)) - ox_ofs
             y = float(yo) + float(g.y) + float(getattr(g, "y_offset", 0)) - float(g.ascent) - oy_ofs
             try:
-                if font is not None:
+                xint = float(int(x))
+                yint = float(int(y))
+                fx = x - xint
+                fy = y - yint
+                skin = None
+                if _glyph_skin_enabled():
+                    skin = _glyph_skin(
+                        getattr(self, "skin_font_key", None),
+                        font,
+                        c,
+                        fill,
+                        outline_fill,
+                        r,
+                        fx,
+                        fy,
+                        self.ascent,
+                        self.descent,
+                        self.size,
+                        self.vertical,
+                    )
+                if skin is not None:
+                    skin_img, spad_x, spad_y = skin
+                    # paste uses the same per-channel linear blend as
+                    # draw.text's draw_bitmap; placement maps the in-skin
+                    # integer pad back to the live integer position, keeping
+                    # the fractional subpixel phase inside the cached
+                    # rasterization (fx/fy were baked in).
+                    img.paste(
+                        skin_img,
+                        (int(xint) - spad_x, int(yint) - spad_y),
+                        skin_img,
+                    )
+                elif font is not None:
                     if outline_fill is not None and r > 0:
                         if r <= 1:
                             offsets = (

@@ -2847,6 +2847,7 @@ impl GpuArena {
             self.encode_pass(gpu, &swap_view, &cmds, false)?;
         }
         if let Some(frame) = frame {
+            crate::input_trace::trace_present("full", cmds.len());
             frame.present();
         }
         // Wave32 FrameStats: record per-frame counters for perf gate.
@@ -2987,6 +2988,7 @@ impl GpuArena {
                 self.encode_pass(gpu, &swap_view, &cmds, false)?;
             }
             if let Some(frame) = frame {
+                crate::input_trace::trace_present("lastrt_fresh", cmds.len());
                 frame.present();
             }
             return Ok(true);
@@ -3010,6 +3012,7 @@ impl GpuArena {
             });
         self.blit_game_rt_to_swapchain(&mut encoder, gpu, &frame);
         gpu.queue.submit(Some(encoder.finish()));
+        crate::input_trace::trace_present("lastrt", self.last_product_cmds.len());
         frame.present();
         Ok(true)
     }
@@ -3084,6 +3087,7 @@ impl GpuArena {
             self.encode_pass(gpu, &swap_view, &cmds, false)?;
         }
         if let Some(frame) = frame {
+            crate::input_trace::trace_present("repres", self.last_product_cmds.len());
             frame.present();
         }
         self.last_re_present_present_ms = present_t0.elapsed().as_secs_f32() * 1000.0;

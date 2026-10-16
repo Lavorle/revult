@@ -11,7 +11,10 @@
 //!   (e) wait_until early-exit because EVENT_QUEUE non-empty (Phase 0 dual-signal)
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU8};
 use std::sync::OnceLock;
+use std::time::Instant;
+use winit::event::{ElementState, MouseButton, WindowEvent};
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
 static DUMPED: AtomicBool = AtomicBool::new(false);
@@ -109,6 +112,119 @@ impl Drop for DumpOnDrop {
     fn drop(&mut self) {
         dump_if_enabled();
     }
+}
+
+static VERBOSE: OnceLock<bool> = OnceLock::new();
+static T0: OnceLock<Option<Instant>> = OnceLock::new();
+static LAST_MOTION_T_MS: AtomicI64 = AtomicI64::new(-1);
+static PREST_KIND_MASK: AtomicU8 = AtomicU8::new(0);
+
+fn verbose() -> bool {
+    *VERBOSE.get_or_init(|| {
+        matches!(
+            std::env::var("RENPY_HOST_INPUT_TRACE").ok().as_deref(),
+            Some("2")
+        )
+    })
+}
+
+/// Process-start anchor for the per-line `t=` clock (only meaningful when
+/// stdout of this run is compared line-later; the anchor is set at the first
+/// verbose call, which is always early in the first event).
+fn elapsed_ms() -> u64 {
+    let now = Instant::now();
+    let t0 = T0.get_or_init(|| {
+        PREST_KIND_MASK.store(0, Ordering::Relaxed);
+        Some(now)
+    });
+    match t0 {
+        Some(t0) => now.duration_since(*t0).as_millis() as u64,
+        None => 0,
+    }
+}
+
+fn is_new_burst(kind_tag: u8 /*1=motion,2=others*/) -> bool {
+    // Motion-only throttle: swallow repeats within 30ms so a flooded wire
+    // never prints a wall of lines; a click/key always prints.
+    let now = elapsed_ms() as i64;
+    match kind_tag {
+        1 => {
+            let last = LAST_MOTION_T_MS.load(Ordering::Relaxed);
+            if last >= 0 && (now - last) < 30 {
+                return false;
+            }
+            LAST_MOTION_T_MS.store(now, Ordering::Relaxed);
+            true
+        }
+        _ => true,
+    }
+}
+
+/// Verbose per-event line (RENPY_HOST_INPUT_TRACE=2): kind + coords so an
+/// offline analyzer can pair click→present latency against ITRACE PRES lines.
+pub fn trace_window_event(event: &WindowEvent) {
+    if !verbose() {
+        return;
+    }
+    match event {
+        WindowEvent::CloseRequested => {
+            eprintln!("[ITRACE] EVT t={} ms kind=quit", elapsed_ms());
+        }
+        WindowEvent::KeyboardInput { event, .. } => {
+            let pressed = event.state == ElementState::Pressed;
+            eprintln!(
+                "[ITRACE] EVT t={} ms kind={} key=?",
+                elapsed_ms(),
+                if pressed { "key_down" } else { "key_up" }
+            );
+        }
+        WindowEvent::CursorMoved { position, .. } => {
+            if is_new_burst(1) {
+                eprintln!(
+                    "[ITRACE] EVT t={} ms kind=motion x={} y={} (throttled-burst)",
+                    elapsed_ms(),
+                    position.x as i32,
+                    position.y as i32
+                );
+            }
+        }
+        WindowEvent::MouseInput { state, button, .. } => {
+            let pressed = *state == ElementState::Pressed;
+            let btn = match button {
+                MouseButton::Left => 1,
+                MouseButton::Middle => 2,
+                MouseButton::Right => 3,
+                MouseButton::Back => 4,
+                MouseButton::Forward => 5,
+                MouseButton::Other(n) => *n as i32,
+            };
+            eprintln!(
+                "[ITRACE] EVT t={} ms kind={} btn={}",
+                elapsed_ms(),
+                if pressed { "btn_down" } else { "btn_up" },
+                btn
+            );
+        }
+        WindowEvent::MouseWheel { .. } => {
+            eprintln!("[ITRACE] EVT t={} ms kind=wheel", elapsed_ms());
+        }
+        _ => {}
+    }
+}
+
+/// Per-actual-swapchain-present line: every product full encode, every
+/// re-encoded last-RT present, every re-present. Offline analyzers pair these
+/// with EVT lines (t ordering) to nail click→visible-response latency.
+pub fn trace_present(kind: &str, n_cmds: usize) {
+    if !verbose() {
+        return;
+    }
+    eprintln!(
+        "[ITRACE] PRES t={} ms kind={} n_cmds={}",
+        elapsed_ms(),
+        kind,
+        n_cmds
+    );
 }
 
 /// Install SIGTERM/SIGINT → dump so `timeout` SIGTERM can flush counters.

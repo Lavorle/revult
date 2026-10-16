@@ -241,6 +241,7 @@ pub mod a11y {
 
 pub fn handle_window_event(event: &WindowEvent) {
     crate::input_trace::count_handle_window_event();
+    crate::input_trace::trace_window_event(event);
     match event {
         WindowEvent::CloseRequested => {
             EVENT_QUEUE.push(HostEvent::simple(types::QUIT));

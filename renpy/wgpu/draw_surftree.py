@@ -1036,7 +1036,10 @@ _SM_COUNT_FRAME_BUDGET = 20000  # total eligibility-count node visits per produc
 _SM_SEEN_CAP = 48             # stale-entry / churn bookkeeping table cap
 _SM_BUDGET_FACTOR = 3         # byte budget = factor × drawable area × 4
 _SM_FALLBACK_DRAWABLE = (2560, 1440)
-_SM_UNSTABLE_BACKOFF = 45     # frames a key-churning candidate slot is skipped
+_SM_UNSTABLE_BACKOFF = 45     # first-episode backoff after a churn streak
+_SM_UNSTABLE_BACKOFF_LONG = 600   # backoff once a slot has churned repeatedly
+_SM_UNSTABLE_EPISODES = 3     # churn episodes before the slot is retired for good
+_SM_UNSTABLE_FOREVER = 1 << 40    # "never try this slot again" frame stamp
 _SM_NEG_TTL = 15              # frames a "small"/"uncacheable" verdict is remembered
 _SM_FP_FRAME_BUDGET = 3072    # hard per-product-frame ceiling on fingerprint node visits
 _SM_ACCT_FRAME_MS = 6.0       # per-frame accounting (count+fingerprint) time ceiling (ms)
@@ -4668,12 +4671,33 @@ class SurftreeMixin:
                 n_streak = 0
                 streak.pop(skey, None)
             if n_streak >= _SM_CHURN_STREAK:
+                # A slot whose key changes on every frame holds content that is
+                # genuinely animating (typewriter preview, pill dissolve), so
+                # caching it can only ever cost a bake per frame while the walk
+                # it replaces is cheap. Escalate: first episode -> short
+                # backoff; a slot that keeps coming back -> long backoff; a
+                # repeat offender -> retire it for the rest of the interaction
+                # (walking is cheap, re-baking every frame is not).
+                episodes = getattr(self, "_sm_churn_episodes", None)
+                if episodes is None:
+                    episodes = {}
+                    self._sm_churn_episodes = episodes
+                n_ep = int(episodes.get(skey, 0)) + 1
+                episodes[skey] = n_ep
+                if n_ep >= _SM_UNSTABLE_EPISODES:
+                    backoff = _SM_UNSTABLE_FOREVER
+                    sm_cache_why("churn_retired")
+                elif n_ep >= 2:
+                    backoff = _SM_UNSTABLE_BACKOFF_LONG
+                    sm_cache_why("churn_backoff_long")
+                else:
+                    backoff = _SM_UNSTABLE_BACKOFF
+                    sm_cache_why("churn_backoff")
                 if gate is not None:
-                    gate[nid] = frame + _SM_UNSTABLE_BACKOFF
+                    gate[nid] = frame + backoff
                 if pos_gate is not None and slot is not None:
-                    pos_gate[slot] = frame + _SM_UNSTABLE_BACKOFF
+                    pos_gate[slot] = frame + backoff
                 streak.pop(skey, None)
-                sm_cache_why("churn_backoff")
                 _sm_miss_count()
                 _smf[_SM_F_MISS] += 1
                 return False

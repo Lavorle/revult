@@ -91,3 +91,22 @@
 | GLYPHSKIN 命中率 | n/a | **100%**（cache 稳定 254、~26k stamps/10s） |
 
 含义：**设置页（含打字机预览）的每帧 Python 预算从整页 31.5ms（预热裁剪前）压到同窗 12.54ms（三连优化后）**，戛然而止于「audio 通道 + movie 节拍 + 字形链」三层独立验证。真机可见（RADV 全屏同窗 dyn 门）为 210–227fps present、iv_p95 5.4ms（63e49cb5f 后）。
+
+## 四、收官状态（HEAD bfca3546a，2026-10-17）
+
+全谱终验（全部本机单独实例执行）：
+- cargo check ✅ / cargo test **103 passed / 0 failed** ✅
+- pytest **177 passed / 1 skipped**（含 6 例 glyph-skin 单元 ON/OFF 逐位）✅
+- phase9 金库 **20/20 PASS**（MAE 与基线逐位一致）✅
+- `ldd` 无 libSDL（AC2）✅
+- 真机 RADV 全屏可见（dyn 门 26 场景）：S0 视频带 present **237.31 fps**、设置各页 **237–252 fps**、iv_p95 ≤4.9ms、movie 内容 32fps 稳定 ✅
+- 系统状态：/tmp 1.5G/16G；空闲内存 ~16Gi；无残留引擎实例 ✅
+
+goal 数量级结论（相对报障基线）：
+1. 设置界面：~15fps（感知）→ 237–252fps present（同口径合成输入全屏直测）；
+2. 标题视频：内容 10fps 步进 → 32fps 发布、present 237；
+3. 设置页长驻恶化曲线 → 断根（音频通道 13–15 封顶、无随时间增长项，4–180s slice 对照全部 ≤1.07×）；
+4. 设置按钮响应：click→present 全程 20–37ms；通道雪崩消除后不再出现「点不进/卡死」；
+5. 引擎退出：--smoke 准时收（看门狗 10s 兜底，69 分钟空转类别消除）。
+
+待用户主观复测：`bash host/scripts/run_huangmeic_playtest.sh --smoke=180`。回退旋钮总表见上文；提交索引 f31e13269 / 783153c70 / 8bf89af92 / 63e49cb5f / 23bbe437c / d443d8c01 / a86301536 / b3540f784 / bfca3546a。

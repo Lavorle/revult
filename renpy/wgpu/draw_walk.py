@@ -344,9 +344,16 @@ class WalkMixin:
             # cache (key derived from the same _trans_bake_key fingerprint,
             # namespaced with the dest box; RENPY_HOST_REVERSE_BAKE_CACHE
             # gates it, default on). Key None → normal bake, unchanged.
-            _rev_key = self._reverse_bake_key_for(child, _dest)
+            # hmc_fix4 A: the key is derived LAZILY, inside
+            # _child_to_texture, only if every cheap fast path (cached_texture
+            # / _extract_host_texture / full-pixel solid slot / surface load)
+            # declined — a child that resolves cheaply never pays for the
+            # 512-node fingerprint walk (measured 95–96.5% waste before).
             tex = self._child_to_texture(
-                child, _trans_key=_rev_key, _trans_kind="rev", _dest_size=_dest
+                child,
+                _trans_key_fn=lambda: self._reverse_bake_key_for(child, _dest),
+                _trans_kind="rev",
+                _dest_size=_dest,
             )
             if tex is not None:
                 dw, dh = self._reverse_dest_size(node, child, (nw, nh))
@@ -359,9 +366,11 @@ class WalkMixin:
                 self._draw_node(child, ctx.ox + cx, ctx.oy + cy)
                 continue
             _dest = self._reverse_dest_override(child, node, (nw, nh))
-            _rev_key = self._reverse_bake_key_for(child, _dest)
             tex = self._child_to_texture(
-                child, _trans_key=_rev_key, _trans_kind="rev", _dest_size=_dest
+                child,
+                _trans_key_fn=lambda: self._reverse_bake_key_for(child, _dest),
+                _trans_kind="rev",
+                _dest_size=_dest,
             )
             if tex is not None:
                 dw, dh = self._reverse_dest_size(node, child, (nw, nh))
@@ -395,15 +404,23 @@ class WalkMixin:
         # uniforms minus u_renpy_dissolve + matrix bits + movie publish seq)
         # matches. Key build failure / any exception → None → normal bake
         # (frame order unaffected). The NEW slot never consults the cache.
-        _old_key = None
-        try:
-            # Cross-frame old-slot cache is only engaged in the mid band
-            # (complete is strictly inside (0.001, 0.999) here).
-            if SurftreeWalkerCacheGate.enabled() and old_c is not None:
-                _old_key = self._trans_bake_key(old_c)
-        except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
-            _host_draw_fail("dissolve_mid.trans_bake_key", e)
-            _old_key = None
+        #
+        # hmc_fix4 A: the key is derived LAZILY (inside _child_to_texture,
+        # after the cheap fast paths declined) — deriving it here meant every
+        # dissolve mid frame paid a fingerprint walk even when the old slot
+        # resolved straight to a cached_texture / host texture. The cross-frame
+        # old-slot cache is only engaged in the mid band (complete is strictly
+        # inside (0.001, 0.999) here), which is exactly where the lambdas below
+        # are reachable.
+        def _old_key_fn(_oc=old_c):
+            if not (SurftreeWalkerCacheGate.enabled() and _oc is not None):
+                return None
+            try:
+                return self._trans_bake_key(_oc)
+            except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
+                _host_draw_fail("dissolve_mid.trans_bake_key", e)
+                return None
+
         try:
             old_n = DissolveStrategy.ht_count(HostTexture, int, self._iter_children, old_c, [120])
             new_n = DissolveStrategy.ht_count(HostTexture, int, self._iter_children, new_c, [120])
@@ -412,7 +429,7 @@ class WalkMixin:
                 try:
                     # Old slot (children[0]) only — new slot always bakes.
                     if _slot_i == 0:
-                        tex = self._child_to_texture(child, _trans_key=_old_key)
+                        tex = self._child_to_texture(child, _trans_key_fn=_old_key_fn)
                     else:
                         tex = self._child_to_texture(child)
                 except Exception as e:

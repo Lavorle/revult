@@ -33,6 +33,16 @@ def bake_frame_flush(now: float = 0.0) -> None:
     window line through the same ``_phase0_log`` formatter.
     """
     try:
+        from .draw_surftree import _keys_frame_flush
+
+        # hmc_fix4 A: close the key-derivation window BEFORE the shared
+        # bake-line tail peeks it, so a key derived and dropped inside this
+        # product frame is attributed to the very frame it was derived in
+        # (``keys_derived`` / ``keys_wasted`` land in the same PHASE0 line).
+        _keys_frame_flush()
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        pass
+    try:
         _bake_frame_flush_orig(now)
     finally:
         try:

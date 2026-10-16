@@ -199,10 +199,16 @@ _REVERSE_BAKE_CACHE_ON: bool | None = None
 _REV_CACHE_HITS = 0
 _REV_CACHE_MISSES = 0
 _REV_CACHE_KEY_FAILS = 0
+# hmc_fix4 B: misses where the private pinned RTT was NOT allocated because the
+# key had not been observed before (a fresh key every frame = a churning
+# subtree, which can never hit; pinning it only buys a pinned-RTT create +
+# destroy per frame). The normal pooled bake runs instead — identical pixels.
+_REV_CACHE_DEFERS = 0
 # Lifetime totals (offline greps / hermetic gates). Mirrors trans_cache_totals.
 _REV_CACHE_HIT_TOTAL = 0
 _REV_CACHE_MISS_TOTAL = 0
 _REV_CACHE_KEY_FAIL_TOTAL = 0
+_REV_CACHE_DEFER_TOTAL = 0
 
 
 def reverse_bake_cache_enabled() -> bool:
@@ -216,10 +222,68 @@ def reverse_bake_cache_enabled() -> bool:
     return v
 
 
+# =============================================================================
+# hmc_fix4 B — reverse pin stability gate.
+#
+# Evidence (headless prefs-effect run with RENPY_HOST_REVKEY_TRACE=1): the
+# candidate that churned one pinned RTT per frame (render 1920x255, dest
+# 806x107) is the preferences page whose subtree carries the game's live
+# PreviewSayText typewriter preview: its Text is re-rendered and re-uploaded
+# every frame, so the fingerprint legitimately differs every frame —
+#   body.kids[0].fp.kids[2].fp.kids[0].fp.kids.n          0 -> 4 -> 2
+#   ...kids[0].fp.size  (surface handle)  2801 -> 2811 -> 2832
+#   ...kids[1].offset  (0.0, 91.5) -> (2.25, 2.25)
+# and the key can never repeat while the preview types. The key is therefore
+# NOT noisy: it correctly reports changing content, and any attempt to strip
+# the handle/dest bits would serve a stale bake (wrong pixels). What IS pure
+# waste is the pin: on every miss the cache allocated a private, non-pool
+# pinned RTT, baked into it and LRU-evicted it on the next frame's miss
+# (measured pins created == destroyed per window; 0 hits).
+#
+# Fix: a key must be seen at least once before (within _REV_PIN_SEEN_TTL
+# product frames) before a pinned RTT is allocated for it. A first-sight key
+# returns "no cache" and the caller runs the normal pooled bake — the exact
+# fallback the pin path already documents for a failed pin, so pixels are
+# unchanged; a stable key pays one deferred miss and then hits for as long as
+# it stays stable. Gate: RENPY_HOST_REV_PIN_STABLE (default on).
+# =============================================================================
+_REV_PIN_SEEN: dict = {}          # reverse key -> product frame generation
+_REV_PIN_SEEN_TTL = 8             # frames a first-sight key stays "recent"
+_REV_PIN_STABLE_ON: bool | None = None
+
+
+def rev_pin_stable_enabled() -> bool:
+    """RENPY_HOST_REV_PIN_STABLE — OnceLock parse; default on ("1")."""
+    global _REV_PIN_STABLE_ON
+    v = _REV_PIN_STABLE_ON
+    if v is None:
+        raw = os.environ.get("RENPY_HOST_REV_PIN_STABLE", "").strip().lower()
+        v = raw not in ("0", "false", "off", "no")
+        _REV_PIN_STABLE_ON = v
+    return v
+
+
+def _rev_pin_seen_before(key, gen: int) -> bool:
+    """True when ``key`` was already derived within the last TTL frames."""
+    try:
+        prev = _REV_PIN_SEEN.get(key)
+        _REV_PIN_SEEN[key] = int(gen)
+        if prev is not None and (int(gen) - int(prev)) <= _REV_PIN_SEEN_TTL:
+            return True
+        if len(_REV_PIN_SEEN) > 512:
+            cut = int(gen) - _REV_PIN_SEEN_TTL
+            for k in [k for k, g in _REV_PIN_SEEN.items() if int(g) < cut]:
+                _REV_PIN_SEEN.pop(k, None)
+        return False
+    except Exception:  # noqa: BLE001 -- gate failure → cache behaves as before
+        return True
+
+
 def _rev_cache_count(kind: str) -> None:
     """Record one reverse-cache decision (mirrors trans_cache_count contract)."""
-    global _REV_CACHE_HITS, _REV_CACHE_MISSES, _REV_CACHE_KEY_FAILS
+    global _REV_CACHE_HITS, _REV_CACHE_MISSES, _REV_CACHE_KEY_FAILS, _REV_CACHE_DEFERS
     global _REV_CACHE_HIT_TOTAL, _REV_CACHE_MISS_TOTAL, _REV_CACHE_KEY_FAIL_TOTAL
+    global _REV_CACHE_DEFER_TOTAL
     try:
         if kind == "hit":
             _REV_CACHE_HITS += 1
@@ -230,25 +294,30 @@ def _rev_cache_count(kind: str) -> None:
         elif kind == "key_fail":
             _REV_CACHE_KEY_FAILS += 1
             _REV_CACHE_KEY_FAIL_TOTAL += 1
+        elif kind == "defer":
+            _REV_CACHE_DEFERS += 1
+            _REV_CACHE_DEFER_TOTAL += 1
     except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
         pass
 
 
-def rev_cache_window_drain() -> tuple[int, int, int]:
-    """Since-last-drain (hit, miss, key_fail) — the PHASE0 tail hook drains."""
+def rev_cache_window_drain() -> tuple[int, int, int, int]:
+    """Since-last-drain (hit, miss, key_fail, pin_deferred) window counters."""
     return (
         int(_REV_CACHE_HITS),
         int(_REV_CACHE_MISSES),
         int(_REV_CACHE_KEY_FAILS),
+        int(_REV_CACHE_DEFERS),
     )
 
 
-def rev_cache_totals() -> tuple[int, int, int]:
-    """Lifetime (hit, miss, key_fail) totals for hermetic gates."""
+def rev_cache_totals() -> tuple[int, int, int, int]:
+    """Lifetime ``(hit, miss, key_fail, pin_deferred)`` totals for gates."""
     return (
         int(_REV_CACHE_HIT_TOTAL),
         int(_REV_CACHE_MISS_TOTAL),
         int(_REV_CACHE_KEY_FAIL_TOTAL),
+        int(_REV_CACHE_DEFER_TOTAL),
     )
 
 
@@ -267,7 +336,7 @@ def _rev_cache_drain_emit(now: float = 0.0) -> None:
     ``trans_cache_count`` contract; no draw_debug attribute is rebound, so
     renpy's module backup pickle contract is untouched.
     """
-    global _REV_CACHE_HITS, _REV_CACHE_MISSES, _REV_CACHE_KEY_FAILS
+    global _REV_CACHE_HITS, _REV_CACHE_MISSES, _REV_CACHE_KEY_FAILS, _REV_CACHE_DEFERS
     try:
         from .draw_debug import _phase0_log
     except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
@@ -276,17 +345,600 @@ def _rev_cache_drain_emit(now: float = 0.0) -> None:
         h = int(_REV_CACHE_HITS)
         m = int(_REV_CACHE_MISSES)
         kf = int(_REV_CACHE_KEY_FAILS)
+        df = int(_REV_CACHE_DEFERS)
         _REV_CACHE_HITS = 0
         _REV_CACHE_MISSES = 0
         _REV_CACHE_KEY_FAILS = 0
-        t, ms, kf2 = int(_REV_CACHE_HIT_TOTAL), int(_REV_CACHE_MISS_TOTAL), int(_REV_CACHE_KEY_FAIL_TOTAL)
+        _REV_CACHE_DEFERS = 0
+        t, ms, kf2, df2 = rev_cache_totals()
         if reverse_bake_cache_enabled():
             _phase0_log(
-                "rev_cache_hit=%d miss=%d rev_key_fail=%d rev=[hit=%d miss=%d key_fail=%d]"
-                % (h, m, kf, t, ms, kf2)
+                "rev_cache_hit=%d miss=%d rev_key_fail=%d rev_pin_defer=%d"
+                " rev=[hit=%d miss=%d key_fail=%d defer=%d]"
+                % (h, m, kf, df, t, ms, kf2, df2)
             )
     except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
         pass
+
+
+# =============================================================================
+# hmc_fix4 A — bake-key derivation telemetry + frame-local derivation memo.
+#
+# Problem (independent review /tmp/hmcsv/report.txt): the subtree bake key was
+# derived at the ENTRY of every code path that *might* consult the bake cache,
+# before the cheap qualification tests ran. 2939 key derivations were measured
+# inside 30 effect samples against 103 cache lookups — 96.5% of the fingerprint
+# walks (each up to 512 nodes, depth <= 5) never reached a cache decision and
+# were thrown away un-consumed.
+#
+# Fix: the key is now derived LAZILY, immediately before the cache lookup
+# (``_child_to_texture(_trans_key_fn=...)``), so a child resolved by any cheap
+# fast path (``cached_texture`` / ``_extract_host_texture`` / full-pixel solid
+# slot / surface-load) never pays for a fingerprint. The counters below prove
+# it and guard against a regression:
+#
+#   keys_derived  _trans_bake_key invocations (one fingerprint walk each = the
+#                 cost the report measured; directly comparable to 2939/3014)
+#   keys_none     derivations that produced no key (designed conservative miss)
+#   keys_used     derived keys a cache lookup actually consumed
+#   keys_wasted   derived keys NO lookup consumed in their frame — target 0
+#   keys_dedup    derivations skipped by the frame-local memo (a second consult
+#                 of the SAME child slot inside one product frame reuses the
+#                 key derived by the first — same frame, same tree state)
+#
+# Window counters ride the existing bake PHASE0 line tail (registered through
+# draw_debug.register_bake_line_tail, exactly like the sm_* counters, so the
+# draw_debug.py line body stays untouched). The frame boundary is the same
+# drained once-per-product-frame site (draw_screen.bake_frame_flush rebind ->
+# ``_rev_cache_drain_emit``), so a key derived and dropped inside one frame is
+# attributed to THAT frame.
+# =============================================================================
+_KEYS_DERIVED = 0
+_KEYS_DERIVED_TOTAL = 0
+_KEYS_NONE = 0
+_KEYS_NONE_TOTAL = 0
+_KEYS_USED = 0
+_KEYS_USED_TOTAL = 0
+_KEYS_WASTED = 0
+_KEYS_WASTED_TOTAL = 0
+_KEYS_DEDUP = 0
+_KEYS_DEDUP_TOTAL = 0
+# id(key) -> key: strong reference to every derived-but-not-yet-consumed key,
+# so an id can never be recycled onto a different key while it is pending.
+_KEYS_PENDING: dict = {}
+_KEYS_HOOKS_ON: bool = False
+# Frame-local derivation memo: (id(child), dest_size, kind) -> key.
+# ``_KEY_MEMO_GEN`` carries the product-frame identity (``_rtt_gen``) it was
+# built for; a change of generation clears it.
+_KEY_MEMO: dict = {}
+_KEY_MEMO_GEN: list = [None]
+# Memo "absent" sentinel (a real entry value is always a key tuple).
+_KEYS_MEMO_MISS = object()
+
+
+def keys_window() -> tuple[int, int, int, int, int]:
+    """Since-last-drain ``(derived, wasted, none, used, dedup)``."""
+    return (
+        int(_KEYS_DERIVED),
+        int(_KEYS_WASTED),
+        int(_KEYS_NONE),
+        int(_KEYS_USED),
+        int(_KEYS_DEDUP),
+    )
+
+
+def keys_totals() -> tuple[int, int, int, int, int]:
+    """Lifetime totals ``(derived, wasted, none, used, dedup)`` — gates/greps."""
+    return (
+        int(_KEYS_DERIVED_TOTAL),
+        int(_KEYS_WASTED_TOTAL),
+        int(_KEYS_NONE_TOTAL),
+        int(_KEYS_USED_TOTAL),
+        int(_KEYS_DEDUP_TOTAL),
+    )
+
+
+def _keys_begin() -> None:
+    """Count one ``_trans_bake_key`` invocation (the measured fingerprint cost)."""
+    global _KEYS_DERIVED, _KEYS_DERIVED_TOTAL
+    try:
+        _KEYS_DERIVED += 1
+        _KEYS_DERIVED_TOTAL += 1
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        pass
+
+
+def _keys_note_key(key) -> None:
+    """Record one invocation outcome: ``None`` → keys_none, else → pending."""
+    global _KEYS_NONE, _KEYS_NONE_TOTAL
+    try:
+        if key is None:
+            _KEYS_NONE += 1
+            _KEYS_NONE_TOTAL += 1
+        else:
+            _KEYS_PENDING[id(key)] = key
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        pass
+
+
+def _keys_rekey(old, new) -> None:
+    """Move a pending registration from a base key to its namespaced form.
+
+    ``_reverse_bake_key`` builds ``base + ("rev", dw, dh)`` — a NEW tuple — so
+    the pending entry created for ``base`` must follow the object that is
+    actually handed to the lookup, or the key would be miscounted as wasted.
+    """
+    try:
+        if _KEYS_PENDING.pop(id(old), None) is not None:
+            _KEYS_PENDING[id(new)] = new
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        pass
+
+
+def _keys_count_consumed(key) -> None:
+    """Mark one pending derived key as consumed by a cache lookup."""
+    global _KEYS_USED, _KEYS_USED_TOTAL
+    try:
+        if _KEYS_PENDING.pop(id(key), None) is not None:
+            _KEYS_USED += 1
+            _KEYS_USED_TOTAL += 1
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        pass
+
+
+def _keys_count_dedup() -> None:
+    """Record one derivative skipped by the frame-local memo."""
+    global _KEYS_DEDUP, _KEYS_DEDUP_TOTAL
+    try:
+        _KEYS_DEDUP += 1
+        _KEYS_DEDUP_TOTAL += 1
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        pass
+
+
+def _keys_frame_flush() -> None:
+    """Product-frame boundary: pending-but-unconsumed keys become wasted."""
+    global _KEYS_WASTED, _KEYS_WASTED_TOTAL
+    try:
+        n = len(_KEYS_PENDING)
+        if n:
+            _KEYS_WASTED += n
+            _KEYS_WASTED_TOTAL += n
+            _KEYS_PENDING.clear()
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        pass
+
+
+def _keys_window_drain() -> None:
+    """Reset the emitted window (lifetime totals are never reset)."""
+    global _KEYS_DERIVED, _KEYS_NONE, _KEYS_USED, _KEYS_WASTED, _KEYS_DEDUP
+    _KEYS_DERIVED = 0
+    _KEYS_NONE = 0
+    _KEYS_USED = 0
+    _KEYS_WASTED = 0
+    _KEYS_DEDUP = 0
+
+
+def _keys_line_tail(drain: bool = False) -> str:
+    """PHASE0 bake-line tail: ``keys_derived=… keys_wasted=…`` (peek/drain)."""
+    try:
+        if not (_KEYS_DERIVED or _KEYS_WASTED or _KEYS_NONE or _KEYS_DEDUP):
+            return ""
+        s = (
+            " keys_derived=%d keys_wasted=%d keys_none=%d keys_used=%d keys_dedup=%d"
+            % (
+                int(_KEYS_DERIVED),
+                int(_KEYS_WASTED),
+                int(_KEYS_NONE),
+                int(_KEYS_USED),
+                int(_KEYS_DEDUP),
+            )
+        )
+        if drain:
+            _keys_window_drain()
+        return s
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        return ""
+
+
+def _keys_install_hooks() -> None:
+    """Register the PHASE0 line tail once (lazy; draw_debug is the owner)."""
+    global _KEYS_HOOKS_ON
+    if _KEYS_HOOKS_ON:
+        return
+    _KEYS_HOOKS_ON = True
+    try:
+        from .draw_debug import register_bake_line_tail
+
+        register_bake_line_tail(_keys_line_tail)
+    except Exception:  # noqa: BLE001, S110 -- missing hook API → counters still count
+        pass
+
+
+def _keys_memo(inst) -> dict:
+    """Frame-local derivation memo for ``inst`` (cleared per product frame).
+
+    Keyed on ``_rtt_gen`` (the RTT pool's per-product-frame bake generation):
+    a second consult of the same child slot inside one frame returns the key
+    the first consult derived — identical tree state, so the fingerprint is
+    identical by construction, and the walk is paid once instead of per
+    consult.
+    """
+    memo = _KEY_MEMO
+    try:
+        gen = int(getattr(inst, "_rtt_gen", 0))
+    except Exception:  # noqa: BLE001 -- no gen → single-frame semantics
+        gen = 0
+    if _KEY_MEMO_GEN[0] != gen:
+        _KEY_MEMO_GEN[0] = gen
+        memo.clear()
+    return memo
+
+
+# =============================================================================
+# hmc_fix4 B diagnostic — reverse bake key instability trace.
+#
+# RENPY_HOST_REVKEY_TRACE=1: for the same reverse candidate (same Python child
+# object, same node type/size) on two CONSECUTIVE product frames, print the
+# differing fingerprint components with both values, so the per-frame key churn
+# (measured: pins/frame 0.78–1.12 = one pinned RTT created + destroyed per
+# frame) is attributed to a concrete component instead of guessed at.
+# Bounded: at most _REVKEY_TRACE_MAX reported candidates, 3 reports each.
+# =============================================================================
+_REVKEY_TRACE_ON = host_env_bool("RENPY_HOST_REVKEY_TRACE")
+_REVKEY_TRACE_MAX = 24
+_REVKEY_TRACE_PER_IDENT = 3
+_REVKEY_TRACE_PREV: dict = {}   # (typename, id(child)) -> (frame_gen, key)
+_REVKEY_SLOT_PREV: dict = {}    # (class,w,h,dw,dh) -> (frame_gen, key)
+_REVKEY_TRACE_N: dict = {}      # ident -> reports emitted
+_REVKEY_TRACE_STAT: dict = {}   # ident -> [stable, unstable]
+_REVKEY_TRACE_SEQ: dict = {}    # ident -> generations observed
+_REVKEY_CUR_SET: set = set()    # keys derived in the current product frame
+_REVKEY_PREV_SET: set = set()   # keys derived in the previous product frame
+_REVKEY_ALL: set = set()        # every key derived in the trace window
+_REVKEY_SHAPED: set = set()     # keys whose shape line was emitted
+_REVKEY_CUR_GEN: list = [None]  # current product frame generation
+_REVKEY_NFRAMES: list = [0]     # product frames observed with a reverse key
+_KEY_FIELDS = ("ver", "nonce", "drawable", "layout", "body", "rev", "dest_w", "dest_h")
+_BODY_FIELDS = ("class", "size", "matrix", "clip", "uniforms", "mesh", "tex", "kids")
+
+
+def _fmt_v(v, cap: int = 90) -> str:
+    try:
+        s = repr(v)
+    except Exception:  # noqa: BLE001 -- telemetry must never abort frames
+        s = "<?>"
+    return s if len(s) <= cap else s[:cap] + "…"
+
+
+def _fp_entries_diff(ae, be, path, out, maxout, kids) -> None:
+    """Compare two ``("k", entries)`` kid containers, tracking kid indices.
+
+    ``kids`` grows by the kid index each time the walk descends into a child,
+    so a reported difference can be re-walked on the live tree (see
+    :func:`_revkey_chain`) and named ("Render(1920x255) -> Text(1261x3744)").
+    """
+    if len(out) >= maxout:
+        return
+    ea = ae[1] if isinstance(ae, tuple) and len(ae) > 1 else ()
+    eb = be[1] if isinstance(be, tuple) and len(be) > 1 else ()
+    if len(ea) != len(eb):
+        out.append((path + ".n", len(ea), len(eb), tuple(kids)))
+    if not (isinstance(ea, tuple) and isinstance(eb, tuple)):
+        return
+    for j in range(min(len(ea), len(eb))):
+        ent_a, ent_b = ea[j], eb[j]
+        pj = "%s[%d]" % (path, j)
+        if not (isinstance(ent_a, tuple) and isinstance(ent_b, tuple) and len(ent_a) > 1 and len(ent_b) > 1):
+            if ent_a != ent_b:
+                out.append((pj, ent_a, ent_b, tuple(kids) + (j,)))
+            continue
+        if ent_a[0] != ent_b[0]:
+            out.append((pj + ".offset", ent_a[0], ent_b[0], tuple(kids) + (j,)))
+            if len(out) >= maxout:
+                return
+        if ent_a[1] != ent_b[1]:
+            _fp_sub_diff(ent_a[1], ent_b[1], pj + ".fp", out, maxout, 0, tuple(kids) + (j,))
+            if len(out) >= maxout:
+                return
+
+
+def _fp_sub_diff(a, b, path: str, out, maxout: int, depth: int = 0, kids=()) -> None:
+    """Collect deep paths for the first ``maxout`` differences of two fp nodes."""
+    if len(out) >= maxout:
+        return
+    if not (isinstance(a, tuple) and isinstance(b, tuple)):
+        out.append((path, a, b, tuple(kids)))
+        return
+    if len(a) != len(b):
+        out.append((path + ".len", len(a), len(b), tuple(kids)))
+    for i in range(min(len(a), len(b))):
+        if a[i] == b[i]:
+            continue
+        nm = _BODY_FIELDS[i] if (depth == 0 and i < len(_BODY_FIELDS)) else str(i)
+        seg = "%s.%s" % (path, nm)
+        if depth == 0 and i == 7 and isinstance(a[7], tuple) and isinstance(b[7], tuple):
+            # kid container: entry-wise comparison tracks the kid index
+            _fp_entries_diff(a[7], b[7], seg, out, maxout, kids)
+        else:
+            _fp_sub_diff(a[i], b[i], seg, out, maxout, depth + 1, kids)
+        if len(out) >= maxout:
+            return
+
+
+def _revkey_diff(ka, kb, maxout: int = 8):
+    """[(path, a, b, kid_indices)] for the differing components of two keys."""
+    out = []
+    try:
+        n = max(len(ka), len(kb))
+        for i in range(n):
+            nm = _KEY_FIELDS[i] if i < len(_KEY_FIELDS) else ("#%d" % i)
+            a = ka[i] if i < len(ka) else "<missing>"
+            b = kb[i] if i < len(kb) else "<missing>"
+            if a == b:
+                continue
+            if nm == "body":
+                _fp_sub_diff(a, b, "body", out, maxout)
+            else:
+                out.append((nm, a, b, ()))
+            if len(out) >= maxout:
+                break
+    except Exception:  # noqa: BLE001 -- diagnostic must never abort frames
+        pass
+    return out
+
+
+def _revkey_chain(inst, child, kids, cap: int = 8) -> str:
+    """Class/size chain from the candidate root down a kid-index path."""
+    parts = []
+    node = child
+    try:
+        for lvl, j in enumerate(kids):
+            if lvl >= cap:
+                parts.append("…")
+                break
+            try:
+                w, h = inst._node_size(node, default=(0, 0))
+            except Exception:  # noqa: BLE001
+                w = h = 0
+            parts.append("%s(%sx%s)#%d" % (type(node).__name__, int(w), int(h), id(node) % 100000))
+            try:
+                nxt = list(inst._iter_children(node))
+            except Exception:  # noqa: BLE001
+                nxt = []
+            if j >= len(nxt):
+                parts.append("!kid%d_of_%d" % (j, len(nxt)))
+                return " -> ".join(parts)
+            node = nxt[j][0]
+        try:
+            w, h = inst._node_size(node, default=(0, 0))
+        except Exception:  # noqa: BLE001
+            w = h = 0
+        parts.append("*%s(%sx%s)#%d" % (type(node).__name__, int(w), int(h), id(node) % 100000))
+    except Exception as e:  # noqa: BLE001
+        parts.append("chain-err:%r" % (e,))
+    return " -> ".join(parts)
+
+
+def _revkey_shape(key) -> str:
+    """Compact human description of a derived reverse key (first see only)."""
+    try:
+        body = key[4]
+        f = ["%s" % (body[0],), "%sx%s" % (body[1][0], body[1][1])]
+        f.append("mtx=%s" % (body[2][0] if isinstance(body[2], tuple) else body[2],))
+        f.append("mesh=%s:%s" % (
+            (body[5][0] if isinstance(body[5], tuple) else body[5]),
+            (body[5][1] if isinstance(body[5], tuple) and len(body[5]) > 1 else "-")))
+        _u = body[4]
+        f.append("uni=%d" % (len(_u[1]) if isinstance(_u, tuple) and len(_u) > 1 else -1,))
+        f.append("tex=%s" % (_fmt_v(body[6], 60),))
+        _k = body[7]
+        f.append("kids=%d" % (len(_k[1]) if isinstance(_k, tuple) and len(_k) > 1 else -1,))
+        f.append("dest=%s,%s" % (key[6], key[7]))
+        f.append("nonce=%s" % (key[1],))
+        return " ".join(f)
+    except Exception as e:  # noqa: BLE001
+        return "shape-err:%r" % (e,)
+
+
+def _revkey_frame_report() -> None:
+    """Per-frame reverse-key set report (churn vs. fresh-candidate verdict)."""
+    try:
+        cur = _REVKEY_CUR_SET
+        prev = _REVKEY_PREV_SET
+        if not cur and not prev:
+            return
+        inter = len(cur & prev)
+        _phase0_log(
+            "[REVKEY_FRAME] gen=%d n=%d prev=%d inter=%d missing_from_now=%d"
+            " n_dest=%d uniq_all=%d"
+            % (
+                int(_REVKEY_CUR_GEN[0]),
+                len(cur),
+                len(prev),
+                inter,
+                len(prev - cur),
+                len({(k[6], k[7]) for k in cur}),
+                len(_REVKEY_ALL),
+            )
+        )
+        for k in tuple(cur)[:4]:
+            if k in _REVKEY_SHAPED:
+                continue
+            _REVKEY_SHAPED.add(k)
+            if len(_REVKEY_SHAPED) > 24:
+                continue
+            _phase0_log("[REVKEY_SHAPE] %s" % _revkey_shape(k))
+    except Exception:  # noqa: BLE001 -- diagnostic must never abort frames
+        pass
+
+
+def _revkey_slot(inst, child, dest_size):
+    """Slot identity: node class + box + dest box (survives object churn)."""
+    try:
+        _w, _h = inst._node_size(child, default=(0, 0))
+    except Exception:  # noqa: BLE001
+        _w = _h = 0
+    _dw = int(dest_size[0]) if dest_size else -1
+    _dh = int(dest_size[1]) if dest_size else -1
+    return (type(child).__name__, int(_w), int(_h), _dw, _dh)
+
+
+def _revkey_node_probe(inst, child, kids, cap: int = 8) -> str:
+    """Full attribute dump of the nodes along a kid-index path (tracing only)."""
+    try:
+        mov = _movie_tex_handles()
+    except Exception:  # noqa: BLE001
+        mov = None
+    out = []
+    node = child
+    try:
+        lvls = [(-1, node)]
+        for lvl, j in enumerate(kids):
+            if lvl >= cap:
+                break
+            nxt = list(inst._iter_children(node))
+            if j >= len(nxt):
+                out.append("kid%d OUT OF RANGE (%d kids on %s)" % (j, len(nxt), type(node).__name__))
+                break
+            node = nxt[j][0]
+            lvls.append((j, node))
+        for lvl, nd in lvls:
+            parts = ["L%d" % (lvl + 1), type(nd).__name__]
+            for a in ("text", "texture", "textures", "mesh", "shaders", "uniforms",
+                      "cached_texture", "cached_model", "nearest", "layer_name", "blits"):
+                try:
+                    v = getattr(nd, a, None)
+                except Exception:  # noqa: BLE001
+                    continue
+                if v is None:
+                    continue
+                if a in ("texture", "textures", "cached_texture"):
+                    if isinstance(v, (list, tuple)):
+                        rr = []
+                        for t in v:
+                            tg = inst._trans_one_tex(t)
+                            hh = tg[1] if isinstance(tg, tuple) and len(tg) > 1 else -1
+                            rr.append("%s%s" % (tg, "|MOVIE" if (mov and hh in mov) else ""))
+                        parts.append("%s=[%s]" % (a, ",".join(rr)))
+                    else:
+                        tg = inst._trans_one_tex(v)
+                        hh = tg[1] if isinstance(tg, tuple) and len(tg) > 1 else -1
+                        parts.append("%s=%s%s" % (a, _fmt_v(tg, 40),
+                                                  "|MOVIE" if (mov and hh in mov) else ""))
+                elif a == "mesh":
+                    try:
+                        parts.append("mesh=%s" % (_fmt_v(inst._trans_mesh_bits(nd), 50),))
+                    except Exception:  # noqa: BLE001
+                        parts.append("mesh=<?>")
+                else:
+                    parts.append("%s=%s" % (a, _fmt_v(v, 60)))
+            try:
+                parts.append("size=%r" % (inst._node_size(nd, default=(0, 0)),))
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                parts.append("nkids=%d" % (len(list(inst._iter_children(nd))),))
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                parts.append("mtx=%s" % (_fmt_v(inst._trans_matrix_bits(getattr(nd, "reverse", None)), 50),))
+            except Exception:  # noqa: BLE001
+                pass
+            out.append(" ".join(parts))
+    except Exception as e:  # noqa: BLE001
+        out.append("probe-err:%r" % (e,))
+    return " || ".join(out)
+
+
+def _revkey_trace(inst, child, dest_size, key) -> None:
+    """Diagnostic: consecutive-frame key comparison for one reverse candidate.
+
+    Two pairings are kept because either can be the churn source:
+      * OBJECT identity ``(class, id(child))`` — the same Render object,
+      * SLOT identity ``(class, node box, dest box)`` — the same visual slot
+        even when the Python object is recreated every frame.
+    Plus a per-frame set intersection (``[REVKEY_FRAME]``) that separates
+    "the same slot churns its key" from "every frame draws a fresh candidate".
+    """
+    if not _REVKEY_TRACE_ON or key is None:
+        return
+    try:
+        gen = int(getattr(inst, "_rtt_gen", 0))
+        if _REVKEY_CUR_GEN[0] != gen:
+            _revkey_frame_report()
+            _REVKEY_PREV_SET.clear()
+            _REVKEY_PREV_SET.update(_REVKEY_CUR_SET)
+            _REVKEY_CUR_SET.clear()
+            _REVKEY_CUR_GEN[0] = gen
+            _REVKEY_NFRAMES[0] += 1
+        _REVKEY_CUR_SET.add(key)
+        _REVKEY_ALL.add(key)
+
+        slot = _revkey_slot(inst, child, dest_size)
+        ident = (type(child).__name__, id(child))
+        for tag, pair in (("slot", slot), ("obj", ident)):
+            prev = (_REVKEY_SLOT_PREV if tag == "slot" else _REVKEY_TRACE_PREV).get(pair)
+            store = _REVKEY_SLOT_PREV if tag == "slot" else _REVKEY_TRACE_PREV
+            store[pair] = (gen, key)
+            if prev is None:
+                continue
+            pgen, pkey = int(prev[0]), prev[1]
+            if pgen == gen:
+                continue
+            stat = _REVKEY_TRACE_STAT.setdefault(pair, [0, 0])
+            _REVKEY_TRACE_SEQ[pair] = _REVKEY_TRACE_SEQ.get(pair, 0) + 1
+            if pkey == key:
+                stat[0] += 1
+                continue
+            stat[1] += 1
+            if tag == "obj" and _REVKEY_TRACE_N.get(pair, 0) == 0:
+                # object-identity churn with the same key is impossible; only
+                # report object pairing when the key really changed.
+                pass
+            nrep = _REVKEY_TRACE_N.get(pair, 0)
+            if nrep >= _REVKEY_TRACE_PER_IDENT or len(_REVKEY_TRACE_N) > _REVKEY_TRACE_MAX:
+                continue
+            _REVKEY_TRACE_N[pair] = nrep + 1
+            diffs = _revkey_diff(pkey, key)
+            _phase0_log(
+                "[REVKEY_DIFF] pair=%s %s slot=%r id=%d gen=%d..%d stable=%d unstable=%d cmp=%d"
+                % (
+                    tag, ident[0], slot, int(id(child) % 1000000), pgen, gen,
+                    stat[0], stat[1], len(diffs),
+                )
+            )
+            for path, a, b, _kids in diffs:
+                _phase0_log(
+                    "[REVKEY_CMP] pair=%s %s.%s prev=%s now=%s"
+                    % (tag, ident[0], path, _fmt_v(a), _fmt_v(b))
+                )
+                if _kids:
+                    _phase0_log(
+                        "[REVKEY_CHAIN] kid_path=%r %s"
+                        % (list(_kids), _revkey_chain(inst, child, _kids))
+                    )
+                    _phase0_log(
+                        "[REVKEY_NODE] kid_path=%r %s"
+                        % (list(_kids), _revkey_node_probe(inst, child, _kids))
+                    )
+            break
+    except Exception:  # noqa: BLE001 -- diagnostic must never abort frames
+        pass
+
+
+def _revkey_trace_summary() -> str:
+    """One-line stable/unstable summary for the trace run (end-of-run grep)."""
+    if not _REVKEY_TRACE_ON:
+        return ""
+    try:
+        st = sum(v[0] for v in _REVKEY_TRACE_STAT.values())
+        un = sum(v[1] for v in _REVKEY_TRACE_STAT.values())
+        return ("frames=%d pairs=%d stable=%d unstable=%d reported=%d uniq_keys=%d"
+                % (int(_REVKEY_NFRAMES[0]), len(_REVKEY_TRACE_STAT), st, un,
+                   len(_REVKEY_TRACE_N), len(_REVKEY_ALL)))
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 class _TransBakeUncacheable(Exception):
@@ -1727,12 +2379,19 @@ class SurftreeMixin:
         shared ``cache_hit/miss/uncache`` PHASE0 counters; the reverse entry
         passes False (its own ``rev_*`` counters drain separately) so entry
         points never distort each other's telemetry.
+
+        hmc_fix4 A: every invocation is counted by ``keys_derived`` (the cost
+        the review measured); callers derive through this only when a cache
+        decision is imminent, so ``keys_wasted`` stays ~0.
         """
+        _keys_install_hooks()
+        _keys_begin()
         try:
             _handles = set()
             cap = [self._TRANS_BAKE_FP_MAX_NODES, _handles]
             body = self._trans_fp_node(child, 0, cap)
             if body is None:
+                _keys_note_key(None)
                 return None
             drawable = tuple(int(x) for x in (getattr(self, "drawable_size", None) or (0, 0)))
             layout = tuple(int(x) for x in (getattr(self, "layout_virtual_size", None) or (0, 0)))
@@ -1750,7 +2409,9 @@ class SurftreeMixin:
                 )
             else:
                 _nonce = 0
-            return ("trb1", _nonce, drawable, layout, body)
+            _key = ("trb1", _nonce, drawable, layout, body)
+            _keys_note_key(_key)
+            return _key
         except _TransBakeUncacheable as e:
             # H2: conservative miss — depth/node budget exhausted or an
             # over-cap mesh; the subtree re-bakes every frame instead of
@@ -1764,6 +2425,7 @@ class SurftreeMixin:
                 trans_cache_why(str(e))
             except Exception:  # noqa: BLE001, S110
                 pass
+            _keys_note_key(None)
             return None
         except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
             if count_uncacheable:
@@ -1772,6 +2434,7 @@ class SurftreeMixin:
                 except Exception:  # noqa: BLE001, S110
                     pass
             _host_draw_fail("trans_bake_key", e)
+            _keys_note_key(None)
             return None
 
     def _reverse_bake_key(self, child, dest_size):
@@ -1781,12 +2444,16 @@ class SurftreeMixin:
         unchanged and namespaces the reverse entry with the dest box so two
         dest sizes of the same subtree never collide inside the shared store.
         Returns None when the subtree is unkeyable (conservative: no cache).
+
+        hmc_fix4 A: a frame-local memo keyed by ``(id(child), dest box)`` serves
+        the SECOND and later consults of the same child slot inside one product
+        frame from the key the first consult derived (identical tree state, so
+        identical fingerprint by construction) — the 512-node fingerprint walk
+        is paid once per candidate per frame, not once per consult. Only
+        non-None keys are memoized, so a key-less subtree keeps re-deriving and
+        keeps counting its ``rev_key_fail`` exactly as before.
         """
         if child is None:
-            return None
-        base = self._trans_bake_key(child, count_uncacheable=False)
-        if base is None:
-            _rev_cache_count("key_fail")
             return None
         try:
             if dest_size is None:
@@ -1795,7 +2462,40 @@ class SurftreeMixin:
                     _dw, _dh = self.virtual_size
             else:
                 _dw, _dh = int(dest_size[0]), int(dest_size[1])
-            return base + ("rev", int(_dw), int(_dh))
+        except Exception:  # noqa: BLE001 -- key failure must never abort the frame
+            _rev_cache_count("key_fail")
+            return None
+        memo = _keys_memo(self)
+        # The memo identity carries the instance id AND the walker geometry the
+        # key is derived under (both are part of the key itself), so a second
+        # WgpuDraw instance — or a resized one — can never be served a key that
+        # was derived for another geometry.
+        try:
+            _dr = tuple(int(x) for x in (getattr(self, "drawable_size", None) or (0, 0)))
+            _ly = tuple(int(x) for x in (getattr(self, "layout_virtual_size", None) or (0, 0)))
+        except Exception:  # noqa: BLE001 -- geometry probe failure → plain identity
+            _dr = _ly = (0, 0)
+        _ident = (id(self), id(child), int(_dw), int(_dh), _dr, _ly)
+        try:
+            _hit = memo.get(_ident, _KEYS_MEMO_MISS)
+            if _hit is not _KEYS_MEMO_MISS:
+                _keys_count_dedup()
+                return _hit
+        except Exception:  # noqa: BLE001, S110 -- memo failure → re-derive
+            memo = {}
+        base = self._trans_bake_key(child, count_uncacheable=False)
+        if base is None:
+            _rev_cache_count("key_fail")
+            return None
+        try:
+            _key = base + ("rev", int(_dw), int(_dh))
+            _keys_rekey(base, _key)
+            _revkey_trace(self, child, (_dw, _dh), _key)
+            try:
+                memo[_ident] = _key
+            except Exception:  # noqa: BLE001, S110 -- memo is best-effort
+                pass
+            return _key
         except Exception:  # noqa: BLE001 -- key failure must never abort the frame
             _rev_cache_count("key_fail")
             return None
@@ -1820,6 +2520,7 @@ class SurftreeMixin:
         """
         if key is None or child is None:
             return None
+        _keys_count_consumed(key)
         try:
             tw, th = (int(w), int(h)) if (w and h) else self._node_size(child)
             if tw <= 0 or th <= 0:
@@ -1835,6 +2536,21 @@ class SurftreeMixin:
                 _rev_cache_count("miss")
             else:
                 trans_cache_count("miss")
+            # hmc_fix4 B (reverse entry only): a first-sight key takes the
+            # documented "pin failed" fallback — no private pinned RTT is
+            # allocated, the caller's normal pooled bake runs (identical
+            # pixels). Only a key that repeats within _REV_PIN_SEEN_TTL frames
+            # proves the subtree is cacheable and gets pinned, so a churning
+            # candidate (fresh key every frame) can never buy a per-frame
+            # pinned-RTT create + destroy.
+            if kind == "rev" and rev_pin_stable_enabled():
+                try:
+                    _gen = int(getattr(self, "_rtt_gen", 0))
+                except Exception:  # noqa: BLE001 -- no generation → treat as stable
+                    _gen = None
+                if _gen is not None and not _rev_pin_seen_before(key, _gen):
+                    _rev_cache_count("defer")
+                    return None
             pinned = self._trans_cache_pinned_bake(child, key, tw, th)
             return pinned
         except Exception as e:  # noqa: BLE001 -- cache failure must not abort frame
@@ -3469,7 +4185,9 @@ class SurftreeMixin:
         except Exception as e:  # noqa: BLE001 -- delegate failure logged (re-raises under DRAW_RAISE)
             _host_draw_fail("kill_textures", e)
 
-    def _child_to_texture(self, child, _trans_key=None, _trans_kind="tr", _dest_size=None):
+    def _child_to_texture(
+        self, child, _trans_key=None, _trans_kind="tr", _dest_size=None, _trans_key_fn=None
+    ):
         """Convert a mesh-child to HostTexture for model texture slots.
 
         ``_trans_key`` (optional) engages the per-frame subtree bake content
@@ -3479,6 +4197,15 @@ class SurftreeMixin:
         falls through to the normal pooled path below, unchanged. ctx/uv/
         position math is never touched — only the sampled texture content is
         substituted (identical source w/h ↔ HostTexture shape).
+
+        ``_trans_key_fn`` (hmc_fix4 A, optional) is the LAZY form of
+        ``_trans_key``: it is invoked only when the walk has passed every cheap
+        qualification test above and is about to make a cache decision, so a
+        child resolved by ``cached_texture`` / ``_extract_host_texture`` /
+        full-pixel solid slot / surface load never pays for a subtree
+        fingerprint walk (measured: 95–96.5% of all derived keys were thrown
+        away un-consumed before this change).
+
         ``_trans_kind`` selects the counter set: the dissolve old-slot entry
         point keeps kind "tr" (shared trans counters, cadence unchanged); the
         reverse-scale entry point uses ``_reverse_bake_key`` + kind "rev"
@@ -3531,6 +4258,15 @@ class SurftreeMixin:
             # Per-frame subtree content cache (hmc_fix3 F3): dissolve old slot
             # (kind "tr", byte-identical counters/cadence) and reverse scale
             # (kind "rev") share the same store + clear hooks.
+            # hmc_fix4 A: the key is derived HERE (after every cheap path above
+            # has declined), so only a child that really needs the cache pays
+            # for the fingerprint walk; ``_trans_key_fn`` is the lazy deriver.
+            if _trans_key is None and _trans_key_fn is not None:
+                try:
+                    _trans_key = _trans_key_fn()
+                except Exception as e:  # noqa: BLE001 -- key failure → normal bake
+                    _host_draw_fail("child_to_texture.trans_key_fn", e)
+                    _trans_key = None
             if _trans_key is not None:
                 try:
                     tw, th = self._node_size(child)

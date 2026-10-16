@@ -37,6 +37,33 @@ from .draw_texture import (  # RTT-handle premultiplied registry (single owner)
     unregister_premultiplied_handle,
 )
 
+
+# ============================================================================
+# renpy_host per-call import hoist (perf micro, zero behavior change).
+#
+# Hot paths here (mesh emit, resolve/bake, SM alive probes) resolved
+# ``renpy_host`` via per-call ``import`` — a sys.modules dict fetch plus
+# module probe per quad/leaf/probe. The cell below resolves it **once** and
+# stays short-circuit even when the module is absent (hermetic gates), so
+# per-quad cost becomes a single cell lookup. Same semantics: missing module
+# skips the FFI branch exactly as the old per-call try/import did.
+# ============================================================================
+_RH_CELL: list[object] = [None]
+
+
+def _rh():
+    c = _RH_CELL[0]
+    if c is not None:
+        return c
+    try:
+        import renpy_host as _mod  # type: ignore
+
+        c = _mod
+    except Exception:  # noqa: BLE001 -- host shim absent in hermetic contexts
+        c = False
+    _RH_CELL[0] = c
+    return c
+
 # M1 T3 grouping import (private helper; used via WgpuDraw._instance_add path)
 try:
     from .host_bridge import _InstanceGroup  # noqa: F401
@@ -1972,8 +1999,10 @@ class SurftreeMixin:
         full-screen and button rects) reuse one mesh handle instead of leaking
         create_mesh allocations every draw.
         """
-        import renpy_host  # type: ignore
-
+        renpy_host = _rh()
+        # Cell resolves the real module (product/hermetic-with-host) or False
+        # when absent; direct attribute use then fails exactly like the old
+        # per-call ``import renpy_host`` did, so caller behavior is unchanged.
         r, g, b, a = (list(color) + [1.0, 1.0, 1.0, 1.0])[:4]
 
         def _q(v, n=3):

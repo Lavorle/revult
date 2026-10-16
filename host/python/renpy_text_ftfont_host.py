@@ -111,26 +111,43 @@ def _glyph_skin_enabled() -> bool:
     return _GLYPH_SKIN_ENV == 1
 
 
-def _phase_q(f: float) -> int:
-    """Quantize the fractional pixel coordinate to the freetype subpixel grid.
+def _phase_q(f: float) -> float:
+    """Key granularity for the glyph-skin cache.
 
-    Pillow passes the raw fraction into getmask2 ``start``; FreeType's subpixel
-    positioning precision is the 26.6 fixed-point grid (/64), so keys are
-    quantized at /64 with the same rounding Pillow uses (round-to-nearest;
-    empirically byte-equal per the golden A/B below). /256 wasted 4x cache
-    entries on rasterizations FreeType produces identically.
+    Pillow passes the raw fraction into ``getmask2 start`` and FreeType's
+    rasterization resolves it at C-level subpixel precision finer than
+    26.6 (empirical A/B below showed ±1-px stroke differences between
+    adjacent /64 phases on latin text). Therefore the cache key carries the
+    *exact* fraction of the live coordinate (float identity), never a
+    quantized bucket: layout positions are deterministic per frame, so the
+    same glyph draws at exactly the same phase across frames and the cache
+    hits stay bit-equal (this keeps the A/B evidence from 8bf89a.. intact).
     """
     try:
         frac = f - float(int(f))
     except Exception:  # noqa: BLE001
-        return 0
-    return int(round(frac * 64.0)) & 0x3F
+        return 0.0
+    return float(frac)
 
 
 def _glyph_skin(font_key, font, ch, fill, outline_fill, r, fx, fy, asc, desc, size, vertical):
     """Rasterize (and cache) one glyph incl. the outline ring; return
-    (skin_img, pad_x, pad_y) or None when Pillow is unavailable."""
+    (skin_img, pad_x, pad_y) or None when Pillow is unavailable or the
+    live draw must be used instead.
+
+    The live-fallback rule matters for **signed fractional phases**: PIL's
+    ``ImageDraw.text`` computes ``start = math.modf(xy)``; for negative xy
+    that fraction is negative (modf(-7.3) = -0.3), which a positive pad
+    ``pad + frac`` can never reproduce (modf(3.7) = 0.7) and freetype
+    rasterizes the ±phase differently (measured ±1px stroke shift).
+    Negative-phase / non-negative-only placements therefore take the live
+    ``draw.text`` path, which is always byte-identical to the pre-cache
+    behavior.
+    """
     if font is None:
+        return None
+    if fx < 0.0 or fy < 0.0:
+        # signed phase: live draw.text only (see docstring)
         return None
     key = (
         font_key,
@@ -509,11 +526,16 @@ class FTFont:
                         st["live"] += 1
                 if skin is not None:
                     skin_img, spad_x, spad_y = skin
-                    # paste uses the same per-channel linear blend as
-                    # draw.text's draw_bitmap; placement maps the in-skin
-                    # integer pad back to the live integer position, keeping
-                    # the fractional subpixel phase inside the cached
-                    # rasterization (fx/fy were baked in).
+                    dst_x = int(xint) - spad_x
+                    dst_y = int(yint) - spad_y
+                    if dst_x < 0 or dst_y < 0 or dst_x + spad_x * 2 + cw > w or dst_y + spad_y * 2 + chh > h:
+                        # Pastes near/over the surface edge must clip exactly
+                        # like live draw.text's surface-clamped write; take the
+                        # live path there (paste's crop semantics on negative /
+                        # overflowed anchors are not provably identical).
+                        skin = None
+                if skin is not None:
+                    skin_img, spad_x, spad_y = skin
                     img.paste(
                         skin_img,
                         (int(xint) - spad_x, int(yint) - spad_y),

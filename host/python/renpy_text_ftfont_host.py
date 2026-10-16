@@ -528,6 +528,16 @@ class FTFont:
                     skin_img, spad_x, spad_y = skin
                     dst_x = int(xint) - spad_x
                     dst_y = int(yint) - spad_y
+                    # Deliberately conservative overflow guard: 
+                    # (dst + 2*pad + crop) > surface means "any chance the
+                    # stamp could touch the right/bottom edge", and edge-touch
+                    # placements fall back to live draw.text so we never rely
+                    # on PIL paste's crop semantics at all. The condition is
+                    # intentionally stricter than the true skin-bounds test
+                    # (dst + skin_w/h > w/h) — do NOT "simplify" it into the
+                    # tight shape: that would hand edge clipping back to
+                    # paste, which is unverified against draw.text's fired
+                    # surface-clamped write.
                     if dst_x < 0 or dst_y < 0 or dst_x + spad_x * 2 + cw > w or dst_y + spad_y * 2 + chh > h:
                         # Pastes near/over the surface edge must clip exactly
                         # like live draw.text's surface-clamped write; take the

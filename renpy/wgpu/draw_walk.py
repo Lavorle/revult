@@ -545,6 +545,15 @@ class WalkMixin:
         children = children_preview
         if self._draw_reverse(node, children, ctx):
             return
+        # Stable subtree model cache (RENPY_HOST_STATIC_MODEL_CACHE, default on):
+        # a render-like subtree whose fingerprint is unchanged on 2 consecutive
+        # product frames is drawn from its pinned RTT as ONE quad instead of
+        # recursing into it. Placed AFTER _draw_cached/_draw_reverse so both
+        # existing bake paths keep their semantics and telemetry, and gated
+        # inside _sm_try_draw for nodes owned by the ctex / dissolve paths.
+        # Disabled → returns immediately (per-node walk, unchanged).
+        if self._sm_try_draw(node, ctx):
+            return
         ctex = getattr(node, "cached_texture", None)
         if ctex is not None and not children:
             if _WALKSTAT_ON:

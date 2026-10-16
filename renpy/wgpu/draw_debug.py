@@ -323,6 +323,43 @@ def _fmt_counts(d: dict, cap: int = 10) -> str:
         return "-"
 
 
+# =============================================================================
+# Frame-boundary + PHASE0 line-tail hook registries.
+#
+# `bake_frame_flush` is the single per-product-frame tail call site. Mixins that
+# own pinned/private resources (the stable subtree model cache) register:
+#   * a frame-boundary hook — runs on EVERY product frame before the
+#     instrumentation early-outs: advances their frame sequence and drains
+#     deferred destroys (never mid-frame), and
+#   * a line-tail provider `fn(drain: bool) -> str` — appended to the tail of
+#     the existing bake PHASE0 line (`sm_hit=… sm_miss=… sm_nodes_saved=…`).
+#     `fn(False)` peeks (a throttled window keeps its counts), `fn(True)`
+#     resets the emitted window. Both are contractually non-raising.
+# Hooks live in module-level lists of plain function objects so renpy's module
+# backup pickle contract (identity-by-name resolution) stays intact.
+# =============================================================================
+_FRAME_BOUNDARY_HOOKS: list = []
+_BAKE_LINE_TAILS: list = []
+
+
+def register_frame_boundary_hook(fn) -> None:
+    """Register a per-product-frame boundary callback (run before early-outs)."""
+    try:
+        if fn not in _FRAME_BOUNDARY_HOOKS:
+            _FRAME_BOUNDARY_HOOKS.append(fn)
+    except Exception:  # noqa: BLE001, S110 -- registration must never abort
+        pass
+
+
+def register_bake_line_tail(fn) -> None:
+    """Register `fn(drain: bool) -> str` appended to the bake PHASE0 line."""
+    try:
+        if fn not in _BAKE_LINE_TAILS:
+            _BAKE_LINE_TAILS.append(fn)
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+
 def bake_frame_flush(now: float = 0.0) -> None:
     """Emit the throttled per-frame bake-attribution summary line.
 
@@ -331,9 +368,22 @@ def bake_frame_flush(now: float = 0.0) -> None:
     0.5 s throttle window (they are only cleared on an emitted line), so no
     bake attribution is ever lost to throttling; each emitted line covers the
     accumulated window since the previous emit (≥ one present frame).
+
+    Also the product-frame boundary for owner-provided hooks registered via
+    :func:`register_frame_boundary_hook` (deferred RTT destroys / frame
+    sequences) — those run on EVERY frame, before the instrumentation
+    early-outs, and must never raise.
     """
     global _BAKE_LAST_EMIT_T
     global _TRANS_CACHE_HITS, _TRANS_CACHE_MISSES, _TRANS_CACHE_UNCACHEABLE
+    # Frame-boundary hooks (static subtree model cache): pending pinned-RTT
+    # destroys are drained here, i.e. one full frame after their last use, so
+    # nothing is destroyed while the current frame_cmds still reference it.
+    for _hfn in tuple(_FRAME_BOUNDARY_HOOKS):
+        try:
+            _hfn()
+        except Exception:  # noqa: BLE001, S110 -- boundary work must never abort
+            pass
     if not _BAKE_ENABLED:
         return
     # Movie redraw-beat telemetry rides this per-frame site (own throttle).
@@ -342,11 +392,26 @@ def bake_frame_flush(now: float = 0.0) -> None:
     except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
         pass
     try:
-        if not _BAKE_TAGS:
+        # Line-tail providers (e.g. the stable subtree model cache counters):
+        # peeked first so a throttled/skipped window keeps its counts.
+        tail = ""
+        for _tfn in tuple(_BAKE_LINE_TAILS):
+            try:
+                _s = _tfn(False)
+            except Exception:  # noqa: BLE001, S110 -- telemetry must never abort
+                _s = ""
+            if _s:
+                tail += _s
+        if not _BAKE_TAGS and not tail:
             return
         _now = float(now) if now else _time.monotonic()
         if (_now - _BAKE_LAST_EMIT_T) < _BAKE_EMIT_INTERVAL:
             return
+        for _tfn in tuple(_BAKE_LINE_TAILS):
+            try:
+                _tfn(True)  # drain the emitted window
+            except Exception:  # noqa: BLE001, S110
+                pass
         tags = dict(_BAKE_TAGS)
         sizes = dict(_BAKE_SIZES)
         ncls = dict(_BAKE_NODECLS)
@@ -382,7 +447,7 @@ def bake_frame_flush(now: float = 0.0) -> None:
         msg = (
             f"bakes_in_frame={total} tags={_fmt_counts(tags)} "
             f"cls={_fmt_counts(ncls)} sizes={_fmt_counts(sizes)} detail={det_s} "
-            f"cache_hit={tch} miss={tcm} uncache={tu}{why_s}"
+            f"cache_hit={tch} miss={tcm} uncache={tu}{why_s}{tail}"
         )
         if _phase0_signals_enabled():
             _phase0_log(msg)
@@ -579,6 +644,10 @@ __all__ = [
     "bake_caller_pop",
     "bake_caller_push",
     "bake_frame_flush",
+    "register_bake_line_tail",
+    "register_frame_boundary_hook",
+    "_BAKE_LINE_TAILS",
+    "_FRAME_BOUNDARY_HOOKS",
     "_PHASE0_DISSOLVE_INTERVAL",
     "_PHASE0_FRAME_INTERVAL",
     "_PHASE0_LAST_DISSOLVE_T",

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time as _time
 from collections.abc import Sequence  # noqa: F401
 from typing import TYPE_CHECKING
 
@@ -308,6 +309,408 @@ def _trans_fp_attr(v):
     except Exception:  # noqa: BLE001 -- opaque object: type tag only
         n = None
     return ("o", type(v).__name__, n)
+
+
+# =============================================================================
+# Stable subtree MODEL cache — display-list / pinned-RTT reuse.
+#
+# Problem (measured on the prefs tab-transition window): the engine already
+# reuses its bake cache (bakes=0–1 per frame) but still walks the whole tree
+# (722–1651 nodes/frame, 22–82 ms) because the walk itself is pure Python; the
+# SDL/GL2 reference does the same walk in Cython. The fix is not a faster walk
+# but *fewer* walks: a render-like subtree whose structural fingerprint is
+# unchanged across frames is baked ONCE into a pinned, non-pool render texture
+# and afterwards drawn as a single quad — the recursion into that subtree never
+# happens again.
+#
+# Safety model (a miss is always allowed, a wrong pixel never is):
+#  * Key completeness: the fingerprint covers exactly the state the walker
+#    reads when drawing a node — type, width/height, alpha, over,
+#    forward/reverse matrices, matrix_kind, xclipping/yclipping (+clip attrs),
+#    the full uniforms dict (``u_renpy_dissolve`` INCLUDED: the bake applies the
+#    node's own effect, so an animating dissolve uniform must invalidate it),
+#    shaders, mesh (full <=64-vertex digest), texture/textures handles,
+#    cached_texture/cached_model handles, color, ndc, pipeline, vertices/
+#    indices, nearest, properties, operation*, cropped_width/height and the
+#    child list (offsets + recursive fingerprints). Any attribute that cannot be
+#    read, or whose value has a type we cannot turn into a stable bit, raises
+#    ``_TransBakeUncacheable`` → no key → per-frame walk (never a stale hit).
+#  * Position independence: the bake targets the node's own box and the result
+#    is drawn at the node's current position, so a node that merely *moves*
+#    still hits; the incoming clip context is re-applied on the quad, so it is
+#    not part of the key.
+#  * Eligibility: render-like node, subtree node count >= 64 (budgeted count
+#    walk), box within the live surface bounds.
+#  * Cross-frame stability: a key must be observed on 2 consecutive product
+#    frames before the pinned RTT is reused (first frame bakes + pins, second
+#    frame hits). A candidate whose key changes frame-to-frame is put on a
+#    backoff list so a churning subtree never pays a bake per frame.
+#  * Movie: subtrees sampling a texture the movie rewrites in place are
+#    uncacheable (see _movie_tex_handles / _subtree_movie_veto_enabled), same
+#    veto the dissolve/reverse bake caches use.
+#  * Lifetime: entries live in their own store (``self._sm_cache``); pinned
+#    RTTs come from ``renpy_host.create_render_texture_pinned`` so they never
+#    enter the RTT freelist / frame rings. Eviction is LRU by BYTE budget
+#    (<= _SM_BUDGET_FACTOR × drawable area × 4); evicted handles are deferred to
+#    the next product frame before ``destroy_texture`` (never destroyed while
+#    the current frame's frame_cmds still reference them), and kill_textures /
+#    resize boundaries clear the whole store.
+#
+# Gate: RENPY_HOST_STATIC_MODEL_CACHE (OnceLock; **default off** — see the
+# measured premultiply verdict in ``static_model_cache_enabled``; "1"/true/yes/on
+# opts in. Disabled ⇒ byte-identical per-node walk behavior).
+# Telemetry: window counters appended to the existing bake_frame_flush PHASE0
+# line tail as ``sm_hit=N sm_miss=N sm_nodes_saved=N``.
+# =============================================================================
+_SM_MIN_NODES = 64            # eligibility floor: subtree node count (task contract)
+_SM_FP_MAX_NODES = 8192       # fingerprint walk budget (key-cost ceiling)
+_SM_FP_MAX_DEPTH = 24         # depth budget; deeper node WITH children → uncacheable
+_SM_COUNT_MAX = 4096          # budgeted eligibility count walk ceiling
+_SM_COUNT_FRAME_BUDGET = 20000  # total eligibility-count node visits per product frame
+_SM_SEEN_CAP = 48             # stale-entry / churn bookkeeping table cap
+_SM_BUDGET_FACTOR = 3         # byte budget = factor × drawable area × 4
+_SM_FALLBACK_DRAWABLE = (2560, 1440)
+_SM_UNSTABLE_BACKOFF = 45     # frames a key-churning candidate slot is skipped
+_SM_CHURN_STREAK = 3          # consecutive key changes before the backoff engages
+# Absent-attribute sentinel: distinct from None (a real None attribute value).
+_SM_ABSENT = object()
+
+# Render attributes the draw path reads (present on the engine's Render cdef
+# class → absence means "not a node the walker understands" → uncacheable).
+_SM_RENDER_REQUIRED = (
+    "alpha",
+    "over",
+    "forward",
+    "reverse",
+    "matrix_kind",
+    "width",
+    "height",
+    "children",
+    "mesh",
+    "shaders",
+    "uniforms",
+    "xclipping",
+    "yclipping",
+    "nearest",
+    "properties",
+    "operation",
+    "operation_complete",
+    "operation_alpha",
+    "operation_parameter",
+    "cropped_width",
+    "cropped_height",
+    "cached_texture",
+    "cached_model",
+)
+# Optional attributes: keyed when present (a fork/subclass that carries state
+# under these names must not slip through unkeyed). This fork's Render defines
+# none of them: color/matrixcolor are materialised as shaders+uniforms,
+# position/motion/at are Transform/Displayable level and land in
+# forward/reverse/size/child offsets (all keyed above).
+_SM_RENDER_OPTIONAL = (
+    "color",
+    "matrixcolor",
+    "position",
+    "motion",
+    "at",
+    "textures",
+    "texture",
+    "ndc",
+    "pipeline",
+    "vertices",
+    "indices",
+)
+
+_SM_RENDER_OPTIONAL_FULL = tuple(_SM_RENDER_OPTIONAL)
+# Bare-handle / scalar leaf types (fast identity test in the hot path).
+_SM_SCALAR_TYPES = frozenset((int, bool, float, str))
+# Names that make a node "special" for the fingerprint (the walker routes them
+# through the dissolve / imagedissolve / reverse bake paths). Set-membership
+# inline equivalent of `_is_dissolve_node | _is_imagedissolve_node`.
+_SM_EFFECT_SHADERS = frozenset(
+    (
+        "renpy.dissolve",
+        "dissolve",
+        "renpy.imagedissolve",
+        "imagedissolve",
+        "image_dissolve",
+    )
+)
+_SM_EFFECT_UNIFORMS = (
+    "u_renpy_dissolve",
+    "u_renpy_dissolve_offset",
+    "u_renpy_dissolve_multiplier",
+    "u_transition",
+    "u_animation",
+)
+
+_SM_CACHE_ON: bool | None = None
+
+# Window counters (drained into the PHASE0 bake line tail).
+_SM_HITS = 0
+_SM_MISSES = 0
+_SM_NODES_SAVED = 0
+# Lifetime totals (hermetic gates / offline greps).
+_SM_HIT_TOTAL = 0
+_SM_MISS_TOTAL = 0
+_SM_NODES_SAVED_TOTAL = 0
+_SM_BAKE_TOTAL = 0
+_SM_UNCACHEABLE_TOTAL = 0
+_SM_KEY_FAIL_TOTAL = 0
+_SM_CLEAR_TOTAL = 0
+_SM_BYTES_HELD = 0
+# Cost accounting (fingerprint / eligibility-count node visits + wall time).
+_SM_FP_NODES = 0
+_SM_CNT_NODES = 0
+_SM_KEY_US = 0.0
+_SM_CNT_US = 0.0
+_SM_FP_NODES_TOTAL = 0
+_SM_CNT_NODES_TOTAL = 0
+_SM_KEY_US_TOTAL = 0.0
+_SM_CNT_US_TOTAL = 0.0
+# Why-histogram for conservative misses (diagnosis of "no candidates" runs).
+_SM_WHY: dict[str, int] = {}
+_SM_WHY_TOTAL: dict[str, int] = {}
+# Live cache owners (weak refs) so the frame-boundary hook can reach them.
+_SM_INSTANCES: list = []
+_SM_HOOKS_ON = False
+
+
+class _SmEntry:
+    """One pinned static-subtree RTT (handle + geometry + LRU bookkeeping).
+
+    ``frame`` is the last product frame in which this key was observed: a hit
+    requires ``frame == current - 1`` (2 consecutive frames with the same key),
+    so a single-frame blip can never be mistaken for a static subtree.
+    """
+
+    __slots__ = ("handle", "w", "h", "nbytes", "frame", "nodes")
+
+    def __init__(self, handle, w, h, nbytes, frame, nodes):
+        self.handle = int(handle)
+        self.w = int(w)
+        self.h = int(h)
+        self.nbytes = int(nbytes)
+        self.frame = int(frame)
+        self.nodes = int(nodes)
+
+
+def static_model_cache_enabled() -> bool:
+    """RENPY_HOST_STATIC_MODEL_CACHE — OnceLock parse; **default OFF**.
+
+    Default off is a measured verdict, not caution: the feature works (node
+    count 869 -> ~131 per effect-window frame) but the pinned-RTT round trip the
+    host offers is not alpha-correct for TRANSLUCENT content — sampling a baked
+    render texture re-applies the premultiply (`direct over dark bg = 140`,
+    `through a pinned RTT = 77` for a 50% white quad, see the PMA probe), so any
+    cached subtree that contains sub-1.0-alpha layers composites darker than the
+    direct walk (prefs-page pills/panels: +48/255 on white areas). The gate stays
+    available as an explicit opt-in for work on a straight-alpha RTT sampling
+    path: set RENPY_HOST_STATIC_MODEL_CACHE=1 (or true/yes/on).
+
+    Unset / "" / "0" / false / off / no → disabled: every node is walked exactly
+    as before (the hook returns on the first byte of the cache check).
+    """
+    global _SM_CACHE_ON
+    v = _SM_CACHE_ON
+    if v is None:
+        raw = os.environ.get("RENPY_HOST_STATIC_MODEL_CACHE", "")
+        v = str(raw).strip().lower() in ("1", "true", "yes", "on")
+        _SM_CACHE_ON = v
+    return bool(v)
+
+
+def _sm_cost(cnt_nodes: int, fp_nodes: int, cnt_s: float, key_s: float) -> None:
+    """Accumulate cache cost accounting (eligibility count + fingerprint walk)."""
+    global _SM_FP_NODES, _SM_CNT_NODES, _SM_KEY_US, _SM_CNT_US
+    global _SM_FP_NODES_TOTAL, _SM_CNT_NODES_TOTAL, _SM_KEY_US_TOTAL, _SM_CNT_US_TOTAL
+    try:
+        _SM_FP_NODES += int(fp_nodes)
+        _SM_CNT_NODES += int(cnt_nodes)
+        _SM_KEY_US += float(key_s) * 1e6
+        _SM_CNT_US += float(cnt_s) * 1e6
+        _SM_FP_NODES_TOTAL += int(fp_nodes)
+        _SM_CNT_NODES_TOTAL += int(cnt_nodes)
+        _SM_KEY_US_TOTAL += float(key_s) * 1e6
+        _SM_CNT_US_TOTAL += float(cnt_s) * 1e6
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort
+        pass
+
+
+def _sm_miss_count() -> None:
+    """Count one stable-model-cache miss (subtree walked instead of reused)."""
+    global _SM_MISSES, _SM_MISS_TOTAL
+    try:
+        _SM_MISSES += 1
+        _SM_MISS_TOTAL += 1
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort
+        pass
+
+
+def sm_cache_why(reason: str) -> None:
+    """Record one conservative-miss reason (diagnostics only, never raises)."""
+    try:
+        _SM_WHY[reason] = _SM_WHY.get(reason, 0) + 1
+        _SM_WHY_TOTAL[reason] = _SM_WHY_TOTAL.get(reason, 0) + 1
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+        pass
+
+
+def sm_cache_why_take() -> dict:
+    """Drain the window why-histogram (top reasons go on the PHASE0 line)."""
+    try:
+        d = dict(_SM_WHY)
+        _SM_WHY.clear()
+        return d
+    except Exception:  # noqa: BLE001, S110
+        return {}
+
+
+def sm_cache_window() -> tuple[int, int, int]:
+    """Peek (hit, miss, nodes_saved) since the last drain."""
+    return int(_SM_HITS), int(_SM_MISSES), int(_SM_NODES_SAVED)
+
+
+def sm_cache_window_drain() -> tuple[int, int, int]:
+    """Drain (hit, miss, nodes_saved) — the PHASE0 line tail calls this."""
+    global _SM_HITS, _SM_MISSES, _SM_NODES_SAVED
+    global _SM_FP_NODES, _SM_CNT_NODES, _SM_KEY_US, _SM_CNT_US
+    h, m, n = int(_SM_HITS), int(_SM_MISSES), int(_SM_NODES_SAVED)
+    _SM_HITS = 0
+    _SM_MISSES = 0
+    _SM_NODES_SAVED = 0
+    _SM_FP_NODES = 0
+    _SM_CNT_NODES = 0
+    _SM_KEY_US = 0.0
+    _SM_CNT_US = 0.0
+    return h, m, n
+
+
+def sm_cache_totals() -> tuple[int, int, int]:
+    """Lifetime (hit, miss, nodes_saved) totals for hermetic gates."""
+    return int(_SM_HIT_TOTAL), int(_SM_MISS_TOTAL), int(_SM_NODES_SAVED_TOTAL)
+
+
+def sm_cache_diag() -> dict:
+    """Lifetime diagnostics dict (gates / one-shot probes)."""
+    return {
+        "enabled": static_model_cache_enabled(),
+        "hit": int(_SM_HIT_TOTAL),
+        "miss": int(_SM_MISS_TOTAL),
+        "nodes_saved": int(_SM_NODES_SAVED_TOTAL),
+        "bakes": int(_SM_BAKE_TOTAL),
+        "uncacheable": int(_SM_UNCACHEABLE_TOTAL),
+        "key_fail": int(_SM_KEY_FAIL_TOTAL),
+        "clear": int(_SM_CLEAR_TOTAL),
+        "bytes_held": int(_SM_BYTES_HELD),
+        "fp_nodes": int(_SM_FP_NODES_TOTAL),
+        "cnt_nodes": int(_SM_CNT_NODES_TOTAL),
+        "key_ms": float(_SM_KEY_US_TOTAL) / 1000.0,
+        "cnt_ms": float(_SM_CNT_US_TOTAL) / 1000.0,
+        "why": dict(_SM_WHY_TOTAL),
+    }
+
+
+def sm_cache_reset() -> None:
+    """Test hook: clear lifetime diagnostics (never touches pinned handles)."""
+    global _SM_HITS, _SM_MISSES, _SM_NODES_SAVED
+    global _SM_HIT_TOTAL, _SM_MISS_TOTAL, _SM_NODES_SAVED_TOTAL
+    global _SM_BAKE_TOTAL, _SM_UNCACHEABLE_TOTAL, _SM_KEY_FAIL_TOTAL, _SM_CLEAR_TOTAL
+    _SM_HITS = _SM_MISSES = _SM_NODES_SAVED = 0
+    _SM_HIT_TOTAL = _SM_MISS_TOTAL = _SM_NODES_SAVED_TOTAL = 0
+    _SM_BAKE_TOTAL = _SM_UNCACHEABLE_TOTAL = _SM_KEY_FAIL_TOTAL = _SM_CLEAR_TOTAL = 0
+    _SM_WHY.clear()
+    _SM_WHY_TOTAL.clear()
+
+
+def _sm_register(inst) -> None:
+    """Track a live cache owner for the frame-boundary hook (weak, deduped)."""
+    try:
+        import weakref
+
+        for ref in list(_SM_INSTANCES):
+            obj = ref()
+            if obj is None:
+                _SM_INSTANCES.remove(ref)
+            elif obj is inst:
+                return
+        _SM_INSTANCES.append(weakref.ref(inst))
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+        pass
+
+
+def _sm_frame_boundary_hook() -> None:
+    """Product-frame boundary: per-instance frame seq + deferred destroys."""
+    for ref in list(_SM_INSTANCES):
+        obj = ref()
+        if obj is None:
+            try:
+                _SM_INSTANCES.remove(ref)
+            except Exception:  # noqa: BLE001, S110
+                pass
+            continue
+        try:
+            obj._sm_frame_boundary()
+        except Exception:  # noqa: BLE001, S110 -- must never abort a frame
+            pass
+
+
+def _sm_line_tail(drain: bool = False) -> str:
+    """PHASE0 bake-line tail: ``sm_hit=N sm_miss=N sm_nodes_saved=N``.
+
+    ``drain=False`` peeks (the flush may still decide to skip this window);
+    ``drain=True`` resets the window counters after a line was emitted.
+    """
+    try:
+        if not static_model_cache_enabled():
+            return ""
+        h, m, n = sm_cache_window()
+        if not (h or m or n or _SM_FP_NODES or _SM_CNT_NODES):
+            return ""
+        why = sm_cache_why_take() if drain else dict(_SM_WHY)
+        why_s = ""
+        try:
+            if why:
+                parts = []
+                for k, v in sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))[:3]:
+                    parts.append("%s=%d" % (str(k).replace(" ", "_"), v))
+                why_s = " sm_why=" + ",".join(parts)
+        except Exception:  # noqa: BLE001, S110
+            why_s = ""
+        if drain:
+            sm_cache_window_drain()
+        return (
+            " sm_hit=%d sm_miss=%d sm_nodes_saved=%d sm_bytes=%d"
+            " sm_fp_nodes=%d sm_cnt_nodes=%d sm_key_ms=%.2f sm_cnt_ms=%.2f%s"
+            % (
+                h,
+                m,
+                n,
+                int(_SM_BYTES_HELD),
+                int(_SM_FP_NODES),
+                int(_SM_CNT_NODES),
+                float(_SM_KEY_US) / 1000.0,
+                float(_SM_CNT_US) / 1000.0,
+                why_s,
+            )
+        )
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        return ""
+
+
+def _sm_install_hooks() -> None:
+    """Register the frame-boundary + PHASE0-tail hooks once (lazy, draw_debug)."""
+    global _SM_HOOKS_ON
+    if _SM_HOOKS_ON:
+        return
+    try:
+        from .draw_debug import register_bake_line_tail, register_frame_boundary_hook
+
+        register_frame_boundary_hook(_sm_frame_boundary_hook)
+        register_bake_line_tail(_sm_line_tail)
+        _SM_HOOKS_ON = True
+    except Exception:  # noqa: BLE001, S110 -- missing hook API → cache still works
+        pass
 
 
 class SurftreeMixin:
@@ -1877,6 +2280,1128 @@ class SurftreeMixin:
                     except Exception:  # noqa: BLE001, S110 -- DRAW_RAISE tolerated
                         pass
 
+    # --- Stable subtree MODEL cache ------------------------------------------
+
+    def _sm_state(self):
+        """Lazily create + register the static-model-cache state on this draw."""
+        st = getattr(self, "_sm_cache", None)
+        if st is None:
+            st = {}
+            self._sm_cache = st              # key → _SmEntry
+            self._sm_pending = []            # handles awaiting next-frame destroy
+            self._sm_gate = {}               # id(node) → frame until which skipped
+            self._sm_pos_gate = {}           # walk slot → frame until which skipped
+            self._sm_cur_keys = {}           # id(node) → key seen this frame
+            self._sm_prev_keys = {}          # id(node) → key seen last frame
+            self._sm_cur_pos = {}            # walk slot → key seen this frame
+            self._sm_prev_pos = {}           # walk slot → key seen last frame
+            self._sm_frame = 0               # product-frame sequence
+            self._sm_bytes = 0               # pinned bytes held
+            self._sm_stamp = None            # (drawable, layout) geometry stamp
+            self._sm_in_bake = False         # re-entrancy guard for our own bake
+            self._sm_count_budget = _SM_COUNT_FRAME_BUDGET
+            self._sm_pol = {}                # class → fingerprint policy
+            _sm_install_hooks()
+            _sm_register(self)
+        return st
+
+    def _sm_frame_boundary(self) -> None:
+        """Product-frame boundary hook (draw_debug.bake_frame_flush).
+
+        Advances the frame sequence, drains deferred destroys queued from the
+        previous frame (never a mid-frame destroy of a handle the current
+        frame's frame_cmds still reference) and rotates the churn-detection
+        key tables.
+        """
+        try:
+            self._sm_frame = int(getattr(self, "_sm_frame", 0)) + 1
+            self._sm_count_budget = _SM_COUNT_FRAME_BUDGET
+            pend = getattr(self, "_sm_pending", None)
+            if pend:
+                for h in list(pend):
+                    self._trans_cache_destroy_handle(h)
+                pend.clear()
+            cur = getattr(self, "_sm_cur_keys", None)
+            prev = getattr(self, "_sm_prev_keys", None)
+            if prev is not None:
+                prev.clear()
+                if cur:
+                    prev.update(cur)
+            if cur:
+                cur.clear()
+            cur_pos = getattr(self, "_sm_cur_pos", None)
+            prev_pos = getattr(self, "_sm_prev_pos", None)
+            if prev_pos is not None:
+                prev_pos.clear()
+                if cur_pos:
+                    prev_pos.update(cur_pos)
+            if cur_pos:
+                cur_pos.clear()
+            f = int(self._sm_frame)
+            for name in ("_sm_gate", "_sm_pos_gate"):
+                g = getattr(self, name, None)
+                if g:
+                    for k in [k for k, until in g.items() if int(until) <= f]:
+                        g.pop(k, None)
+            self._sm_prune_seen()
+        except Exception:  # noqa: BLE001, S110 -- boundary work must never abort
+            pass
+
+    def _sm_prune_seen(self) -> None:
+        """Keep the churn tables bounded (FIFO on insertion order)."""
+        try:
+            for name in ("_sm_cur_keys", "_sm_cur_pos", "_sm_streak"):
+                cur = getattr(self, name, None)
+                if cur is not None and len(cur) > _SM_SEEN_CAP:
+                    for k in list(cur)[: len(cur) - _SM_SEEN_CAP]:
+                        cur.pop(k, None)
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+    def _sm_geometry_stamp(self):
+        try:
+            d = getattr(self, "drawable_size", None) or (0, 0)
+            l = getattr(self, "layout_virtual_size", None) or self.virtual_size
+            return (int(d[0]), int(d[1]), int(l[0]), int(l[1]))
+        except Exception:  # noqa: BLE001, S110
+            return None
+
+    def _sm_budget_bytes(self) -> int:
+        """LRU byte budget: <= _SM_BUDGET_FACTOR × drawable area × 4 bytes."""
+        try:
+            d = getattr(self, "drawable_size", None) or (0, 0)
+            w, h = int(d[0]), int(d[1])
+        except Exception:  # noqa: BLE001, S110
+            w = h = 0
+        if w <= 0 or h <= 0:
+            try:
+                l = getattr(self, "layout_virtual_size", None) or self.virtual_size
+                w, h = int(l[0]), int(l[1])
+            except Exception:  # noqa: BLE001, S110
+                w = h = 0
+        if w <= 0 or h <= 0:
+            w, h = _SM_FALLBACK_DRAWABLE
+        return max(1, int(_SM_BUDGET_FACTOR * w * h * 4))
+
+    def _sm_count_nodes(self, node):
+        """Budgeted subtree node count; only proves ``>= _SM_MIN_NODES``.
+
+        Returns ``_SM_MIN_NODES`` as soon as the floor is reached (the exact
+        count is produced by the fingerprint walk used for the key), or None
+        when the subtree is smaller / the per-frame count budget ran out.
+        """
+        budget = int(getattr(self, "_sm_count_budget", _SM_COUNT_FRAME_BUDGET))
+        if budget <= 0:
+            sm_cache_why("count_budget_exhausted")
+            return None
+        floor = _SM_MIN_NODES
+        n = 0
+        visited = 0
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur is None:
+                continue
+            n += 1
+            visited += 1
+            if n >= floor:
+                self._sm_count_budget = budget - visited
+                return floor
+            if visited >= budget:
+                break
+            try:
+                for child, _xo, _yo in self._iter_children(cur):
+                    if child is not None:
+                        stack.append(child)
+            except Exception:  # noqa: BLE001 -- probe failure → conservative miss
+                sm_cache_why("count_probe_failed")
+                return None
+        self._sm_count_budget = budget - visited
+        return None
+
+    # --- fingerprint ---------------------------------------------------------
+
+    def _sm_matrix_bits(self, v, where):
+        """Strict Matrix bits: None/identity/4x4-or-2D values, else uncacheable."""
+        if v is None:
+            return "n"
+        try:
+            if self._is_identity(v):
+                return "i"
+        except Exception:  # noqa: BLE001
+            pass
+        vals = []
+        seen_any = False
+        try:
+            for attr in (
+                "xdx", "xdy", "ydx", "ydy", "xdw", "ydw",
+                "zdx", "zdy", "zdz", "zdw", "wdx", "wdy", "wdz", "wdw",
+            ):
+                if hasattr(v, attr):
+                    seen_any = True
+                    vals.append((attr, round(float(getattr(v, attr)), 6)))
+        except Exception:  # noqa: BLE001 -- value noise: uniform miss fallback
+            raise _TransBakeUncacheable("sm fp matrix %s unreadable" % where) from None
+        if not seen_any:
+            raise _TransBakeUncacheable(
+                "sm fp matrix %s type %s" % (where, type(v).__name__)
+            )
+        return ("m", type(v).__name__, tuple(vals))
+
+    def _sm_one_tex(self, t, where):
+        """Strict texture-handle bits (unknown texture-like type → uncacheable)."""
+        if t is None or t is _SM_ABSENT:
+            return 0
+        if isinstance(t, HostTexture):
+            h = int(getattr(t, "handle", 0) or 0)
+            if h <= 0:
+                return 0
+            return ("ht", h, int(t.x), int(t.y), int(t.w), int(t.h), int(t.width), int(t.height))
+        if isinstance(t, int) and not isinstance(t, bool):
+            return ("ht", int(t)) if t > 0 else 0
+        for attr in ("handle", "texture"):
+            inner = getattr(t, attr, None)
+            if isinstance(inner, HostTexture):
+                h = int(getattr(inner, "handle", 0) or 0)
+                return ("ht", h) if h > 0 else 0
+            if isinstance(inner, int) and not isinstance(inner, bool):
+                return ("ht", int(inner)) if inner > 0 else 0
+        raise _TransBakeUncacheable("sm fp %s texture type %s" % (where, type(t).__name__))
+
+    def _sm_tex_bits(self, node):
+        th = []
+        raw = getattr(node, "texture", _SM_ABSENT)
+        th.append(self._sm_one_tex(raw, "texture"))
+        raws = getattr(node, "textures", _SM_ABSENT)
+        if raws is _SM_ABSENT or raws is None:
+            th.append(0)
+        elif isinstance(raws, (list, tuple)):
+            th.append(tuple(self._sm_one_tex(t, "textures") for t in raws))
+        else:
+            th.append(self._sm_one_tex(raws, "textures"))
+        return tuple(th)
+
+    def _sm_model_bits(self, node):
+        """Bits for ``cached_model`` (texture slots + mesh) — never ignored."""
+        cm = getattr(node, "cached_model", _SM_ABSENT)
+        if cm is _SM_ABSENT or cm is None:
+            return None
+        return self._sm_model_shape_bits(cm)
+
+    def _sm_model_shape_bits(self, cm):
+        """``cached_model`` SHAPE bits: presence, slot count, mesh, shaders, uniforms.
+
+        The model's texture *handles* are deliberately not part of the key:
+        prepare rebuilds ``cached_model`` every frame and the pooled bake RTTs
+        it samples are re-targeted every frame (the same reason the proven
+        trans fingerprint keys no model handles). Soundness comes from the
+        fact that the model is *derived* from the node's own keyed attributes
+        (shaders/uniforms/mesh/size) plus its recursed children; the only
+        outside source would be dissolve slot recovery, and dissolve /
+        imagedissolve nodes are uncacheable by construction.
+        """
+        try:
+            texs = getattr(cm, "textures", None)
+            if isinstance(texs, (list, tuple)):
+                n_slots = len(texs)
+            else:
+                n_slots = 1 if getattr(cm, "texture", None) is not None else 0
+            return (
+                type(cm).__name__,
+                n_slots,
+                self._sm_mesh_bits(cm),
+                None
+                if getattr(cm, "shaders", None) is None
+                else self._sm_basic_bits(getattr(cm, "shaders"), "cm.shaders"),
+                self._sm_uniform_bits(getattr(cm, "uniforms", None), "cm.uniforms"),
+            )
+        except _TransBakeUncacheable:
+            raise
+        except Exception:  # noqa: BLE001 -- probe failure → conservative miss
+            raise _TransBakeUncacheable("sm fp cached_model probe failed") from None
+
+    def _sm_digest_seq(self, seq, where):
+        """Digest a numeric sequence (vertices/indices) — content-exact bits."""
+        try:
+            n = len(seq)
+        except Exception:  # noqa: BLE001
+            raise _TransBakeUncacheable("sm fp %s not a sequence" % where) from None
+        if n > 4096:
+            raise _TransBakeUncacheable("sm fp %s too long (%d)" % (where, n))
+        try:
+            d = hashlib.blake2b(digest_size=8)
+            for v in seq:
+                if v is None:
+                    d.update(b"n;")
+                elif isinstance(v, bool):
+                    d.update(b"1;" if v else b"0;")
+                elif isinstance(v, (int, float)):
+                    d.update(repr(round(float(v), 6)).encode("ascii", "replace"))
+                    d.update(b";")
+                else:
+                    raise _TransBakeUncacheable("sm fp %s element type %s" % (where, type(v).__name__))
+            return ("d", n, d.hexdigest())
+        except _TransBakeUncacheable:
+            raise
+        except Exception:  # noqa: BLE001
+            raise _TransBakeUncacheable("sm fp %s unreadable" % where) from None
+
+    def _sm_uniform_bits(self, v, where):
+        """Uniform/property dict bits: basic values + matrices only.
+
+        Hot path for the common ``{str: float}`` / ``{str: int}`` case: sorted
+        keys (plain C sort, no per-key lambda/str) and an inline type dispatch,
+        so a node carrying a handful of uniforms does not pay a Python call per
+        uniform.
+        """
+        if v is None or v is _SM_ABSENT:
+            return None
+        if type(v) is not dict:
+            raise _TransBakeUncacheable("sm fp %s not a dict (%s)" % (where, type(v).__name__))
+        if not v:
+            return 0
+        if len(v) == 1:
+            keys = list(v)
+        else:
+            try:
+                keys = sorted(v)
+            except Exception:  # noqa: BLE001 -- unsortable keys → no key
+                raise _TransBakeUncacheable("sm fp %s keys unsortable" % where) from None
+        out = []
+        append = out.append
+        for k in keys:
+            val = v[k]
+            tv = type(val)
+            append(k)
+            if tv is float:
+                append(round(val, 5))
+            elif tv is int or tv is str or tv is bool or val is None:
+                append(val)
+            else:
+                append(self._sm_value_bits(val, "%s[%s]" % (where, k)))
+        return ("u", tuple(out))
+
+    def _sm_basic_bits(self, v, where):
+        """Strict basic-value bits; unknown types → uncacheable."""
+        if v is None or v is _SM_ABSENT:
+            return None
+        if isinstance(v, bool):
+            return ("b", v)
+        if isinstance(v, int):
+            return ("n", int(v))
+        if isinstance(v, float):
+            return ("f", round(float(v), 6))
+        if isinstance(v, str):
+            return ("s", v)
+        if isinstance(v, (tuple, list)):
+            return ("t", tuple(self._sm_basic_bits(e, where) for e in v))
+        raise _TransBakeUncacheable("sm fp %s value type %s" % (where, type(v).__name__))
+
+    def _sm_value_bits(self, v, where):
+        """Per-attribute bits: basic values, matrices, meshes, texture handles."""
+        if v is _SM_ABSENT or v is None:
+            return None
+        if isinstance(v, (bool, int, float, str)):
+            return self._sm_basic_bits(v, where)
+        if where.endswith("mesh"):
+            return self._sm_mesh_bits_by_value(v, where)
+        try:
+            if hasattr(v, "xdx"):
+                return self._sm_matrix_bits(v, where)
+        except Exception:  # noqa: BLE001
+            pass
+        if isinstance(v, (tuple, list)):
+            return ("t", tuple(self._sm_value_bits(e, where) for e in v))
+        if isinstance(v, dict):
+            return self._sm_uniform_bits(v, where)
+        raise _TransBakeUncacheable("sm fp %s value type %s" % (where, type(v).__name__))
+
+    def _sm_mesh_bits_by_value(self, m, where):
+        """Mesh bits for a mesh VALUE (``_trans_mesh_bits`` reads node.mesh)."""
+        if m is None or m is _SM_ABSENT:
+            return None
+        if isinstance(m, bool):
+            return ("b", m)
+        if isinstance(m, int) and not isinstance(m, bool):
+            return ("h", int(m))
+        if m == "quad":
+            return "q"
+        if hasattr(m, "vertices"):
+            try:
+                verts = list(m.vertices) or []
+            except Exception:  # noqa: BLE001, S110
+                verts = []
+            if len(verts) > 64:
+                raise _TransBakeUncacheable("sm fp mesh > 64 verts")
+
+            d = hashlib.blake2b(digest_size=8)
+            d.update(",".join(repr(float(v)) for v in verts).encode("ascii", "replace"))
+            return ("vh", len(verts), d.hexdigest())
+        if hasattr(m, "get_points") or hasattr(m, "points"):
+            return ("p", type(m).__name__)
+        raise _TransBakeUncacheable("sm fp mesh type %s" % type(m).__name__)
+
+    def _sm_fp_leaf(self, node):
+        """Fingerprint for a non-Render leaf (``_draw_model_like`` inputs)."""
+        if getattr(node, "_dissolve_origin", None) is not None:
+            # Dissolve slot recovery reads the origin's children — state the
+            # key cannot see → never cacheable.
+            raise _TransBakeUncacheable("sm fp leaf with _dissolve_origin")
+        try:
+            get_size = hasattr(node, "get_size") or hasattr(node, "_pixels")
+        except Exception:  # noqa: BLE001, S110
+            get_size = False
+        tex_id = getattr(node, "texture", _SM_ABSENT)
+        texes = getattr(node, "textures", _SM_ABSENT)
+        has_tex = (
+            (tex_id is not _SM_ABSENT and tex_id is not None)
+            or (texes is not _SM_ABSENT and texes is not None)
+        )
+        if get_size and not has_tex:
+            # Surface-like leaf: the drawn pixels come from a content-derived
+            # upload handle the key cannot see → never cacheable.
+            raise _TransBakeUncacheable("sm fp surface-like leaf %s" % type(node).__name__)
+        w_a = getattr(node, "width", _SM_ABSENT)
+        w_b = getattr(node, "w", _SM_ABSENT)
+        h_a = getattr(node, "height", _SM_ABSENT)
+        h_b = getattr(node, "h", _SM_ABSENT)
+        parts = [
+            type(node).__name__,
+            self._sm_tex_bits(node),
+            self._sm_basic_bits(getattr(node, "color", _SM_ABSENT), "leaf.color"),
+            self._sm_basic_bits(getattr(node, "ndc", _SM_ABSENT), "leaf.ndc"),
+            self._sm_basic_bits(getattr(node, "shaders", _SM_ABSENT), "leaf.shaders"),
+            self._sm_uniform_bits(getattr(node, "uniforms", _SM_ABSENT), "leaf.uniforms"),
+            self._sm_basic_bits(getattr(node, "pipeline", _SM_ABSENT), "leaf.pipeline"),
+            self._sm_basic_bits(getattr(node, "alpha", _SM_ABSENT), "leaf.alpha"),
+            self._sm_basic_bits(getattr(node, "over", _SM_ABSENT), "leaf.over"),
+            self._sm_basic_bits(getattr(node, "operation", _SM_ABSENT), "leaf.operation"),
+            self._sm_basic_bits(
+                getattr(node, "operation_complete", _SM_ABSENT), "leaf.operation_complete"
+            ),
+            self._sm_basic_bits(
+                getattr(node, "operation_alpha", _SM_ABSENT), "leaf.operation_alpha"
+            ),
+            self._sm_model_bits(node),
+            (
+                self._sm_value_bits(w_a, "leaf.width"),
+                self._sm_value_bits(w_b, "leaf.w"),
+                self._sm_value_bits(h_a, "leaf.height"),
+                self._sm_value_bits(h_b, "leaf.h"),
+            ),
+        ]
+        mesh = getattr(node, "mesh", _SM_ABSENT)
+        if mesh is _SM_ABSENT or mesh is None:
+            parts.append(None)
+        else:
+            parts.append(self._sm_mesh_bits_by_value(mesh, "leaf.mesh"))
+        for name in ("vertices", "indices", "texture1"):
+            v = getattr(node, name, _SM_ABSENT)
+            if v is _SM_ABSENT or v is None:
+                parts.append(None)
+            elif name == "texture1":
+                parts.append(self._sm_one_tex(v, "leaf.texture1"))
+            else:
+                parts.append(self._sm_digest_seq(v, "leaf.%s" % name))
+        if w_a is _SM_ABSENT and w_b is _SM_ABSENT:
+            try:
+                sw, sh = node.get_size()
+                parts.append(("gs", int(sw), int(sh)))
+            except Exception:  # noqa: BLE001 -- no size surface: matches walker default
+                parts.append(None)
+        else:
+            parts.append(None)
+        return tuple(parts)
+
+    def _sm_pol_map(self):
+        """Class → fingerprint-policy cache (lazily created; hot path lookup)."""
+        pol = getattr(self, "_sm_pol", None)
+        if pol is None:
+            pol = {}
+            self._sm_pol = pol
+        return pol
+
+    def _sm_class_policy(self, cls):
+        """Per-class fingerprint policy: ``(mode, optional_names, has_blits)``.
+
+        ``mode`` 0 — the class is a cdef class (the engine's ``Render``) whose
+        attribute surface is fixed at class level: deciding once per class that
+        every pixel-affecting attribute the walker reads is present lets the
+        per-node hot path drop ~35 ``getattr`` probes per node. ``mode`` 2 — a
+        plain-Python class (per-instance dict, e.g. CPython managed dict):
+        the surface can only be probed per instance, so the slower path probes
+        every required attribute and keys every optional name that exists.
+        ``mode`` 3 — a cdef-like class missing a required attribute: unkeyable.
+        Either way the contract "any attribute we cannot read, or any state we
+        cannot see → uncacheable" holds: a class that does not expose the full
+        surface is never keyed.
+        """
+        pol = self._sm_pol_map().get(cls)
+        if pol is None:
+            # __dictoffset__ < 0 ⇒ instances have a (managed) instance dict.
+            if getattr(cls, "__dictoffset__", 0) != 0:
+                pol = (2, _SM_RENDER_OPTIONAL_FULL, True)
+            else:
+                req_ok = True
+                for name in _SM_RENDER_REQUIRED:
+                    if not hasattr(cls, name):
+                        req_ok = False
+                        break
+                pol = (
+                    0 if req_ok else 3,
+                    tuple(n for n in _SM_RENDER_OPTIONAL if hasattr(cls, n)),
+                    hasattr(cls, "blits"),
+                )
+            self._sm_pol_map()[cls] = pol
+        return pol
+
+    def _sm_matrix_bits_fast(self, v):
+        """Cheap matrix bits (values only; identity == its own value tuple)."""
+        try:
+            if hasattr(v, "zdx"):
+                return (
+                    v.xdx, v.xdy, v.ydx, v.ydy, v.xdw, v.ydw,
+                    v.zdx, v.zdy, v.zdz, v.zdw, v.wdx, v.wdy, v.wdz, v.wdw,
+                )
+            return (v.xdx, v.xdy, v.ydx, v.ydy, v.xdw, v.ydw)
+        except Exception:  # noqa: BLE001 -- unknown transform type → no key
+            raise _TransBakeUncacheable("sm fp matrix type %s" % type(v).__name__) from None
+
+    def _sm_fp_render(self, node, pol, depth, cap, pol_map=None):
+        """Strict fingerprint for a Render-like node (every pixel input keyed).
+
+        Hot path: direct attribute reads with a per-class policy (no per-attribute
+        ``getattr`` probing), rounded/int-stabilised numeric fields (float noise
+        from animation must not churn the key while a 1e-4 difference is still
+        far below one 1/255 pixel step), one flat tuple, children iterated inline.
+        """
+        if pol_map is None:
+            pol_map = self._sm_pol_map()
+        cls = type(node)
+        mode = pol[0]
+        if mode == 3:
+            raise _TransBakeUncacheable("sm fp class %s missing attrs" % cls.__name__)
+        if mode == 2:
+            # Instance-dict class: every required attribute must be readable.
+            for name in _SM_RENDER_REQUIRED:
+                try:
+                    getattr(node, name)
+                except Exception:  # noqa: BLE001 -- unreadable → no key
+                    raise _TransBakeUncacheable("sm fp attr %s unreadable" % name) from None
+        shaders = node.shaders
+        uniforms = node.uniforms
+        mesh = node.mesh
+        op = node.operation
+        op_complete = node.operation_complete
+        if shaders or uniforms or op or op_complete:
+            # Effect-bearing / dissolve-carrying nodes only: every detection path
+            # of the walker's `_is_dissolve_node` / `_is_imagedissolve_node` goes
+            # through shaders, uniforms or operation/operation_complete, and a
+            # dissolve or imagedissolve subtree (or any node with the dual-slot
+            # recovery pointer) belongs to the existing dissolve/reverse bake
+            # paths → never cached here. The common check is set membership
+            # (equivalent to the two predicates, see _SM_EFFECT_*); the full
+            # predicates run only for the rare op-driven forms.
+            special = False
+            if shaders:
+                for _s in shaders:
+                    if _s in _SM_EFFECT_SHADERS:
+                        special = True
+                        break
+            if not special and uniforms:
+                for _k in _SM_EFFECT_UNIFORMS:
+                    if _k in uniforms:
+                        special = True
+                        break
+            if not special and (op or op_complete):
+                special = bool(
+                    self._is_dissolve_node(node) or self._is_imagedissolve_node(node)
+                )
+            if special:
+                raise _TransBakeUncacheable("sm fp dissolve node %s" % cls.__name__)
+            if getattr(node, "_dissolve_origin", None) is not None:
+                raise _TransBakeUncacheable("sm fp node with _dissolve_origin")
+        fwd = node.forward
+        rev = node.reverse
+        ct = node.cached_texture
+        cm = node.cached_model
+        props = node.properties
+        nearest = node.nearest
+        if type(nearest) is not bool and nearest is not None:
+            nearest = self._sm_value_bits(nearest, "nearest")
+        xc = node.xclipping
+        yc = node.yclipping
+        if xc or yc:
+            clip_bits = (
+                True,
+                bool(xc),
+                bool(yc),
+                getattr(node, "xclip", None),
+                getattr(node, "yclip", None),
+                getattr(node, "xclip_rect", None),
+                getattr(node, "yclip_rect", None),
+            )
+        else:
+            clip_bits = False
+        # children (inline mirror of _iter_children: children then blits)
+        kids = []
+        children = node.children
+        if children:
+            for entry in children:
+                if entry is None:
+                    continue
+                if isinstance(entry, (tuple, list)):
+                    nent = len(entry)
+                    if nent > 2:
+                        child, kx, ky = entry[0], entry[1], entry[2]
+                    elif nent == 2:
+                        child, kx, ky = entry[0], entry[1], 0.0
+                    else:
+                        continue
+                else:
+                    child, kx, ky = entry, 0.0, 0.0
+                kids.append((kx, ky, self._sm_fp_node(child, depth + 1, cap, pol_map)))
+        if pol[2]:
+            blits = getattr(node, "blits", None) if mode == 2 else node.blits
+            if blits:
+                for entry in blits:
+                    if entry is None:
+                        continue
+                    if isinstance(entry, (tuple, list)):
+                        nent = len(entry)
+                        if nent > 2:
+                            child, kx, ky = entry[0], entry[1], entry[2]
+                        elif nent == 2:
+                            child, kx, ky = entry[0], entry[1], 0.0
+                        else:
+                            continue
+                    else:
+                        child, kx, ky = entry, 0.0, 0.0
+                    kids.append((kx, ky, self._sm_fp_node(child, depth + 1, cap, pol_map)))
+        opt_names = pol[1]
+        if opt_names:
+            opt = []
+            for name in opt_names:
+                v = getattr(node, name, None) if mode == 2 else getattr(node, name)
+                if v is None:
+                    opt.append(None)
+                elif name in ("texture", "textures"):
+                    opt.append(self._sm_tex_value_bits(v, name))
+                else:
+                    opt.append(self._sm_value_bits(v, name))
+            opt_bits = tuple(opt)
+        else:
+            opt_bits = None
+        return (
+            cls.__name__,
+            int(node.width),
+            int(node.height),
+            round(node.alpha, 4),
+            round(node.over, 4),
+            node.matrix_kind,
+            0 if fwd is None else self._sm_matrix_bits_fast(fwd),
+            0 if rev is None else self._sm_matrix_bits_fast(rev),
+            clip_bits,
+            None if uniforms is None else self._sm_uniform_bits(uniforms, "u"),
+            None if shaders is None else self._sm_basic_bits(shaders, "shaders"),
+            None if mesh is None else self._sm_mesh_bits_by_value(mesh, "mesh"),
+            0 if ct is None else self._sm_one_tex(ct, "cached_texture"),
+            None if cm is None else self._sm_model_shape_bits(cm),
+            nearest,
+            None if props is None else self._sm_uniform_bits(props, "properties"),
+            (
+                op,
+                round(op_complete, 4),
+                node.operation_alpha,
+                node.operation_parameter,
+            ),
+            (int(node.cropped_width), int(node.cropped_height)),
+            opt_bits,
+            tuple(kids),
+        )
+
+    def _sm_tex_value_bits(self, v, where):
+        if v is None:
+            return 0
+        if isinstance(v, (list, tuple)):
+            return tuple(self._sm_one_tex(t, where) for t in v)
+        return self._sm_one_tex(v, where)
+
+    def _sm_fp_node(self, node, depth, cap, pol_map=None):
+        """Recursive fingerprint: Render-like / leaf / bare handle.
+
+        One budget decrement per visited node (the returned count is the number
+        of ``_draw_node`` calls a full walk would have made for this subtree).
+        ``pol_map`` is passed down so the hot path costs one dict lookup per
+        node instead of one method call + lookup.
+        """
+        if pol_map is None:
+            pol_map = self._sm_pol_map()
+        if node is None:
+            return None
+        cap[0] -= 1
+        if cap[0] < 0:
+            raise _TransBakeUncacheable("sm fp node budget exceeded")
+        t = type(node)
+        if t in _SM_SCALAR_TYPES:
+            return node
+        if depth > _SM_FP_MAX_DEPTH:
+            raise _TransBakeUncacheable("sm fp depth budget %s" % t.__name__)
+        if t is HostTexture or isinstance(node, HostTexture):
+            return self._sm_one_tex(node, "node")
+        cls = t
+        pol = pol_map.get(cls)
+        if pol is None:
+            pol = self._sm_class_policy(cls)
+        if pol[0] <= 2:
+            return self._sm_fp_render(node, pol, depth, cap, pol_map)
+        # Unknown class: Render-like (children + mesh) but not a class surface
+        # the walker understands → uncacheable. A child-bearing unknown is
+        # uncacheable too; a childless one is fingerprinted as a model leaf.
+        if hasattr(node, "mesh") or hasattr(node, "children"):
+            raise _TransBakeUncacheable("sm fp unknown render-like class %s" % cls.__name__)
+        try:
+            first = next(iter(self._iter_children(node)), None)
+        except Exception:  # noqa: BLE001 -- probe failure → conservative miss
+            raise _TransBakeUncacheable("sm fp child probe failed") from None
+        if first is not None:
+            raise _TransBakeUncacheable("sm fp non-render container %s" % cls.__name__)
+        return self._sm_fp_leaf(node)
+
+    def _sm_key(self, node):
+        """(key, node_count) for ``node``; (None, 0) when not cacheable."""
+        try:
+            handles = set()
+            cap = [_SM_FP_MAX_NODES, handles, 0]
+            body = self._sm_fp_node(node, 0, cap, self._sm_pol_map())
+            if body is None:
+                sm_cache_why("fp_none")
+                return None, 0
+            nodes = max(1, int(_SM_FP_MAX_NODES) - int(cap[0]))
+            drawable = tuple(int(x) for x in (getattr(self, "drawable_size", None) or (0, 0)))
+            layout = tuple(int(x) for x in (getattr(self, "layout_virtual_size", None) or (0, 0)))
+            _vids = _movie_tex_handles() if _subtree_movie_veto_enabled() else None
+            if _vids is None:
+                _nonce = _movie_publish_seq()
+            else:
+                if handles and (handles & set(_vids)):
+                    sm_cache_why("movie_texture_in_subtree")
+                    return None, 0
+                _nonce = 0
+            return ("sm1", _nonce, drawable, layout, body), nodes
+        except _TransBakeUncacheable as e:
+            global _SM_UNCACHEABLE_TOTAL
+            try:
+                _SM_UNCACHEABLE_TOTAL += 1
+            except Exception:  # noqa: BLE001, S110
+                pass
+            try:
+                sm_cache_why(str(e)[:48])
+            except Exception:  # noqa: BLE001, S110
+                pass
+            return None, 0
+        except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
+            global _SM_KEY_FAIL_TOTAL
+            try:
+                _SM_KEY_FAIL_TOTAL += 1
+            except Exception:  # noqa: BLE001, S110
+                pass
+            _host_draw_fail("sm_key", e)
+            return None, 0
+
+    # --- store / eviction ----------------------------------------------------
+
+    def _sm_entry_alive(self, ent) -> bool:
+        handle = int(ent.handle)
+        if handle <= 0:
+            return False
+        if self._rtt_hot_pool_handle(handle):
+            self._sm_clear()
+            return False
+        try:
+            import renpy_host  # type: ignore
+
+            return bool(renpy_host.texture_alive(int(handle)))
+        except Exception:  # noqa: BLE001, S110 -- probe failure → conservative miss
+            return False
+
+    def _sm_retire(self, ent, defer: bool = True) -> None:
+        """Drop one entry; its pinned handle is destroyed on the next frame."""
+        global _SM_BYTES_HELD
+        try:
+            h = int(ent.handle)
+        except Exception:  # noqa: BLE001, S110
+            return
+        try:
+            self._sm_bytes = max(0, int(getattr(self, "_sm_bytes", 0)) - int(ent.nbytes))
+            _SM_BYTES_HELD = max(0, int(_SM_BYTES_HELD) - int(ent.nbytes))
+        except Exception:  # noqa: BLE001, S110
+            pass
+        try:
+            if defer:
+                pend = getattr(self, "_sm_pending", None)
+                if pend is None:
+                    pend = []
+                    self._sm_pending = pend
+                pint = int(h)
+                if pint > 0 and pint not in pend:
+                    pend.append(pint)
+            else:
+                self._trans_cache_destroy_handle(h)
+        except Exception:  # noqa: BLE001, S110 -- destroy must never abort frames
+            pass
+
+    def _sm_store(self, key, handle, w, h, nodes, frame):
+        """Pin a fresh private RTT under ``key`` (LRU eviction by byte budget)."""
+        global _SM_BYTES_HELD
+        st = self._sm_state()
+        try:
+            nbytes = int(w) * int(h) * 4
+        except Exception:  # noqa: BLE001, S110
+            nbytes = 0
+        budget = self._sm_budget_bytes()
+        if nbytes > budget:
+            # A single bake larger than the whole byte budget would evict
+            # everything else on every frame → refuse (normal walk).
+            sm_cache_why("entry_over_budget")
+            return None
+        ent = _SmEntry(int(handle), int(w), int(h), nbytes, int(frame), int(nodes))
+        st.pop(key, None)
+        while st and (int(getattr(self, "_sm_bytes", 0)) + nbytes) > budget:
+            try:
+                old_key, old = next(iter(st.items()))
+            except StopIteration:
+                break
+            st.pop(old_key, None)
+            self._sm_retire(old, defer=True)
+        st[key] = ent
+        try:
+            self._sm_bytes = int(getattr(self, "_sm_bytes", 0)) + nbytes
+            _SM_BYTES_HELD = int(_SM_BYTES_HELD) + nbytes
+        except Exception:  # noqa: BLE001, S110
+            pass
+        return ent
+
+    def _sm_clear(self) -> None:
+        """Destroy every pinned entry + pending destroys (kill_textures/resize)."""
+        global _SM_CLEAR_TOTAL, _SM_BYTES_HELD
+        try:
+            _SM_CLEAR_TOTAL += 1
+        except Exception:  # noqa: BLE001, S110
+            pass
+        try:
+            st = getattr(self, "_sm_cache", None)
+            if st:
+                for ent in list(st.values()):
+                    try:
+                        self._trans_cache_destroy_handle(int(ent.handle))
+                    except Exception:  # noqa: BLE001, S110
+                        pass
+                st.clear()
+            self._sm_bytes = 0
+            _SM_BYTES_HELD = 0
+            pend = getattr(self, "_sm_pending", None)
+            if pend:
+                for h in list(pend):
+                    self._trans_cache_destroy_handle(h)
+                pend.clear()
+            for name in (
+                "_sm_gate",
+                "_sm_pos_gate",
+                "_sm_cur_keys",
+                "_sm_prev_keys",
+                "_sm_cur_pos",
+                "_sm_prev_pos",
+                "_sm_streak",
+            ):
+                d = getattr(self, name, None)
+                if d:
+                    d.clear()
+        except Exception:  # noqa: BLE001, S110 -- cache cleanup must never abort
+            pass
+
+    # --- bake / draw ---------------------------------------------------------
+
+    def _sm_bake_box(self, node):
+        """Bake box (w, h) or (0, 0) when the box would not fit the surface."""
+        try:
+            nw, nh = self._node_size(node, default=(0, 0))
+            nw, nh = int(nw), int(nh)
+        except Exception:  # noqa: BLE001, S110
+            return 0, 0
+        if nw <= 0 or nh <= 0:
+            return 0, 0
+        try:
+            from .rtt_pool import _clamp_rtt_size
+
+            d = getattr(self, "drawable_size", None) or (0, 0)
+            l = getattr(self, "layout_virtual_size", None) or self.virtual_size
+            cw, ch = _clamp_rtt_size(nw, nh, int(l[0]), int(d[0]), int(l[1]), int(d[1]))
+        except Exception:  # noqa: BLE001 -- unknown bounds → conservative miss
+            return 0, 0
+        if int(cw) != nw or int(ch) != nh:
+            sm_cache_why("box_over_surface")
+            return 0, 0
+        return nw, nh
+
+    def _sm_bake_pin(self, node, key, w, h, nodes, frame):
+        """Bake ``node`` into a pinned non-pool RTT and pin it under ``key``.
+
+        Mirrors ``_trans_cache_pinned_bake`` (instance-group isolation, parent
+        batch flush, nested frame + full-canvas scoping, virtual/clip restore)
+        with the byte-budget store of the stable model cache.
+        """
+        global _SM_BAKE_TOTAL
+        try:
+            import renpy_host  # type: ignore
+
+            self._ensure_pipes()  # type: ignore[attr-defined]
+            bake_attn(self, "sm_pin", node, w, h)
+            rtt = 0
+            _grp = getattr(self, "_instance_group", None)
+            _grp_pushed = False
+            self._sm_in_bake = True
+            try:
+                try:
+                    # Product prepare (`load_all_textures(surftree)`) already ran
+                    # for this frame before the walk; re-walking the subtree here
+                    # would double the bake frame's cost. Only prepare when this
+                    # node was NOT prepared this frame (stale/missing tick), which
+                    # keeps child textures guaranteed without the redundant walk.
+                    if getattr(node, "loaded", None) != (int(getattr(self, "_frame_gen", 0)) + 1):
+                        self.load_all_textures(node)
+                except Exception as e:  # noqa: BLE001 -- logged; bake still runs
+                    _host_draw_fail("sm_pin.load_all_textures", e)
+                if _grp is not None:
+                    try:
+                        if not _grp.empty():
+                            _grp.flush(self)
+                        _grp.push()
+                        _grp_pushed = True
+                    except Exception:  # noqa: BLE001, S110 -- push failure → no epoch
+                        _grp = None
+                    self._flush_draw_batch()  # type: ignore[attr-defined]
+                try:
+                    _crt_pinned = getattr(renpy_host, "create_render_texture_pinned", None)
+                    if _crt_pinned is not None:
+                        rtt = int(_crt_pinned(w, h))
+                    else:
+                        rtt = int(renpy_host.create_render_texture(w, h))
+                    if rtt <= 0:
+                        raise ValueError("sm_pin: bad private RTT handle")
+                    if self._rtt_hot_pool_handle(rtt):
+                        raise ValueError("sm_pin: handle leaked into rtt pool")
+                    renpy_host.begin_target(rtt)
+                    renpy_host.begin_frame()
+                    old_vs = self.virtual_size
+                    old_clip = self._clip_rect
+                    old_poly = getattr(self, "_clip_poly", None)
+                    old_full = getattr(self, "_frame_full_canvas_hop", None)
+                    prev_full = getattr(self, "_frame_full_canvas", False)
+                    self._frame_full_canvas_hop = True
+                    self._frame_full_canvas = False
+                    try:
+                        try:
+                            self._frame_bakes = getattr(self, "_frame_bakes", 0) + 1
+                        except Exception:  # noqa: BLE001, S110 -- diagnostics only
+                            pass
+                        try:
+                            self.virtual_size = (int(w), int(h))
+                            self._clip_rect = None
+                            self._clip_poly = None
+                            self._draw_node(node, 0.0, 0.0)  # type: ignore[attr-defined]
+                        finally:
+                            self.virtual_size = old_vs
+                            self._clip_rect = old_clip
+                            self._clip_poly = old_poly
+                            try:
+                                self._end_frame_present()  # type: ignore[attr-defined]
+                            except Exception as e:  # noqa: BLE001 -- logged
+                                _host_draw_fail("sm_pin.end_frame", e)
+                            try:
+                                renpy_host.end_target()
+                            except Exception as e:  # noqa: BLE001 -- logged
+                                _host_draw_fail("sm_pin.end_target", e)
+                    finally:
+                        self._frame_full_canvas = bool(prev_full)
+                        self._frame_full_canvas_hop = old_full
+                    ent = self._sm_store(key, rtt, w, h, nodes, frame)
+                    if ent is None:
+                        # Refused (over budget): give the RTT straight back and
+                        # let the normal per-node walk run this frame.
+                        self._trans_cache_destroy_handle(rtt)
+                        return None
+                    try:
+                        _SM_BAKE_TOTAL += 1
+                    except Exception:  # noqa: BLE001, S110
+                        pass
+                    return ent
+                except Exception as e:  # noqa: BLE001 -- pin failure → normal walk
+                    _host_draw_fail("sm_pin", e)
+                    if rtt:
+                        self._trans_cache_destroy_handle(rtt)
+                    return None
+            finally:
+                self._sm_in_bake = False
+                if _grp_pushed:
+                    try:
+                        _grp.pop()
+                    except Exception as e:  # noqa: BLE001 -- log-only
+                        try:
+                            _host_draw_fail("sm_pin.grp_pop", e)
+                        except Exception:  # noqa: BLE001, S110
+                            pass
+        except Exception as e:  # noqa: BLE001 -- cache failure must not abort frame
+            self._sm_in_bake = False
+            _host_draw_fail("sm_bake_pin", e)
+            return None
+
+    def _sm_draw_entry(self, ent, ctx) -> None:
+        """Draw one cached bake as a real subtree (single quad at its place)."""
+        try:
+            ht = HostTexture(int(ent.handle), int(ent.w), int(ent.h))
+            self._draw_texture_at(ht, ctx.ox, ctx.oy, (int(ent.w), int(ent.h)))  # type: ignore[attr-defined]
+        except Exception as e:  # noqa: BLE001 -- draw failure logged once
+            _host_draw_fail("sm_draw_entry", e)
+
+    def _sm_try_draw(self, node, ctx) -> bool:
+        """Stable subtree model cache entry point (``WalkMixin._draw_node_inner_body``).
+
+        Returns True when ``node`` was drawn from a cached pinned RTT — the
+        recursion into its children must not happen then.
+        """
+        global _SM_HITS, _SM_MISSES, _SM_NODES_SAVED
+        global _SM_HIT_TOTAL, _SM_MISS_TOTAL, _SM_NODES_SAVED_TOTAL
+        on = _SM_CACHE_ON
+        if on is None:
+            on = static_model_cache_enabled()
+        if not on:
+            return False
+        try:
+            if getattr(self, "_sm_in_bake", False):
+                # Never nest our own pinned bake inside an RTT pass.
+                return False
+            if not (hasattr(node, "children") and hasattr(node, "mesh")):
+                return False
+            # Preserve the existing bake/leaf paths byte-for-byte: nodes that
+            # already carry a bake handle are owned by _draw_cached /
+            # _draw_reverse / the ctex leaf paths.
+            if getattr(node, "cached_model", None) is not None:
+                return False
+            if getattr(node, "cached_texture", None) is not None:
+                return False
+            if self._is_dissolve_node(node) or self._is_imagedissolve_node(node):
+                return False
+            st = self._sm_state()
+            stamp = self._sm_geometry_stamp()
+            if stamp != getattr(self, "_sm_stamp", None):
+                # Resize / layout change: a pinned bake can not survive it.
+                self._sm_clear()
+                self._sm_stamp = stamp
+            frame = int(getattr(self, "_sm_frame", 0))
+            nid = id(node)
+            # Candidate slot identity: the engine rebuilds the tree per frame
+            # during a transition, so a node-id-only churn memory would miss
+            # exactly the animated candidates we must not bake every frame.
+            # The walk position of a slot is stable across rebuilds.
+            try:
+                slot = (round(float(ctx.ox), 1), round(float(ctx.oy), 1), type(node).__name__)
+            except Exception:  # noqa: BLE001 -- unusable ctx offset → no slot gate
+                slot = None
+            gate = getattr(self, "_sm_gate", None)
+            pos_gate = getattr(self, "_sm_pos_gate", None)
+            if gate is not None and int(gate.get(nid, 0)) > frame:
+                sm_cache_why("churn_gated_node")
+                _sm_miss_count()
+                return False
+            if slot is not None and pos_gate is not None and int(pos_gate.get(slot, 0)) > frame:
+                sm_cache_why("churn_gated_slot")
+                _sm_miss_count()
+                return False
+            _t0 = _time.perf_counter()
+            cnt = self._sm_count_nodes(node)
+            _t1 = _time.perf_counter()
+            if cnt is None:
+                return False
+            key, nodes = self._sm_key(node)
+            _t2 = _time.perf_counter()
+            _sm_cost(cnt, nodes, (_t1 - _t0), (_t2 - _t1))
+            if key is None:
+                return False
+            nw, nh = self._sm_bake_box(node)
+            if nw <= 0 or nh <= 0:
+                return False
+            cur = self._sm_cur_keys
+            prev = self._sm_prev_keys
+            cur_pos = getattr(self, "_sm_cur_pos", None)
+            prev_pos = getattr(self, "_sm_prev_pos", None)
+            ent = st.get(key)
+            if ent is not None and int(ent.frame) == frame - 1:
+                # 2nd consecutive frame with the same key → reuse is allowed.
+                if self._sm_entry_alive(ent):
+                    ent.frame = frame
+                    st.pop(key, None)
+                    st[key] = ent
+                    self._sm_draw_entry(ent, ctx)
+                    _SM_HITS += 1
+                    _SM_HIT_TOTAL += 1
+                    _SM_NODES_SAVED += max(0, int(ent.nodes) - 1)
+                    _SM_NODES_SAVED_TOTAL += max(0, int(ent.nodes) - 1)
+                    cur[nid] = key
+                    if cur_pos is not None and slot is not None:
+                        cur_pos[slot] = key
+                    return True
+                sm_cache_why("entry_dead_handle")
+                st.pop(key, None)
+                self._sm_retire(ent, defer=False)
+            prev_key = prev.get(nid)
+            cur[nid] = key
+            prev_slot_key = None if (prev_pos is None or slot is None) else prev_pos.get(slot)
+            if cur_pos is not None and slot is not None:
+                cur_pos[slot] = key
+            changed = (prev_key is not None and prev_key != key) or (
+                prev_slot_key is not None and prev_slot_key != key
+            )
+            # Churn detection: ONE key change is a legitimate content change
+            # (page switch, new text); a *run* of changes means the candidate is
+            # animating, and baking it every frame would cost more than the walk
+            # it replaces. Back off after _SM_CHURN_STREAK consecutive changes.
+            streak = getattr(self, "_sm_streak", None)
+            if streak is None:
+                streak = {}
+                self._sm_streak = streak
+            skey = slot if slot is not None else nid
+            if changed:
+                n_streak = int(streak.get(skey, 0)) + 1
+                streak[skey] = n_streak
+            else:
+                n_streak = 0
+                streak.pop(skey, None)
+            if n_streak >= _SM_CHURN_STREAK:
+                if gate is not None:
+                    gate[nid] = frame + _SM_UNSTABLE_BACKOFF
+                if pos_gate is not None and slot is not None:
+                    pos_gate[slot] = frame + _SM_UNSTABLE_BACKOFF
+                streak.pop(skey, None)
+                sm_cache_why("churn_backoff")
+                _sm_miss_count()
+                return False
+            if ent is not None:
+                # Same key seen, but not on the previous frame: stale entry.
+                sm_cache_why("stale_entry_rebake")
+                st.pop(key, None)
+                self._sm_retire(ent, defer=True)
+            baked = self._sm_bake_pin(node, key, nw, nh, nodes, frame)
+            if baked is None:
+                sm_cache_why("bake_refused")
+                return False
+            self._sm_draw_entry(baked, ctx)
+            _sm_miss_count()
+            return True
+        except Exception as e:  # noqa: BLE001 -- cache failure must never abort frame
+            _host_draw_fail("sm_try_draw", e)
+            return False
+
     def kill_textures(self):
         """Surftree pre-hook: clear the transition bake cache before the
         Texture mixin destroys everything. Pinned private RTTs are invisible
@@ -1891,6 +3416,13 @@ class SurftreeMixin:
             # either gate being enabled (whichever created entries is covered).
             if trans_bake_cache_enabled() or reverse_bake_cache_enabled():
                 self._trans_cache_clear()
+        except Exception:  # noqa: BLE001, S110 -- cache cleanup must never abort kill
+            pass
+        try:
+            # Stable subtree model cache: pinned RTTs + pending destroys share
+            # the same lifecycle boundary (resize / quit / display reset).
+            if static_model_cache_enabled():
+                self._sm_clear()
         except Exception:  # noqa: BLE001, S110 -- cache cleanup must never abort kill
             pass
         try:

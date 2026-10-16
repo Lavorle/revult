@@ -43,6 +43,16 @@ from .draw_surftree import SurftreeMixin  # T5 shim
 from .host_texture import HostTexture
 
 
+def reverse_bake_cache_enabled_fallback() -> bool:
+    """hmc_fix3 F3 gate accessor (falls back off when draw_surftree is absent)."""
+    try:
+        from .draw_surftree import reverse_bake_cache_enabled
+
+        return bool(reverse_bake_cache_enabled())
+    except Exception:
+        return False
+
+
 @dataclass
 class WalkCtx:
     ox: float
@@ -284,6 +294,43 @@ class WalkMixin:
             return True
         return False
 
+    def _reverse_dest_override(self, child, node, parent_size):
+        """hmc_fix3 F2: dest-size shrink for the ``_draw_reverse`` RTT bake.
+
+        Returns ``(dw, dh)`` ONLY when ``_reverse_dest_size`` yields a box
+        strictly smaller than the child's logical bake span (scale-DOWN — the
+        crop/zoom case). Any unknown size, scale-up (Frame/Solid stretch) or
+        failure returns None → the old child-size bake keeps running
+        byte-identically (conservative fallback). The dest box does not change
+        where the quad is drawn; only the intermediate bake resolution shrinks
+        (see render_to_texture ``_dest_size``).
+        """
+        try:
+            dw, dh = self._reverse_dest_size(node, child, parent_size)
+            cw, ch = self._node_size(child, default=(0, 0))
+            if cw <= 0 or ch <= 0 or dw <= 0 or dh <= 0:
+                return None
+            if dw < cw and dh < ch:
+                return (int(dw), int(dh))
+        except Exception:  # noqa: BLE001 -- override must never abort the frame
+            return None
+        return None
+
+    def _reverse_bake_key_for(self, child, dest_size):
+        """hmc_fix3 F3: gate-checked derived key for the reverse bake cache.
+
+        RENPY_HOST_REVERSE_BAKE_CACHE (default on) gates the whole feature;
+        a key failure simply disables the cache for this frame (None → normal
+        bake, the conservative direction).
+        """
+        if not reverse_bake_cache_enabled_fallback():
+            return None
+        try:
+            return self._reverse_bake_key(child, dest_size)
+        except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
+            _host_draw_fail("reverse_bake_key_for", e)
+            return None
+
     def _draw_reverse(self, node, children, ctx: WalkCtx) -> bool:
         if not children or self._is_dissolve_node(node):
             return False
@@ -292,7 +339,15 @@ class WalkMixin:
             return False
         if len(children) == 1:
             child, cx, cy = children[0]
-            tex = self._child_to_texture(child)
+            _dest = self._reverse_dest_override(child, node, (nw, nh))
+            # hmc_fix3 F3: second entry point of the per-frame subtree bake
+            # cache (key derived from the same _trans_bake_key fingerprint,
+            # namespaced with the dest box; RENPY_HOST_REVERSE_BAKE_CACHE
+            # gates it, default on). Key None → normal bake, unchanged.
+            _rev_key = self._reverse_bake_key_for(child, _dest)
+            tex = self._child_to_texture(
+                child, _trans_key=_rev_key, _trans_kind="rev", _dest_size=_dest
+            )
             if tex is not None:
                 dw, dh = self._reverse_dest_size(node, child, (nw, nh))
                 self._draw_texture_at(tex, ctx.ox + cx, ctx.oy + cy, (dw, dh))
@@ -303,7 +358,11 @@ class WalkMixin:
             if self._is_render_like(child) and (getattr(child, "reverse", None) is not None or list(self._iter_children(child))):
                 self._draw_node(child, ctx.ox + cx, ctx.oy + cy)
                 continue
-            tex = self._child_to_texture(child)
+            _dest = self._reverse_dest_override(child, node, (nw, nh))
+            _rev_key = self._reverse_bake_key_for(child, _dest)
+            tex = self._child_to_texture(
+                child, _trans_key=_rev_key, _trans_kind="rev", _dest_size=_dest
+            )
             if tex is not None:
                 dw, dh = self._reverse_dest_size(node, child, (nw, nh))
                 self._draw_texture_at(tex, ctx.ox + cx, ctx.oy + cy, (dw, dh))
@@ -663,4 +722,4 @@ class WalkMixin:
         return SurftreeMixin._bake_mesh_children(self, node, children)  # type: ignore[attr-defined]
 
 
-__all__ = ["WalkMixin", "WalkCtx", "CachedModelPolicy", "DissolveStrategy", "SurftreeWalkerCacheGate", "ReverseScaler"]
+__all__ = ["WalkMixin", "WalkCtx", "CachedModelPolicy", "DissolveStrategy", "SurftreeWalkerCacheGate", "ReverseScaler", "reverse_bake_cache_enabled_fallback"]

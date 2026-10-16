@@ -14,10 +14,33 @@ from .draw_debug import (
     _safe_print,
     _ui_trace_once,
     bake_attn,
-    bake_frame_flush,
+    bake_frame_flush as _bake_frame_flush_orig,
 )
 from .host_bridge import host_env_bool
 from .host_texture import HostTexture
+
+
+def bake_frame_flush(now: float = 0.0) -> None:
+    """hmc_fix3 F3: bake PHASE0 cadence + rev-cache drain verbatim here.
+
+    The product frame tail calls ``bake_frame_flush`` (draw_debug) once per
+    frame; ``renpy/wgpu/draw_debug.py`` (the PHASE0 line body owner) is
+    outside the editable file set, so the reverse-bake-cache window drain
+    rides the same cadence by rebinding THIS module-local name only —
+    ``renpy.wgpu.draw_debug.bake_frame_flush`` and every other reference
+    stay the original object, so renpy's module backup pickle contract
+    (identity-by-name resolution) is untouched. The drain emits its own
+    window line through the same ``_phase0_log`` formatter.
+    """
+    try:
+        _bake_frame_flush_orig(now)
+    finally:
+        try:
+            from .draw_surftree import _rev_cache_drain_emit
+
+            _rev_cache_drain_emit(now)
+        except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+            pass
 
 
 # Process-static env gates: read once at import (the probe loops re-imported
@@ -650,7 +673,7 @@ class ScreenMixin:
             pass
 
 
-    def render_to_texture(self, what, alpha=True, properties=None, oversample=1.0):
+    def render_to_texture(self, what, alpha=True, properties=None, oversample=1.0, _dest_size=None):
         """
         Render `what` into an offscreen RTT and return its texture handle.
 
@@ -666,6 +689,16 @@ class ScreenMixin:
         Nested begin_frame is safe under host frame_cmd_stack **only when**
         every begin_frame is paired with end_frame_present (try/finally below).
         `properties` / `oversample` accepted for GL2Draw call-site parity.
+
+        hmc_fix3 F2: ``_dest_size`` (optional, walker-internal) shrinks ONLY
+        the RTT texture size of the tree-walk pass to the dest box while the
+        inner ``virtual_size`` stays the child's logical coordinate span, so
+        the whole child content is rastered once at dest resolution instead of
+        being baked at child size and downsampled by the following dest quad.
+        Unknown / invalid / enlarging ``_dest_size`` values keep the old
+        child-size bake byte-identically (conservative fallback). All other
+        render_to_texture calls (dissolve_mid slots, size-tuple RTT, leaf
+        passes) never pass ``_dest_size`` and are unaffected.
         """
         try:
             import renpy_host  # type: ignore
@@ -813,6 +846,26 @@ class ScreenMixin:
             if w <= 0 or h <= 0:
                 w, h = self.virtual_size
 
+            # hmc_fix3 F2: dest-size RTT override (shrink only). ``_draw_tree``
+            # below never changes its logical coordinates — it keeps mapping the
+            # child's own (w, h) virtual span onto the full NDC canvas, so the
+            # smaller target rasterizes exactly the same content at dest
+            # resolution. The bake is smaller only; UV / quad / stencil math is
+            # untouched (vertex positions are NDC, canvas size is irrelevant).
+            _sw, _sh = w, h
+            if _dest_size is not None:
+                try:
+                    _dh_size = (int(_dest_size[0]), int(_dest_size[1]))
+                except Exception:
+                    _dh_size = (0, 0)
+                if (
+                    _dh_size[0] > 0
+                    and _dh_size[1] > 0
+                    and (_dh_size[0] < w or _dh_size[1] < h)
+                ):
+                    _sw = max(1, min(int(w), _dh_size[0]))
+                    _sh = max(1, min(int(h), _dh_size[1]))
+
             old_vs = self.virtual_size
 
             def _draw_tree():
@@ -829,7 +882,7 @@ class ScreenMixin:
                     self._clip_rect = old_clip
                     self._clip_poly = old_poly
 
-            return _rtt_pass(w, h, _draw_tree, node=what, where_tag="rtt_tree")
+            return _rtt_pass(_sw, _sh, _draw_tree, node=what, where_tag="rtt_tree")
         except Exception as e:  # noqa: BLE001 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             _host_draw_fail("render_to_texture", e)
             return what

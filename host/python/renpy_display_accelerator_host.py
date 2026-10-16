@@ -89,6 +89,98 @@ def _matrix3(rxdx, rxdy, rydx, rydy, rzdz=1.0):
         return _M(rxdx, rxdy, rydx, rydy)
 
 
+# --- hmc_fix3 F1: provable-identity gate for the matrixcolor stamp ---------
+# STAMP policy (conservative-first): the matrixcolor uniform is only skipped
+# when the value is PROVABLY the unit/identity matrix. Anything that cannot be
+# diagnosed (unknown type, missing fields, opaque object) keeps the legacy
+# stamp path byte-for-byte. Skipping an identity stamp is a visual no-op but
+# lets the draw walk drop the per-frame effect-container bake (composition_only
+# path stays available for genuinely non-identity matrices).
+_MATRIX_FIELD_EXPECT = (
+    # (field, expected identity value) — full 16-field color/geometry grid.
+    ("xdx", 1.0), ("ydx", 0.0), ("zdx", 0.0), ("wdx", 0.0),
+    ("xdy", 0.0), ("ydy", 1.0), ("zdy", 0.0), ("wdy", 0.0),
+    ("xdz", 0.0), ("ydz", 0.0), ("zdz", 1.0), ("wdz", 0.0),
+    ("xdw", 0.0), ("ydw", 0.0), ("zdw", 0.0), ("wdw", 1.0),
+)
+# Fields every provable 2D duck must expose (Cython Matrix always exposes all
+# 16; a Matrix2D-style duck with only these is fully characterized by them).
+_MATRIX_CORE_FIELDS = ("xdx", "xdy", "ydx", "ydy")
+# Tolerance matches Matrix.__eq__ (abs diff < .0001 in matrix.pyx).
+_MATRIX_IDENTITY_EPS = 1e-4
+
+
+def matrixcolor_identity_singleton():
+    """renpy.display.matrix.IDENTITY (the shared unit singleton) or None."""
+    try:
+        import renpy.display.matrix as _mmod
+
+        return getattr(_mmod, "IDENTITY", None)
+    except Exception:
+        return None
+
+
+def matrixcolor_is_identity(matrix) -> bool:
+    """True only when ``matrix`` is provably the unit (identity) matrix.
+
+    Verdict ladder (unknown → False → legacy stamp — the safe direction):
+      1. ``matrix is renpy.display.matrix.IDENTITY`` (shared singleton).
+      2. ``matrix == IDENTITY`` — same-type Cython tolerance compare.
+      3. Full 16-field scan: every present field must match the identity
+         grid within 1e-4, and every present non-bool/numeric extra must be
+         one of the known fields so nothing can hide outside the scan.
+    A bool / two-valued flag is NOT a matrix: it is not provable identity
+    and falls back to the legacy stamp (unchanged).
+    """
+    if matrix is None:
+        return False
+    if isinstance(matrix, bool):
+        # Binary flag: not a diagnosable matrix — keep the legacy stamp.
+        return False
+    _I = matrixcolor_identity_singleton()
+    if _I is not None:
+        try:
+            if matrix is _I:
+                return True
+            if matrix == _I:
+                return True
+        except Exception:
+            pass
+    seen_core = False
+    seen_field = False
+    try:
+        for field, expected in _MATRIX_FIELD_EXPECT:
+            if not hasattr(matrix, field):
+                continue
+            seen_field = True
+            if field in _MATRIX_CORE_FIELDS:
+                seen_core = True
+            v = getattr(matrix, field)
+            if not isinstance(v, (int, float)) or isinstance(v, bool):
+                return False
+            if abs(float(v) - expected) > _MATRIX_IDENTITY_EPS:
+                return False
+        if not seen_field or not seen_core:
+            # Nothing readable to prove the unit form — legacy stamp.
+            return False
+    except Exception:
+        return False
+    # Extra-name check: any attribute the object carries in its instance
+    # dict that is not a known matrix field is an opaque escape hatch we
+    # cannot scan — refuse to skip (legacy stamp).
+    try:
+        extra = getattr(matrix, "__dict__", None)
+        if extra:
+            for k in extra:
+                if k.startswith("_"):
+                    continue
+                if k not in dict(_MATRIX_FIELD_EXPECT):
+                    return False
+    except Exception:
+        pass
+    return True
+
+
 class RenderTransform:
     """
     Pure-Python Transform renderer (host replacement for Cython accelerator).
@@ -397,6 +489,16 @@ class RenderTransform:
                             matrix = None
                 except Exception:
                     pass
+            if matrix is not None and matrixcolor_is_identity(matrix):
+                # hmc_fix3 F1: provable unit matrix — the color transform is
+                # the identity mapping, so stamping ``renpy.matrixcolor`` +
+                # ``u_renpy_matrixcolor`` only forces the draw walk into the
+                # per-frame effect-container bake for every one of these
+                # containers (HuangmeiC flowchart arrows / prefs icons).
+                # Skip the stamp; styling semantics (nearest/blend/alpha/shader
+                # below) are untouched. Non-identity / unknown values keep
+                # stamping exactly as before.
+                matrix = None
             if matrix is not None:
                 self._stamp_shader(rv, "renpy.matrixcolor")
                 self._stamp_uniform(rv, "u_renpy_matrixcolor", matrix)

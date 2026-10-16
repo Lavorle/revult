@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import hashlib
+import os
 from collections.abc import Sequence  # noqa: F401
 from typing import TYPE_CHECKING
 
@@ -98,6 +99,118 @@ def _movie_publish_seq() -> int:
     except Exception:
         _MOVIE_SEQ_FAIL = True
         return -1
+
+
+# =============================================================================
+# hmc_fix3 F3 — reverse-scale child bake cache (generalized per-frame subtree
+# content cache). The ``_trans_bake_key`` / ``_trans_cache_lookup`` /
+# ``_trans_cache_store`` machinery above stays the single implementation; the
+# dissolve old-slot entry point (draw_walk._draw_dissolve_mid) is unchanged and
+# ``_draw_reverse`` becomes the second entry point through
+# ``_child_bake_cache_fetch``. All of it lives in the SAME
+# ``self._trans_bake_cache`` store, so the existing kill_textures / resize /
+# destroy hooks clear reverse entries too — no new clear site.
+# Gate: RENPY_HOST_REVERSE_BAKE_CACHE (independent OnceLock parse; default on;
+# "0"/false/off/no → disabled, byte-identical pre-cache behavior). The
+# RENPY_HOST_TRANS_BAKE_CACHE gate keeps its existing semantics.
+# Telemetry: draw_debug.py is outside the editable file set, so the counters
+# mirror ``trans_cache_count``'s contract here and a one-shot tail hook appends
+# ``rev_cache_hit=N miss=N rev_key_fail=N`` to the existing bake PHASE0 line
+# without touching that line's body or cadence.
+# =============================================================================
+_REVERSE_BAKE_CACHE_ON: bool | None = None
+# Window counters (drained into the PHASE0 line tail on each emitted line).
+_REV_CACHE_HITS = 0
+_REV_CACHE_MISSES = 0
+_REV_CACHE_KEY_FAILS = 0
+# Lifetime totals (offline greps / hermetic gates). Mirrors trans_cache_totals.
+_REV_CACHE_HIT_TOTAL = 0
+_REV_CACHE_MISS_TOTAL = 0
+_REV_CACHE_KEY_FAIL_TOTAL = 0
+
+
+def reverse_bake_cache_enabled() -> bool:
+    """RENPY_HOST_REVERSE_BAKE_CACHE — OnceLock parse; default on ("1")."""
+    global _REVERSE_BAKE_CACHE_ON
+    v = _REVERSE_BAKE_CACHE_ON
+    if v is None:
+        raw = os.environ.get("RENPY_HOST_REVERSE_BAKE_CACHE", "").strip().lower()
+        v = raw not in ("0", "false", "off", "no")
+        _REVERSE_BAKE_CACHE_ON = v
+    return v
+
+
+def _rev_cache_count(kind: str) -> None:
+    """Record one reverse-cache decision (mirrors trans_cache_count contract)."""
+    global _REV_CACHE_HITS, _REV_CACHE_MISSES, _REV_CACHE_KEY_FAILS
+    global _REV_CACHE_HIT_TOTAL, _REV_CACHE_MISS_TOTAL, _REV_CACHE_KEY_FAIL_TOTAL
+    try:
+        if kind == "hit":
+            _REV_CACHE_HITS += 1
+            _REV_CACHE_HIT_TOTAL += 1
+        elif kind == "miss":
+            _REV_CACHE_MISSES += 1
+            _REV_CACHE_MISS_TOTAL += 1
+        elif kind == "key_fail":
+            _REV_CACHE_KEY_FAILS += 1
+            _REV_CACHE_KEY_FAIL_TOTAL += 1
+    except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+        pass
+
+
+def rev_cache_window_drain() -> tuple[int, int, int]:
+    """Since-last-drain (hit, miss, key_fail) — the PHASE0 tail hook drains."""
+    return (
+        int(_REV_CACHE_HITS),
+        int(_REV_CACHE_MISSES),
+        int(_REV_CACHE_KEY_FAILS),
+    )
+
+
+def rev_cache_totals() -> tuple[int, int, int]:
+    """Lifetime (hit, miss, key_fail) totals for hermetic gates."""
+    return (
+        int(_REV_CACHE_HIT_TOTAL),
+        int(_REV_CACHE_MISS_TOTAL),
+        int(_REV_CACHE_KEY_FAIL_TOTAL),
+    )
+
+
+def _rev_cache_drain_emit(now: float = 0.0) -> None:
+    """Drain + emit the reverse-bake-cache counters on the PHASE0 cadence.
+
+    hmc_fix3 F3 telemetry: ``renpy/wgpu/draw_debug.py`` owns the
+    ``bakes_in_frame=`` PHASE0 line body and is outside this change's editable
+    file set, so the drain rides the SAME cadence (draw_screen's
+    ``bake_frame_flush`` rebind, see below) and emits its own window line in
+    the same PHASE0_SIGNAL format:
+
+        PHASE0_SIGNAL t=... rev_cache_hit=N miss=N rev_key_fail=N rev=[hit=N miss=N key_fail=N]
+
+    (window since previous drain, then lifetime bracket totals). Mirrors the
+    ``trans_cache_count`` contract; no draw_debug attribute is rebound, so
+    renpy's module backup pickle contract is untouched.
+    """
+    global _REV_CACHE_HITS, _REV_CACHE_MISSES, _REV_CACHE_KEY_FAILS
+    try:
+        from .draw_debug import _phase0_log
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        return
+    try:
+        h = int(_REV_CACHE_HITS)
+        m = int(_REV_CACHE_MISSES)
+        kf = int(_REV_CACHE_KEY_FAILS)
+        _REV_CACHE_HITS = 0
+        _REV_CACHE_MISSES = 0
+        _REV_CACHE_KEY_FAILS = 0
+        t, ms, kf2 = int(_REV_CACHE_HIT_TOTAL), int(_REV_CACHE_MISS_TOTAL), int(_REV_CACHE_KEY_FAIL_TOTAL)
+        if reverse_bake_cache_enabled():
+            _phase0_log(
+                "rev_cache_hit=%d miss=%d rev_key_fail=%d rev=[hit=%d miss=%d key_fail=%d]"
+                % (h, m, kf, t, ms, kf2)
+            )
+    except Exception:  # noqa: BLE001, S110 -- telemetry must never abort frames
+        pass
 
 
 class _TransBakeUncacheable(Exception):
@@ -1103,8 +1216,8 @@ class SurftreeMixin:
     _TRANS_BAKE_FP_MAX_NODES = _TRANS_FP_MAX_NODES  # module-level budget (key-cost ceiling)
     _TRANS_BAKE_CACHE_CAP = 4      # LRU pinned entries (task contract)
 
-    def _trans_bake_key(self, child):
-        """Structural cache key for the dissolve old-slot bake.
+    def _trans_bake_key(self, child, count_uncacheable: bool = True):
+        """Structural cache key for a per-frame subtree bake.
 
         key = ("trb1", _MOVIE_PUBLISH_SEQ, drawable_size, layout_virtual_size,
                fingerprint)
@@ -1116,6 +1229,12 @@ class SurftreeMixin:
         by its uniforms/maps; the movie publish seq covers in-place content
         rewrites. Returns None when the tree is too large to fingerprint or
         anything raised — callers treat None as cache-disabled (safe miss).
+
+        ``count_uncacheable`` (hmc_fix3 F3): the dissolve old-slot entry point
+        keeps the default True so its conservative misses still land in the
+        shared ``cache_hit/miss/uncache`` PHASE0 counters; the reverse entry
+        passes False (its own ``rev_*`` counters drain separately) so entry
+        points never distort each other's telemetry.
         """
         try:
             cap = [self._TRANS_BAKE_FP_MAX_NODES]
@@ -1129,21 +1248,90 @@ class SurftreeMixin:
             # H2: conservative miss — depth/node budget exhausted or an
             # over-cap mesh; the subtree re-bakes every frame instead of
             # risking a stale pinned bake. Not a failure, a designed miss.
-            try:
-                trans_cache_count("uncacheable")
-            except Exception:  # noqa: BLE001, S110
-                pass
+            if count_uncacheable:
+                try:
+                    trans_cache_count("uncacheable")
+                except Exception:  # noqa: BLE001, S110
+                    pass
             try:
                 trans_cache_why(str(e))
             except Exception:  # noqa: BLE001, S110
                 pass
             return None
         except Exception as e:  # noqa: BLE001 -- key failure must never abort the frame
-            try:
-                trans_cache_count("key_fail")
-            except Exception:  # noqa: BLE001, S110
-                pass
+            if count_uncacheable:
+                try:
+                    trans_cache_count("key_fail")
+                except Exception:  # noqa: BLE001, S110
+                    pass
             _host_draw_fail("trans_bake_key", e)
+            return None
+
+    def _reverse_bake_key(self, child, dest_size):
+        """hmc_fix3 F3: generic helper — reverse-scale child cache key.
+
+        Reuses the single derived-key implementation (``_trans_bake_key``)
+        unchanged and namespaces the reverse entry with the dest box so two
+        dest sizes of the same subtree never collide inside the shared store.
+        Returns None when the subtree is unkeyable (conservative: no cache).
+        """
+        if child is None:
+            return None
+        base = self._trans_bake_key(child, count_uncacheable=False)
+        if base is None:
+            _rev_cache_count("key_fail")
+            return None
+        try:
+            if dest_size is None:
+                _dw, _dh = self._node_size(child)
+                if _dw <= 0 or _dh <= 0:
+                    _dw, _dh = self.virtual_size
+            else:
+                _dw, _dh = int(dest_size[0]), int(dest_size[1])
+            return base + ("rev", int(_dw), int(_dh))
+        except Exception:  # noqa: BLE001 -- key failure must never abort the frame
+            _rev_cache_count("key_fail")
+            return None
+
+    def _child_bake_cache_fetch(self, child, key, w, h, kind="tr", dest_size=None):
+        """hmc_fix3 F3: generic per-frame subtree bake content cache.
+
+        One entry point shared by the candidates; today they are the dissolve
+        old slot (legacy inline path, untouched) and ``_draw_reverse`` (this
+        helper). On a derived-key hit the pinned private RTT is returned
+        directly — no render_to_texture pass. On a miss the child is baked
+        into a private non-pool RTT (``renpy_host.create_render_texture_pinned``
+        when the host exposes it) and pinned under ``key``; a pin failure
+        returns None and the normal pooled bake runs in the caller. The store
+        is the SAME ``self._trans_bake_cache`` the dissolve path uses, so the
+        existing ``_trans_cache_clear`` hooks (kill_textures / resize /
+        destroy) evict reverse entries too — no second clear site.
+
+        ``kind`` only selects the counter set ("tr" → shared trans counters,
+        "rev" → the reverse-specific ``rev_cache_hit/miss`` window drained by
+        the PHASE0 tail hook); key/lookup/store semantics are identical.
+        """
+        if key is None or child is None:
+            return None
+        try:
+            tw, th = (int(w), int(h)) if (w and h) else self._node_size(child)
+            if tw <= 0 or th <= 0:
+                tw, th = self.virtual_size
+            hit = self._trans_cache_lookup(key, tw, th)
+            if hit is not None:
+                if kind == "rev":
+                    _rev_cache_count("hit")
+                else:
+                    trans_cache_count("hit")
+                return hit
+            if kind == "rev":
+                _rev_cache_count("miss")
+            else:
+                trans_cache_count("miss")
+            pinned = self._trans_cache_pinned_bake(child, key, tw, th)
+            return pinned
+        except Exception as e:  # noqa: BLE001 -- cache failure must not abort frame
+            _host_draw_fail("child_bake_cache_fetch", e)
             return None
 
     def _trans_matrix_bits(self, rev):
@@ -1573,8 +1761,8 @@ class SurftreeMixin:
                 finally:
                     self._frame_full_canvas = bool(prev_full)
                     self._frame_full_canvas_hop = old_full
-                self._trans_cache_store(key, rtt, int(bw), int(bh))
-                return HostTexture(rtt, int(bw), int(bh))
+                self._trans_cache_store(key, rtt, int(w), int(h))
+                return HostTexture(rtt, int(w), int(h))
             except Exception as e:  # noqa: BLE001 -- pin failure falls back to pooled path
                 _host_draw_fail("trans_bake_pin", e)
                 if rtt:
@@ -1604,7 +1792,9 @@ class SurftreeMixin:
         destruction order intact with no draw.py call-site change.
         """
         try:
-            if trans_bake_cache_enabled():
+            # hmc_fix3 F3: reverse-cache entries share this store, so clear on
+            # either gate being enabled (whichever created entries is covered).
+            if trans_bake_cache_enabled() or reverse_bake_cache_enabled():
                 self._trans_cache_clear()
         except Exception:  # noqa: BLE001, S110 -- cache cleanup must never abort kill
             pass
@@ -1615,16 +1805,26 @@ class SurftreeMixin:
         except Exception as e:  # noqa: BLE001 -- delegate failure logged (re-raises under DRAW_RAISE)
             _host_draw_fail("kill_textures", e)
 
-    def _child_to_texture(self, child, _trans_key=None):
+    def _child_to_texture(self, child, _trans_key=None, _trans_kind="tr", _dest_size=None):
         """Convert a mesh-child to HostTexture for model texture slots.
 
-        ``_trans_key`` (optional) engages the transition old-slot bake cache:
-        on structural-key hit the pinned private RTT is returned directly —
-        no render_to_texture pass is issued. On miss the child is baked into a
-        private RTT (pin) when possible; a pin failure falls through to the
-        normal pooled path below, unchanged. ctx/uv/position math is never
-        touched — only the sampled texture content is substituted (identical
-        source w/h ↔ HostTexture shape).
+        ``_trans_key`` (optional) engages the per-frame subtree bake content
+        cache (hmc_fix3 F3): on structural-key hit the pinned private RTT is
+        returned directly — no render_to_texture pass is issued. On miss the
+        child is baked into a private RTT (pin) when possible; a pin failure
+        falls through to the normal pooled path below, unchanged. ctx/uv/
+        position math is never touched — only the sampled texture content is
+        substituted (identical source w/h ↔ HostTexture shape).
+        ``_trans_kind`` selects the counter set: the dissolve old-slot entry
+        point keeps kind "tr" (shared trans counters, cadence unchanged); the
+        reverse-scale entry point uses ``_reverse_bake_key`` + kind "rev"
+        (independent ``rev_cache_hit/miss`` window, RENPY_HOST_REVERSE_BAKE_
+        CACHE gated in ``_draw_reverse`` itself).
+
+        ``_dest_size`` (hmc_fix3 F2, walker-internal) shrinks the RTT bake to
+        the dest box while the child's logical coordinates stay the span
+        (bake crop-out at dest resolution, see render_to_texture); None keeps
+        the old child-size bake.
         """
         if child is None:
             return None
@@ -1664,22 +1864,28 @@ class SurftreeMixin:
                     if isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
                         w, h = self._node_size(child)
                         return HostTexture(ct, w, h)
-            # Transition old-slot cache: skip the RTT bake entirely on a
-            # structural-key hit; pin a private RTT bake on the first miss.
+            # Per-frame subtree content cache (hmc_fix3 F3): dissolve old slot
+            # (kind "tr", byte-identical counters/cadence) and reverse scale
+            # (kind "rev") share the same store + clear hooks.
             if _trans_key is not None:
                 try:
                     tw, th = self._node_size(child)
                     if tw <= 0 or th <= 0:
                         tw, th = self.virtual_size
-                    hit = self._trans_cache_lookup(_trans_key, tw, th)
+                    if _dest_size is not None:
+                        try:
+                            _ds0, _ds1 = (int(_dest_size[0]), int(_dest_size[1]))
+                        except Exception:  # noqa: BLE001 -- bad dest → node-size cache shape
+                            _ds0 = _ds1 = 0
+                        if _ds0 > 0 and _ds1 > 0:
+                            tw, th = _ds0, _ds1
+                    hit = self._child_bake_cache_fetch(
+                        child, _trans_key, tw, th, kind=_trans_kind
+                    )
                     if hit is not None:
-                        trans_cache_count("hit")
                         return hit
-                    trans_cache_count("miss")
-                    pinned = self._trans_cache_pinned_bake(child, _trans_key, tw, th)
-                    if pinned is not None:
-                        return pinned
-                    # Pin failed → the normal pooled bake below still runs.
+                    # Fetch miss / private pin failed → the normal pooled
+                    # bake below still runs (unchanged).
                 except Exception as e:  # noqa: BLE001 -- cache failure must not abort frame
                     _host_draw_fail("child_to_texture.trans_cache", e)
             # Phase 0d bake-attribution: this is the mesh-children → texture
@@ -1687,19 +1893,34 @@ class SurftreeMixin:
             if _BAKE_ENABLED:
                 _cw, _ch = self._node_size(child)
                 bake_attn(self, "child_tex", child, _cw, _ch)
-            handle = self.render_to_texture(child)
+            handle = self.render_to_texture(child, _dest_size=_dest_size)
             ht = None
             if isinstance(handle, HostTexture):
                 ht = handle if handle.handle > 0 else None
             elif isinstance(handle, int) and not isinstance(handle, bool) and handle > 0:
-                w, h = self._node_size(child)
+                if _dest_size is not None:
+                    try:
+                        _lab = (max(1, int(_dest_size[0])), max(1, int(_dest_size[1])))
+                    except Exception:  # noqa: BLE001 -- fall back to node size label
+                        _lab = None
+                    if _lab is not None:
+                        w, h = _lab
+                    else:
+                        w, h = self._node_size(child)
+                else:
+                    w, h = self._node_size(child)
                 ht = HostTexture(handle, w, h)
             if ht is not None:
                 try:
-                    child.cached_texture = ht
                     # Stamp the bake generation so next-frame pool handles
                     # (freelist re-target) are refused by _rtt_cached_sample_ok.
-                    child._cached_texture_gen = int(getattr(self, "_rtt_gen", 0))
+                    # hmc_fix3 F2: a dest-size bake's pixel rect differs from the
+                    # child's logical node box, so don't claim this handle under
+                    # the child's cached_texture (other consumers label with node
+                    # size); the exact child-size bake keeps the old stamp.
+                    if _dest_size is None:
+                        child.cached_texture = ht
+                        child._cached_texture_gen = int(getattr(self, "_rtt_gen", 0))
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             return ht
@@ -1732,19 +1953,28 @@ class SurftreeMixin:
             _cw, _ch = self._node_size(child)
             bake_attn(self, "child_tex", child, _cw, _ch)
         try:
-            handle = self.render_to_texture(child)
+            handle = self.render_to_texture(child, _dest_size=_dest_size)
             ht = None
             if isinstance(handle, HostTexture):
                 ht = handle if handle.handle > 0 else None
             elif isinstance(handle, int) and not isinstance(handle, bool) and handle > 0:
-                w, h = self._node_size(child)
+                if _dest_size is not None:
+                    try:
+                        w, h = max(1, int(_dest_size[0])), max(1, int(_dest_size[1]))
+                    except Exception:  # noqa: BLE001 -- fall back to node size label
+                        w, h = self._node_size(child)
+                else:
+                    w, h = self._node_size(child)
                 ht = HostTexture(handle, w, h)
             if ht is not None and self._is_render_like(child):
                 try:
-                    child.cached_texture = ht
-                    # Stamp the bake generation so next-frame pool handles
-                    # (freelist re-target) are refused by _rtt_cached_sample_ok.
-                    child._cached_texture_gen = int(getattr(self, "_rtt_gen", 0))
+                    # hmc_fix3 F2: keep the exact child-size stamp semantics —
+                    # a dest-size bake is not claimed under cached_texture.
+                    if _dest_size is None:
+                        child.cached_texture = ht
+                        # Stamp the bake generation so next-frame pool handles
+                        # (freelist re-target) are refused by _rtt_cached_sample_ok.
+                        child._cached_texture_gen = int(getattr(self, "_rtt_gen", 0))
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
             return ht

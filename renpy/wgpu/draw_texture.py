@@ -58,6 +58,95 @@ def _resolve_probe_touch():
     return _probe_touch_fn
 
 
+# ── Premultiplied (RTT) texture-handle registry ────────────────────────────
+# Which texture handles hold ALREADY-PREMULTIPLIED pixels?
+#
+# The host's shared ``textured_pipeline`` ends its fragment stage with the
+# premultiply foot
+#     let a = clamp(color.a, 0.0, 1.0); return vec4(color.rgb * a, a);
+# and blends with One/OneMinusSrcAlpha. For a SURFACE-UPLOADED texture
+# (`create_texture_rgba` / `write_texture_rgba` — straight alpha) that is
+# exactly right. A RENDER TEXTURE (`create_render_texture` /
+# `create_render_texture_pinned` / `rtt_pool._acquire_rtt`) is written by those
+# same blend factors, so its pixels are ALREADY premultiplied: sampling it
+# through the shared pipeline multiplies rgb by alpha a second time and
+# darkens every sub-1.0-alpha layer (measured: a 50% white quad over a dark
+# background reads 140 drawn directly and 77 through an RTT round trip).
+#
+# Registration is therefore opt-in per handle and covers exactly the RTT
+# creation paths:
+#   * ``rtt_pool._acquire_rtt``            (pool handles; reused or fresh)
+#   * ``create_render_texture_pinned``     (draw_surftree pinned/private bakes)
+#   * ``create_render_texture`` fallback   (same sites, older host)
+# Surface uploads are deliberately NOT registered (they are straight alpha and
+# need the premultiply foot).
+#
+# The arena game RT is not registered and cannot be: no FFI exposes its handle
+# to Python (``read_game_rt_rgba`` returns pixels only), so it is never sampled
+# by `_draw_texture_at`. It is a render TARGET here, not a source.
+#
+# Conservative by construction: an unknown / unregistered handle keeps the
+# current (premultiplying) pipeline, and registry failures are swallowed
+# bookkeeping — worst case is the historical behavior, never a wrong draw.
+_PMA_HANDLES: dict[int, None] = {}
+_PMA_HANDLE_CAP = 8192
+
+
+def register_premultiplied_handle(handle) -> bool:
+    """Mark ``handle`` as holding premultiplied (render-texture) pixels."""
+    try:
+        h = int(handle)
+    except (TypeError, ValueError):
+        return False
+    if h <= 0 or isinstance(handle, bool):
+        return False
+    store = _PMA_HANDLES
+    if h in store:
+        return True
+    if len(store) >= _PMA_HANDLE_CAP:
+        # Bounded: drop the oldest entry. Eviction can only make a live RTT
+        # look unknown → the caller falls back to the historical pipeline.
+        for old in list(store.keys())[: max(1, _PMA_HANDLE_CAP // 8)]:
+            store.pop(old, None)
+    store[h] = None
+    return True
+
+
+def unregister_premultiplied_handle(handle) -> bool:
+    """Drop ``handle`` (every destroy path of an RTT must call this)."""
+    try:
+        h = int(handle)
+    except (TypeError, ValueError):
+        return False
+    if h <= 0:
+        return False
+    if h in _PMA_HANDLES:
+        _PMA_HANDLES.pop(h, None)
+        return True
+    return False
+
+
+def is_premultiplied_handle(handle) -> bool:
+    """True only when ``handle`` is a registered RTT. Unknown → False."""
+    try:
+        h = int(handle)
+    except (TypeError, ValueError):
+        return False
+    if h <= 0:
+        return False
+    return h in _PMA_HANDLES
+
+
+def premultiplied_handle_count() -> int:
+    """Number of registered RTT handles (diagnostics / gates)."""
+    return len(_PMA_HANDLES)
+
+
+def clear_premultiplied_handles() -> None:
+    """Forget every registered handle (``kill_textures`` / resize teardown)."""
+    _PMA_HANDLES.clear()
+
+
 class TextureMixin:
     texture_cache: dict
     _transient_tex: dict
@@ -72,6 +161,34 @@ class TextureMixin:
     _quad_mesh: object
     _touch_batch_seen: dict
     _touch_batch_t0: float | None
+
+    def _pma_texture_pipe(self) -> int:
+        """Host handle of the straight-through-alpha textured pipeline (0 = none).
+
+        Lazily created once per process from the ``renpy.pma_texture`` part IR
+        through the existing ``renpy_host.create_pipeline_wgsl`` FFI (no new
+        host surface). Any failure resolves to 0 and the caller keeps the
+        current premultiplying pipeline — the conservative direction.
+        """
+        cached = getattr(self, "_pma_tex_pipe", None)
+        if cached:
+            return int(cached)
+        handle = 0
+        try:
+            from .composer import create_pma_texture_pipeline
+
+            handle = int(create_pma_texture_pipeline())
+        except Exception as e:  # noqa: BLE001 -- must not abort the frame
+            # Reuses the standard log-once-per-(where, type) channel; no new
+            # UI_TRACE key is invented (see AGENTS §5.4).
+            self._log_once("pma_texture_pipe", e)
+            handle = 0
+        if handle > 0:
+            try:
+                self._pma_tex_pipe = handle
+            except Exception:  # noqa: BLE001, S110 -- attribute set cannot fail in practice
+                pass
+        return handle
 
     def _ensure_alive_touch_batch(self, handles):
         """Batched per-frame alive+touch probe for texture handles.

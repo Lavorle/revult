@@ -20,9 +20,13 @@ from renpy.wgpu import shaders as _shaders
 from .shaders import (
     _PIPELINE_KEYS,
     _COMPOSITION_ONLY,
+    _FINALIZE_PASSTHROUGH,
+    _FINALIZE_PREMULTIPLY,
+    PMA_TEXTURE_PART,
     _UNIFORM_LAYOUT_NONE as _UNIFORM_NONE,
     _UNIFORM_LAYOUT_PARAMS16 as _UNIFORM_PARAMS16,
     _UNIFORM_LAYOUT_MATRIXCOLOR16 as _UNIFORM_MATRIXCOLOR16,
+    part_finalize,
 )
 
 
@@ -178,8 +182,20 @@ def _emit_wgsl_offline(
     uniform_layout_id: str,
     vertex_hooks: Sequence[dict],
     fragment_hooks: Sequence[dict],
+    finalize: str = _FINALIZE_PREMULTIPLY,
 ) -> str:
-    """Emit WGSL offline — byte-equal to ``renpy_host.emit_wgsl`` (no host needed)."""
+    """Emit WGSL offline — byte-equal to ``renpy_host.emit_wgsl`` (no host needed).
+
+    ``finalize`` picks the fragment foot:
+
+    * ``"premultiply"`` (default, and byte-identical to the Rust emitter):
+      ``let a = clamp(color.a,0,1); return vec4(color.rgb*a, a);`` — correct for
+      straight-alpha surface textures under the One/OneMinusSrcAlpha blend.
+    * ``"passthrough"``: ``return color;`` — for parts that sample already
+      premultiplied content (RTT / render textures). See ``shaders._FINALIZE_*``.
+    """
+    if finalize not in (_FINALIZE_PREMULTIPLY, _FINALIZE_PASSTHROUGH):
+        raise ComposerError(f"unknown finalize strategy: {finalize!r}")
     has_uniforms = uniform_layout_id != _UNIFORM_NONE
     chunks: list[str] = []
 
@@ -256,13 +272,24 @@ struct Params {
         body = (h.get("body") or "").strip()
         if body:
             fs_lines.append(_indent(body, 4))
-    fs_lines.extend(
-        [
-            "    let a = clamp(color.a, 0.0, 1.0);",
-            "    return vec4<f32>(color.rgb * a, a);",
-            "}",
-        ]
-    )
+    if finalize == _FINALIZE_PASSTHROUGH:
+        fs_lines.extend(
+            [
+                "    // finalize: passthrough — the sampled content is already premultiplied",
+                "    // (RTT written under One/OneMinusSrcAlpha), so rgb must not be scaled",
+                "    // by alpha a second time. Blend One/OneMinusSrcAlpha stays correct `over`.",
+                "    return color;",
+                "}",
+            ]
+        )
+    else:
+        fs_lines.extend(
+            [
+                "    let a = clamp(color.a, 0.0, 1.0);",
+                "    return vec4<f32>(color.rgb * a, a);",
+                "}",
+            ]
+        )
     chunks.append("\n".join(fs_lines))
 
     return "\n\n".join(chunks) + "\n"
@@ -292,6 +319,23 @@ def _fallback_compose_wgsl(
 ) -> tuple[list[str], int, str, str]:
     from renpy.wgpu.composer_fallback import compose_wgsl as fb_compose
 
+    # Finalize guard: the generic merge path can only emit the default
+    # premultiply foot. A set that needs "passthrough" (a part that samples
+    # already-premultiplied RTT content) must use its dedicated prebaked
+    # pipeline instead of silently getting the wrong fragment foot.
+    requested = [str(n) for n in partnames if str(n) and not str(n).startswith("-")]
+    try:
+        finalize = _shaders.resolve_finalize(requested)
+    except ValueError as e:
+        raise ComposerError(str(e)) from e
+    if finalize != _FINALIZE_PREMULTIPLY:
+        raise ComposerError(
+            f"part set {sorted(set(requested))!r} needs finalize={finalize!r}; the "
+            "generic composer only emits the default premultiply foot — use the "
+            "dedicated prebaked pipeline instead "
+            "(renpy.wgpu.composer.create_pma_texture_pipeline)"
+        )
+
     try:
         return fb_compose(partnames, has_texture=has_texture)
     except Exception as e:
@@ -312,36 +356,42 @@ def emit_wgsl(
     uniform_layout_id: str,
     vertex_hooks: Sequence[dict],
     fragment_hooks: Sequence[dict],
+    finalize: str = _FINALIZE_PREMULTIPLY,
 ) -> str:
     """Emit WGSL — delegates to offline impl (byte-equal to Rust emit_wgsl).
 
-    Host has no direct PyO3 emit_wgsl export; try it first if present.
+    Host has no direct PyO3 emit_wgsl export; try it first if present. The host
+    delegation is only attempted for the default ``finalize`` (the host emitter
+    has no finalize parameter), so a passthrough request is never silently
+    served a premultiplying module.
     """
-    try:
-        import renpy_host  # type: ignore
+    if finalize == _FINALIZE_PREMULTIPLY:
+        try:
+            import renpy_host  # type: ignore
 
-        fn = getattr(renpy_host, "emit_wgsl", None)
-        if fn is not None:
-            try:
-                return str(fn(int(tex_count), str(uniform_layout_id), list(vertex_hooks), list(fragment_hooks)))
-            except ComposerError:
-                raise
-            except (ValueError, RuntimeError) as e:
-                raise ComposerError(str(e)) from e
-            except Exception as e:
-                _log_residual(f"host emit_wgsl residual: {e}")
-                raise AttributeError from e
-    except (ImportError, AttributeError):
-        pass
-    except ComposerError:
-        raise
-    except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
-        _log_residual(f"emit_wgsl host path residual: {e}")
+            fn = getattr(renpy_host, "emit_wgsl", None)
+            if fn is not None:
+                try:
+                    return str(fn(int(tex_count), str(uniform_layout_id), list(vertex_hooks), list(fragment_hooks)))
+                except ComposerError:
+                    raise
+                except (ValueError, RuntimeError) as e:
+                    raise ComposerError(str(e)) from e
+                except Exception as e:
+                    _log_residual(f"host emit_wgsl residual: {e}")
+                    raise AttributeError from e
+        except (ImportError, AttributeError):
+            pass
+        except ComposerError:
+            raise
+        except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
+            _log_residual(f"emit_wgsl host path residual: {e}")
     return _emit_wgsl_offline(
         tex_count=tex_count,
         uniform_layout_id=uniform_layout_id,
         vertex_hooks=vertex_hooks,
         fragment_hooks=fragment_hooks,
+        finalize=finalize,
     )
 
 
@@ -559,6 +609,78 @@ def register_shader_part(
     except Exception as e:  # noqa: BLE001 -- host delegation residual — fallback handles it; blind catch preserves pipeline creation
         _log_residual(f"register_shader_part residual: {e}")
         return
+
+
+# ---------------------------------------------------------------------------
+# Straight-through-alpha RTT sampling pipeline (renpy.pma_texture)
+# ---------------------------------------------------------------------------
+# Fills one real gap: `_draw_texture_at` (and every other quad that samples a
+# render texture) must not re-premultiply already-premultiplied RTT pixels.
+# This pipeline is built from the `renpy.pma_texture` part IR through the
+# EXISTING `renpy_host.create_pipeline_wgsl` FFI — no new host surface, no new
+# arena pipeline, so `python.rs` stays untouched.
+_PMA_PIPE_HANDLE: int = 0
+_PMA_PIPE_WGSL: str = ""
+_PMA_PIPE_KEY: str = ""
+
+
+def pma_texture_wgsl() -> str:
+    """The passthrough WGSL module for `renpy.pma_texture` (gates / debug)."""
+    return _pma_texture_module()[0]
+
+
+def pma_texture_pipeline_key() -> str:
+    """Cache key of the passthrough pipeline (``composed:<sha1[:16]>``)."""
+    return _pma_texture_module()[1]
+
+
+def _pma_texture_module() -> tuple[str, str]:
+    """Return ``(wgsl, cache_key)`` for the passthrough sampling part."""
+    ir = _shaders.get_snippet_ir(PMA_TEXTURE_PART)
+    if ir is None:
+        raise ComposerError(f"{PMA_TEXTURE_PART} is not registered")
+    finalize = part_finalize(PMA_TEXTURE_PART)
+    if finalize != _FINALIZE_PASSTHROUGH:
+        raise ComposerError(
+            f"{PMA_TEXTURE_PART} must declare finalize={_FINALIZE_PASSTHROUGH!r}, "
+            f"got {finalize!r}"
+        )
+    wgsl = _emit_wgsl_offline(
+        tex_count=int(ir.get("tex_count") or 0),
+        uniform_layout_id=str(ir.get("uniform_layout_id") or _UNIFORM_NONE),
+        vertex_hooks=ir.get("vertex_hooks") or [],
+        fragment_hooks=ir.get("fragment_hooks") or [],
+        finalize=finalize,
+    )
+    return wgsl, _cache_key([PMA_TEXTURE_PART])
+
+
+def create_pma_texture_pipeline() -> int:
+    """Create (or return the cached) straight-through-alpha textured pipeline.
+
+    Raises ``ComposerError`` when the part IR or the host FFI is unavailable —
+    callers must then keep the existing (premultiplying) pipeline, which is the
+    conservative direction.
+    """
+    global _PMA_PIPE_HANDLE, _PMA_PIPE_WGSL, _PMA_PIPE_KEY
+    if _PMA_PIPE_HANDLE > 0:
+        return _PMA_PIPE_HANDLE
+    wgsl, key = _pma_texture_module()
+    ir = _shaders.get_snippet_ir(PMA_TEXTURE_PART) or {}
+    tex_count = int(ir.get("tex_count") or 0)
+    handle = _create_host_pipeline(key, wgsl, tex_count, False)
+    _PMA_PIPE_HANDLE = int(handle)
+    _PMA_PIPE_WGSL = wgsl
+    _PMA_PIPE_KEY = key
+    return _PMA_PIPE_HANDLE
+
+
+def _reset_pma_texture_pipeline() -> None:
+    """Drop the cached handle (test / teardown helper; arena keeps pipelines)."""
+    global _PMA_PIPE_HANDLE, _PMA_PIPE_WGSL, _PMA_PIPE_KEY
+    _PMA_PIPE_HANDLE = 0
+    _PMA_PIPE_WGSL = ""
+    _PMA_PIPE_KEY = ""
 
 
 def compose_shader(

@@ -49,6 +49,46 @@ _COMPOSITION_ONLY: dict[str, str] = {
     "renpy.alpha": "vertex_color_alpha",
 }
 
+# ---------------------------------------------------------------------------
+# Fragment finalize strategies (PMA)
+# ---------------------------------------------------------------------------
+# Every composed fragment stage ends with one finalize rule:
+#   "premultiply"  — default. `let a = clamp(color.a,0,1); return vec4(color.rgb*a, a);`
+#                    Correct for SURFACE-UPLOADED textures (straight alpha), because
+#                    the pipeline blend is One/OneMinusSrcAlpha (needs premultiplied src).
+#   "passthrough"  — `return color;` — the fragment input is ALREADY premultiplied
+#                    (render-texture / RTT pixels written under the same One/OneMinusSrcAlpha
+#                    blend), so multiplying rgb by a again darkens semi-transparent content.
+#                    Blend stays One/OneMinusSrcAlpha, which is the correct `over` for a
+#                    premultiplied source.
+_FINALIZE_PREMULTIPLY = "premultiply"
+_FINALIZE_PASSTHROUGH = "passthrough"
+_FINALIZE_STRATEGIES = (_FINALIZE_PREMULTIPLY, _FINALIZE_PASSTHROUGH)
+
+# Parts whose finalize differs from the default, with the honest statement of
+# where their pipeline actually comes from. These are PREBAKED-ONLY parts:
+#   - they are NOT in ``_PIPELINE_KEYS`` (no dedicated ``renpy_host.<factory>()``
+#     exists — inventing one would be a lie),
+#   - they are registered ``atomic=True`` so the generic composer may never
+#     multi-merge them (a merge with a premultiply part would pick one foot for
+#     both inputs and silently mis-composite one of them),
+#   - ``pipeline_source`` names the real creation path: the existing
+#     ``renpy_host.create_pipeline_wgsl`` FFI, driven from
+#     ``renpy.wgpu.composer.create_pma_texture_pipeline()``.
+# ``assert_pipeline_map_honest`` polices all four claims.
+PMA_TEXTURE_PART = "renpy.pma_texture"
+
+_PREBAKED_FINALIZE: dict[str, dict] = {
+    PMA_TEXTURE_PART: {
+        "finalize": _FINALIZE_PASSTHROUGH,
+        "pipeline_source": "create_pipeline_wgsl",
+        "reason": (
+            "samples already-premultiplied RTT/render-texture content; the default "
+            "premultiply foot would darken every sub-1.0-alpha layer"
+        ),
+    },
+}
+
 # Known residual aliases (honest about incomplete GL2 parity).
 _RESIDUAL_NOTES: dict[str, str] = {
     "renpy.ftl": "mapped to textured_pipeline (no separate FTL lod bias path)",
@@ -74,10 +114,17 @@ _RESIDUAL_NOTES: dict[str, str] = {
 #   fragment_hooks: list[{priority: int, body: str}]
 #       Composable fragment WGSL fragments. Convention (see snippet-ir.md):
 #         - bodies assign to a local ``color: vec4<f32>`` (read-modify-write)
-#         - composer wraps hooks, then applies premultiplied-alpha finalization
+#         - composer wraps hooks, then applies the part's finalize strategy
+#           (``finalize``: "premultiply" default / "passthrough" for parts that
+#           sample already-premultiplied RTT content)
 #   atomic: bool
 #       True ⇒ multi-tex / transition effect that must not be multi-part merged
-#       (dissolve, imagedissolve). Composer treats atomic parts as prebaked-only.
+#       (dissolve, imagedissolve), OR a part whose fragment finalize differs
+#       from the composer default (renpy.pma_texture) — its pipeline is created
+#       prebaked from the part IR, never by a generic merge. Composer treats
+#       atomic parts as prebaked-only.
+#   finalize: str
+#       "premultiply" (default) | "passthrough" — see _FINALIZE_* above.
 #   composition_only / composition
 #       Non-pipeline parts applied in the Python draw path (geometry/alpha).
 #   pipeline
@@ -102,6 +149,7 @@ _SNIPPET_IR_KEYS = (
     "composition_only",
     "composition",
     "pipeline",
+    "finalize",
 )
 
 
@@ -153,6 +201,12 @@ def _apply_snippet_ir_defaults(meta: dict) -> dict:
     meta["fragment_hooks"] = _normalize_hooks(meta.get("fragment_hooks"))
     meta.setdefault("atomic", False)
     meta.setdefault("composition_only", False)
+    finalize = str(meta.get("finalize") or _FINALIZE_PREMULTIPLY)
+    if finalize not in _FINALIZE_STRATEGIES:
+        raise ValueError(
+            f"finalize must be one of {_FINALIZE_STRATEGIES}, got {finalize!r}"
+        )
+    meta["finalize"] = finalize
     return meta
 
 
@@ -268,6 +322,42 @@ def is_atomic(name: str) -> bool:
     return bool(part.get("atomic"))
 
 
+def part_finalize(name: str) -> str:
+    """Fragment finalize strategy for ``name`` — "premultiply" when unknown.
+
+    Conservative default: an unregistered / unknown part is treated as taking
+    the standard premultiply foot (the historical behavior for every part).
+    """
+    part = _WGSL_PARTS.get(name)
+    if part is None:
+        return _FINALIZE_PREMULTIPLY
+    return str(part.get("finalize") or _FINALIZE_PREMULTIPLY)
+
+
+def resolve_finalize(names) -> str:
+    """Finalize strategy for a merge set — conflict raises ``ValueError``.
+
+    Every part in the set must agree: one fragment foot cannot be right for
+    both a premultiplied and a straight-alpha input. An empty set resolves to
+    the default (premultiply).
+    """
+    strategies = {part_finalize(n) for n in names}
+    if len(strategies) > 1:
+        raise ValueError(
+            f"conflicting finalize strategies in {sorted(set(names))!r}: "
+            f"{sorted(strategies)!r}"
+        )
+    if not strategies:
+        return _FINALIZE_PREMULTIPLY
+    return strategies.pop()
+
+
+def prebaked_finalize_spec(name: str) -> dict | None:
+    """Honesty spec for a prebaked-finalize part (see ``_PREBAKED_FINALIZE``)."""
+    spec = _PREBAKED_FINALIZE.get(name)
+    return dict(spec) if spec else None
+
+
 def is_mergeable(name: str) -> bool:
     """True if ``name`` has Snippet IR and can be multi-part composed.
 
@@ -288,7 +378,9 @@ def is_mergeable(name: str) -> bool:
 def assert_pipeline_map_honest(renpy_host_mod=None) -> list[str]:
     """Return list of dishonest/missing mappings (empty = OK).
 
-    When ``renpy_host_mod`` is provided, also checks callables exist.
+    When ``renpy_host_mod`` is provided, also checks callables exist — for the
+    prebaked-finalize parts that means the FFI they declare in
+    ``pipeline_source`` (``create_pipeline_wgsl``), not an invented factory.
     """
     problems: list[str] = []
     for name, key in _PIPELINE_KEYS.items():
@@ -299,6 +391,35 @@ def assert_pipeline_map_honest(renpy_host_mod=None) -> list[str]:
     for name in _COMPOSITION_ONLY:
         if host_pipeline_key(name) is not None:
             problems.append(f"{name} composition-only but has pipeline key")
+    for name, spec in _PREBAKED_FINALIZE.items():
+        strategy = spec.get("finalize")
+        if strategy not in _FINALIZE_STRATEGIES:
+            problems.append(f"{name} declares unknown finalize strategy {strategy!r}")
+        if name in _PIPELINE_KEYS:
+            problems.append(
+                f"{name} has a non-default finalize but claims _PIPELINE_KEYS "
+                f"{_PIPELINE_KEYS[name]!r} (would emit the wrong fragment foot)"
+            )
+        if host_pipeline_key(name) is not None:
+            problems.append(f"{name} prebaked-finalize but reports a pipeline key")
+        ir = _WGSL_PARTS.get(name)
+        if ir is None:
+            problems.append(f"{name} declared in _PREBAKED_FINALIZE but not registered")
+        else:
+            if str(ir.get("finalize") or _FINALIZE_PREMULTIPLY) != strategy:
+                problems.append(
+                    f"{name} IR finalize {ir.get('finalize')!r} != declared {strategy!r}"
+                )
+            if not ir.get("atomic"):
+                problems.append(
+                    f"{name} must be atomic (prebaked-only) so no generic merge can "
+                    f"reuse its non-default finalize"
+                )
+        src = spec.get("pipeline_source")
+        if not src:
+            problems.append(f"{name} declares no pipeline_source")
+        elif renpy_host_mod is not None and not callable(getattr(renpy_host_mod, src, None)):
+            problems.append(f"{name} pipeline_source {src!r} missing on renpy_host")
     return problems
 
 
@@ -323,6 +444,22 @@ color = v.color;
 _TEXTURED_FS = """\
 // renpy.texture / renpy.ftl — sample t_color, modulate by vertex color
 // (premul deferred to composer so matrixcolor can operate on straight color)
+let tex = textureSample(t_color, s_color, v.uv);
+color = tex * v.color;
+"""
+
+# renpy.pma_texture — the RTT-sampling twin of _TEXTURED_FS.
+# Same sample + vertex-color modulation, but the composer's finalize is
+# "passthrough" (`return color;`) because a render texture written under the
+# One/OneMinusSrcAlpha blend already holds premultiplied pixels: applying the
+# default premultiply foot multiplies rgb by a a second time and darkens every
+# sub-1.0-alpha layer (measured: a 50% white quad over a dark bg reads 140 when
+# drawn directly and 77 through an RTT round trip).
+_PMA_TEXTURED_FS = """\
+// renpy.pma_texture — sample t_color whose content is ALREADY premultiplied
+// (render-texture / RTT pixels). The finalize strategy is "passthrough":
+// rgb must NOT be multiplied by a again. Blend stays One/OneMinusSrcAlpha,
+// which is the correct `over` for a premultiplied source.
 let tex = textureSample(t_color, s_color, v.uv);
 color = tex * v.color;
 """
@@ -421,6 +558,22 @@ def register_builtin_core():
         vertex_hooks=[],
         fragment_hooks=[],
         atomic=False,
+    )
+    # renpy.pma_texture — straight-through-alpha RTT sampling (see
+    # _PREBAKED_FINALIZE). atomic=True is the honest "prebaked-only" marker:
+    # the generic composer must never emit or merge it, because its fragment
+    # foot differs from the default.
+    register_wgsl_shader(
+        PMA_TEXTURE_PART,
+        priority=200,
+        kind="pma_texture",
+        tex_count=1,
+        uniform_layout_id=_UNIFORM_LAYOUT_NONE,
+        resources=["t_color", "s_color"],
+        vertex_hooks=[],
+        fragment_hooks=[(200, _PMA_TEXTURED_FS)],
+        atomic=True,
+        finalize=_FINALIZE_PASSTHROUGH,
     )
     # Phase 5 transitions / RTT effects (WGSL host pipelines)
     # dissolve / imagedissolve are multi-tex atomic — not multi-part mergeable.

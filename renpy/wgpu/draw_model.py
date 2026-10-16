@@ -22,6 +22,7 @@ from .draw_debug import (
     _walkstat_skip,
 )
 from .draw_surftree import SurftreeMixin  # T5 shim
+from .draw_texture import is_premultiplied_handle  # RTT-handle classification
 from .host_texture import HostTexture
 
 try:
@@ -60,7 +61,9 @@ class ModelMixin:
                 x0, y0, x1, y1, (1.0, 1.0, 1.0, 1.0), u0, v_bottom, u1, v_top
             )
             try:
-                self._draw_with_stencil(clip_poly, mesh, node.handle, None, None)
+                self._draw_with_stencil(
+                    clip_poly, mesh, node.handle, None, None, pipe=self._quad_pipe_for(node.handle)
+                )
             except Exception as e:  # noqa: BLE001
                 from renpy.wgpu.composer import ComposerError
                 raise ComposerError(f"stencil clip failed: {e}") from e
@@ -86,17 +89,20 @@ class ModelMixin:
                 return
             cox, coy, cw, ch, u0, v_bottom, u1, v_top = cropped
             x0, y0, x1, y1 = self._virt_rect_to_ndc(cox, coy, cw, ch)
+            # Same pipeline choice as _draw_texture_at: a registered RTT handle
+            # takes the straight-through-alpha pipe, everything else is unchanged.
+            pipe = self._quad_pipe_for(node.handle)
             # M1 T3 grouping: plain textured solid without uniforms can be instanced
             try:
-                if self._can_instance(self._tex_pipe, None, None, None):
-                    if self._instance_add(self._tex_pipe, node.handle, x0, y0, x1, y1, u0, v_bottom, u1, v_top, (1.0, 1.0, 1.0, 1.0)):
+                if self._can_instance(pipe, None, None, None):
+                    if self._instance_add(pipe, node.handle, x0, y0, x1, y1, u0, v_bottom, u1, v_top, (1.0, 1.0, 1.0, 1.0)):
                         return
             except Exception:
                 pass
             mesh = self._mesh_quad_ndc(
                 x0, y0, x1, y1, (1.0, 1.0, 1.0, 1.0), u0, v_bottom, u1, v_top
             )
-            self._dm(self._tex_pipe, int(mesh), node.handle, None, None)
+            self._dm(pipe, int(mesh), node.handle, None, None)
             return
 
         # Optional virtual-pixel placement on the model itself.
@@ -389,7 +395,11 @@ class ModelMixin:
                         x0, y0, x1, y1, col,
                         *slot_uv,
                     )
-                    self._dm(self._tex_pipe, int(m), slot_ht.handle, None, None)
+                    # Single-slot dissolve (degraded) draws the slot RTT with a
+                    # vertex alpha: `color = tex * v.color` feeds rgb*a, a*a —
+                    # correct premultiplied `over` ONLY with the passthrough foot
+                    # (the default foot would scale rgb by a a second time).
+                    self._dm(self._quad_pipe_for(slot_ht.handle), int(m), slot_ht.handle, None, None)
 
                 _draw_slot(old_ht, 1.0)
             return
@@ -655,6 +665,20 @@ class ModelMixin:
             if pushed:
                 self._clip_rect = prev_clip
                 self._clip_poly = prev_poly
+    def _quad_pipe_for(self, handle) -> int:
+        """Pipeline for a quad that samples ``handle`` as t_color.
+
+        Returns the straight-through-alpha pipe (`renpy.pma_texture`, no
+        re-premultiply) for a registered RTT handle, else the shared
+        `textured_pipeline` — i.e. exactly the historical pipeline for anything
+        unknown (surface uploads, stale/foreign handles, registry miss).
+        """
+        if is_premultiplied_handle(handle):
+            pma = int(self._pma_texture_pipe())  # type: ignore[attr-defined]
+            if pma > 0:
+                return pma
+        return int(self._tex_pipe)
+
     def _draw_texture_at(self, tex, ox, oy, size):
         """Draw a texture-like value as a virtual-pixel quad at (ox,oy) with size.
         - ``size`` / (ox,oy) → destination rect in virtual pixels
@@ -686,6 +710,18 @@ class ModelMixin:
         if w <= 0 or h <= 0:
             return
         self._ensure_pipes()
+        # Straight-through-alpha selection: a quad that samples an RTT handle
+        # (`is_premultiplied_handle`) must NOT go through the premultiplying
+        # `textured_pipeline` foot — RTT pixels already hold premultiplied rgb,
+        # and scaling by alpha again darkens every sub-1.0-alpha layer (50%
+        # white over a dark bg: 140 direct vs 77 through a round trip). The
+        # passthrough pipeline is bit-identical in every other respect: same
+        # vs_main, same t_color/s_color bindings, same One/OneMinusSrcAlpha
+        # blend — only the finalize differs (`return color;`).
+        #
+        # Unknown / unregistered handles keep `self._tex_pipe` exactly as
+        # before (conservative: the historical path is the fallback).
+        pipe = self._quad_pipe_for(ht.handle)
         # Source UV from original sub-rect (full or subsurface) — NOT dest size.
         u0, v_bottom, u1, v_top = self._host_tex_uv(ht)
         clip_poly = getattr(self, "_clip_poly", None)
@@ -697,7 +733,7 @@ class ModelMixin:
                 x0, y0, x1, y1, (1.0, 1.0, 1.0, 1.0), u0, v_bottom, u1, v_top
             )
             try:
-                self._draw_with_stencil(clip_poly, mesh, ht.handle, None, None)
+                self._draw_with_stencil(clip_poly, mesh, ht.handle, None, None, pipe=pipe)
             except Exception as e:  # noqa: BLE001
                 from renpy.wgpu.composer import ComposerError
                 raise ComposerError(f"stencil clip failed: {e}") from e
@@ -710,15 +746,15 @@ class ModelMixin:
         x0, y0, x1, y1 = self._virt_rect_to_ndc(cox, coy, cw, ch)
         # M1 T3 grouping for plain textured quads
         try:
-            if self._can_instance(self._tex_pipe, None, None, None):
-                if self._instance_add(self._tex_pipe, ht.handle, x0, y0, x1, y1, u0, v_bottom, u1, v_top, (1.0, 1.0, 1.0, 1.0)):
+            if self._can_instance(pipe, None, None, None):
+                if self._instance_add(pipe, ht.handle, x0, y0, x1, y1, u0, v_bottom, u1, v_top, (1.0, 1.0, 1.0, 1.0)):
                     return
         except Exception:
             pass
         mesh = self._mesh_quad_ndc(
             x0, y0, x1, y1, (1.0, 1.0, 1.0, 1.0), u0, v_bottom, u1, v_top
         )
-        self._dm(self._tex_pipe, int(mesh), ht.handle, None, None)
+        self._dm(pipe, int(mesh), ht.handle, None, None)
     def _node_size(self, node, default=None):
         """Shim: canonical in SurftreeMixin (T5)."""
         return SurftreeMixin._node_size(self, node, default)  # type: ignore[attr-defined]

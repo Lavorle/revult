@@ -21,6 +21,26 @@ from __future__ import annotations
 from .constants import RTT_POOL_MAX_PER_SIZE
 
 
+def _pma_register(handle) -> None:
+    """Register a pool RTT handle as premultiplied (see draw_texture registry)."""
+    try:
+        from .draw_texture import register_premultiplied_handle
+
+        register_premultiplied_handle(handle)
+    except Exception:  # noqa: BLE001, S110 -- bookkeeping only; unknown handle ⇒ historical path
+        pass
+
+
+def _pma_unregister(handle) -> None:
+    """Drop a destroyed pool RTT handle from the premultiplied registry."""
+    try:
+        from .draw_texture import unregister_premultiplied_handle
+
+        unregister_premultiplied_handle(handle)
+    except Exception:  # noqa: BLE001, S110 -- bookkeeping only
+        pass
+
+
 def _clamp_rtt_size(w, h, lw, dw, lh, dh):
     """Single-point strict ceiling used by ``_acquire_rtt``.
 
@@ -139,6 +159,10 @@ class RttPoolMixin:
                 self._pool_handles_set().add(handle)
             except Exception:
                 pass
+            # RTT pixels are premultiplied by construction (written under the
+            # One/OneMinusSrcAlpha blend) — [re-]register on every hand-out so a
+            # freelist handle stays classified after any registry eviction.
+            _pma_register(handle)
             return handle
         live_same = [t for t in self._rtt_curr_frame if t[1] == w and t[2] == h]
         if len(live_same) >= self._rtt_pool_cap:
@@ -156,10 +180,13 @@ class RttPoolMixin:
                 new_curr.append(t)
             new_curr.append((old_handle, w, h))
             self._rtt_curr_frame = new_curr
+            _pma_register(old_handle)
             return int(old_handle)
 
         handle = int(renpy_host.create_render_texture(w, h))
         self._rtt_curr_frame.append((handle, w, h))
+        # Fresh RTT: premultiplied content by construction (see _pma_register).
+        _pma_register(handle)
         # M1 (hmcreview): register the fresh handle as pool member — without
         # this the first-generation window had _pool_handles ⊊ freelist ∪
         # frame rings, so _rtt_hot_pool_handle went False and the gen stamp
@@ -208,6 +235,7 @@ class RttPoolMixin:
             renpy_host.destroy_texture(handle)
         except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
             pass
+        _pma_unregister(handle)
         try:
             self._pool_handles_set().discard(handle)
         except Exception:
@@ -238,6 +266,7 @@ class RttPoolMixin:
                     renpy_host.destroy_texture(handle)
                 except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                     pass
+                _pma_unregister(handle)
                 try:
                     self._pool_handles_set().discard(int(handle))
                 except Exception:
@@ -325,6 +354,7 @@ class RttPoolMixin:
                 renpy_host.destroy_texture(int(handle))
             except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
                 pass
+            _pma_unregister(handle)
 
 
 __all__ = ["RttPoolMixin"]

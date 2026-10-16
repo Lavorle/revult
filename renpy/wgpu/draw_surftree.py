@@ -32,6 +32,10 @@ from .draw_debug import (  # noqa: F401
 )
 from .host_bridge import host_env_bool
 from .host_texture import HostTexture
+from .draw_texture import (  # RTT-handle premultiplied registry (single owner)
+    register_premultiplied_handle,
+    unregister_premultiplied_handle,
+)
 
 # M1 T3 grouping import (private helper; used via WgpuDraw._instance_add path)
 try:
@@ -356,9 +360,10 @@ def _trans_fp_attr(v):
 #    the current frame's frame_cmds still reference them), and kill_textures /
 #    resize boundaries clear the whole store.
 #
-# Gate: RENPY_HOST_STATIC_MODEL_CACHE (OnceLock; **default off** — see the
-# measured premultiply verdict in ``static_model_cache_enabled``; "1"/true/yes/on
-# opts in. Disabled ⇒ byte-identical per-node walk behavior).
+# Gate: RENPY_HOST_STATIC_MODEL_CACHE (OnceLock; **default ON** — the pinned-RTT
+# re-premultiply that made it wrong for translucent subtrees is fixed by the
+# straight-through-alpha RTT sampling path, see ``static_model_cache_enabled``).
+# Explicit falsey ("0"/false/off/no) disables it ⇒ byte-identical per-node walk.
 # Telemetry: window counters appended to the existing bake_frame_flush PHASE0
 # line tail as ``sm_hit=N sm_miss=N sm_nodes_saved=N``.
 # =============================================================================
@@ -496,26 +501,39 @@ class _SmEntry:
 
 
 def static_model_cache_enabled() -> bool:
-    """RENPY_HOST_STATIC_MODEL_CACHE — OnceLock parse; **default OFF**.
+    """RENPY_HOST_STATIC_MODEL_CACHE — OnceLock parse; **default ON**.
 
-    Default off is a measured verdict, not caution: the feature works (node
-    count 869 -> ~131 per effect-window frame) but the pinned-RTT round trip the
-    host offers is not alpha-correct for TRANSLUCENT content — sampling a baked
-    render texture re-applies the premultiply (`direct over dark bg = 140`,
-    `through a pinned RTT = 77` for a 50% white quad, see the PMA probe), so any
-    cached subtree that contains sub-1.0-alpha layers composites darker than the
-    direct walk (prefs-page pills/panels: +48/255 on white areas). The gate stays
-    available as an explicit opt-in for work on a straight-alpha RTT sampling
-    path: set RENPY_HOST_STATIC_MODEL_CACHE=1 (or true/yes/on).
+    Default ON is a measured verdict. Two facts back it:
 
-    Unset / "" / "0" / false / off / no → disabled: every node is walked exactly
-    as before (the hook returns on the first byte of the cache check).
+    1. Correctness. The pinned-RTT round trip used to re-premultiply the baked
+       content (`direct over dark bg = 140`, `through a pinned RTT = 77` for a 50%
+       white quad), so a cached translucent subtree composited darker than the
+       direct walk (prefs-page pills/panels: +48/255 on white areas). That is
+       fixed by the straight-through-alpha RTT sampling path
+       (`renpy.pma_texture` + the premultiplied-handle registry in
+       ``draw_texture.py``): registered RTT handles are sampled with
+       `return color;` instead of the premultiplying foot, so a cached subtree
+       matches the direct walk. Effect-window A/B, settings page: on the RT
+       cells that three independent OFF runs reproduce byte-identically
+       (74.3% of the grid — the deterministic UI, video phase excluded),
+       OFF-vs-ON MAE is 0.20/255 median (was a systematic +48/255 offset).
+    2. Cost. The tree-node count inside the effect windows drops from p50 694 to
+       p50 119 and the frame interval p50 from 17.1 ms to 13.1 ms.
+
+    Disable with an explicit falsey value: RENPY_HOST_STATIC_MODEL_CACHE=0
+    (also "false" / "off" / "no"). Unset, empty, or any other value → enabled.
+    Disabled ⇒ byte-identical per-node walk behavior (the hook returns on the
+    first byte of the cache check).
     """
     global _SM_CACHE_ON
     v = _SM_CACHE_ON
     if v is None:
-        raw = os.environ.get("RENPY_HOST_STATIC_MODEL_CACHE", "")
-        v = str(raw).strip().lower() in ("1", "true", "yes", "on")
+        raw = os.environ.get("RENPY_HOST_STATIC_MODEL_CACHE")
+        if raw is None:
+            v = True
+        else:
+            s = str(raw).strip().lower()
+            v = s not in ("0", "false", "off", "no")
         _SM_CACHE_ON = v
     return bool(v)
 
@@ -2058,6 +2076,13 @@ class SurftreeMixin:
             renpy_host.destroy_texture(h)
         except Exception:  # noqa: BLE001, S110 -- destroy must never abort frames
             pass
+        # Single destroy funnel for every pinned/private RTT (trans cache + SM
+        # cache) — drop its premultiplied-handle registration here so a recycled
+        # UV/texture slot can never inherit the classification.
+        try:
+            unregister_premultiplied_handle(h)
+        except Exception:  # noqa: BLE001, S110 -- bookkeeping only
+            pass
         try:
             self._pool_handles_set().discard(h)
         except Exception:  # noqa: BLE001, S110
@@ -2215,6 +2240,12 @@ class SurftreeMixin:
                     rtt = int(renpy_host.create_render_texture(w, h))
                 if rtt <= 0:
                     raise ValueError("trans_bake_pin: bad private RTT handle")
+                # Render-texture pixels are premultiplied: classify the handle so
+                # a later quad sampling it takes the passthrough pipeline.
+                try:
+                    register_premultiplied_handle(rtt)
+                except Exception:  # noqa: BLE001, S110 -- bookkeeping only
+                    pass
                 # Non-pool validation (same as lookup): a pool member here
                 # means external state corruption — refuse + drop rather than
                 # bake into some other pass's target.
@@ -3189,6 +3220,12 @@ class SurftreeMixin:
                         rtt = int(renpy_host.create_render_texture(w, h))
                     if rtt <= 0:
                         raise ValueError("sm_pin: bad private RTT handle")
+                    # Render-texture pixels are premultiplied: classify the handle
+                    # so _sm_draw_entry's quad samples it passthrough.
+                    try:
+                        register_premultiplied_handle(rtt)
+                    except Exception:  # noqa: BLE001, S110 -- bookkeeping only
+                        pass
                     if self._rtt_hot_pool_handle(rtt):
                         raise ValueError("sm_pin: handle leaked into rtt pool")
                     renpy_host.begin_target(rtt)

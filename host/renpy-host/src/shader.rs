@@ -18,8 +18,70 @@ pub const UNIFORM_NONE: &str = "none";
 pub const UNIFORM_PARAMS16: &str = "params16";
 pub const UNIFORM_MATRIXCOLOR16: &str = "matrixcolor16";
 
+/// Fragment finalize strategies (PMA). Mirrors `renpy/wgpu/shaders.py`.
+///
+/// `PREMULTIPLY` (default) — `let a = clamp(color.a,0,1); return vec4(color.rgb*a, a);`
+/// correct for straight-alpha surface uploads under the One/OneMinusSrcAlpha blend.
+///
+/// `PASSTHROUGH` — `return color;` — for parts that sample ALREADY premultiplied
+/// content (render textures / RTTs, written by those same blend factors). The
+/// default foot would multiply rgb by alpha a second time and darken every
+/// sub-1.0-alpha layer.
+pub const FINALIZE_PREMULTIPLY: &str = "premultiply";
+pub const FINALIZE_PASSTHROUGH: &str = "passthrough";
+
 pub const DEFAULT_TEXTURE: &str = "renpy.texture";
 pub const DEFAULT_SOLID: &str = "renpy.solid";
+
+/// `renpy.pma_texture` — the straight-through-alpha twin of `renpy.texture`
+/// (same sample + vertex-color modulation, `return color;` finalize). Registered
+/// `atomic` (prebaked-only) so the generic composer can never merge it and
+/// silently reuse the wrong fragment foot. Its host pipeline is created through
+/// the existing `create_pipeline_wgsl` FFI from the Python part IR — this Rust
+/// mirror keeps the two registries in sync and makes the WGSL source available
+/// (and naga-validated) ahead of a dedicated `pma_texture_pipeline()` factory.
+pub const PMA_TEXTURE_PART: &str = "renpy.pma_texture";
+
+/// Full WGSL module for `renpy.pma_texture` — byte-equal to what
+/// `renpy.wgpu.composer.emit_wgsl(finalize="passthrough")` emits for that part
+/// (tex_count=1, layout "none"), so the composed pipeline and this standalone
+/// source cannot drift.
+pub const PMA_TEXTURE_WGSL: &str = r#"// composed by renpy.wgpu.composer
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+@group(0) @binding(0) var t_color: texture_2d<f32>;
+
+@group(0) @binding(1) var s_color: sampler;
+
+@vertex
+fn vs_main(v: VsIn) -> VsOut {
+    var o: VsOut;
+    o.clip = vec4<f32>(v.pos, 0.0, 1.0);
+    o.uv = v.uv;
+    o.color = v.color;
+    return o;
+}
+
+@fragment
+fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
+    var color: vec4<f32> = vec4<f32>(0.0);
+    let tex = textureSample(t_color, s_color, v.uv);
+    color = tex * v.color;
+    // finalize: passthrough — the sampled content is already premultiplied
+    // (RTT written under One/OneMinusSrcAlpha), so rgb must not be scaled
+    // by alpha a second time. Blend One/OneMinusSrcAlpha stays correct `over`.
+    return color;
+}
+"#;
 
 /// SDF text pipeline WGSL — single atlas texture with SDF threshold + AA smoothing.
 /// Bindings: t_atlas@b0 + s_atlas@b1 + u@b2 Params (data0.x=threshold data0.y=aa).
@@ -98,6 +160,10 @@ pub enum ShaderError {
         current: String,
         conflicting: String,
     },
+    FinalizeConflict {
+        current: String,
+        conflicting: String,
+    },
     ExceededMaxTextures {
         count: u8,
         max: u8,
@@ -121,6 +187,13 @@ impl fmt::Display for ShaderError {
             } => write!(
                 f,
                 "conflicting uniform layouts: {current:?} vs {conflicting:?}"
+            ),
+            ShaderError::FinalizeConflict {
+                current,
+                conflicting,
+            } => write!(
+                f,
+                "conflicting fragment finalize strategies: {current:?} vs {conflicting:?}"
             ),
             ShaderError::ExceededMaxTextures { count, max } => write!(
                 f,
@@ -162,6 +235,10 @@ pub struct ShaderPart {
     pub fragment_hooks: Vec<ShaderHook>,
     pub atomic: bool,
     pub composition_only: bool,
+    /// Fragment finalize strategy: `FINALIZE_PREMULTIPLY` (default) or
+    /// `FINALIZE_PASSTHROUGH` for parts that sample already-premultiplied
+    /// render-texture content. See [`emit_wgsl_finalized`].
+    pub finalize: String,
 }
 
 /// Result of composing a set of shader parts into a complete WGSL shader.
@@ -225,6 +302,22 @@ impl ShaderPart {
             fragment_hooks,
             atomic,
             composition_only,
+            finalize: FINALIZE_PREMULTIPLY.to_string(),
+        }
+    }
+
+    /// Builder: declare a non-default fragment finalize (see the constants).
+    pub fn with_finalize(mut self, finalize: impl Into<String>) -> Self {
+        self.finalize = finalize.into();
+        self
+    }
+
+    /// Finalize strategy, normalized to the default when empty.
+    pub fn finalize(&self) -> &str {
+        if self.finalize.is_empty() {
+            FINALIZE_PREMULTIPLY
+        } else {
+            self.finalize.as_str()
         }
     }
 
@@ -239,6 +332,12 @@ impl ShaderPart {
                 count: self.tex_count,
                 max: 3,
             });
+        }
+        if self.finalize() != FINALIZE_PREMULTIPLY && self.finalize() != FINALIZE_PASSTHROUGH {
+            return Err(ShaderError::InvalidLayout(format!(
+                "unknown fragment finalize strategy: {:?}",
+                self.finalize
+            )));
         }
         for h in &self.vertex_hooks {
             validate_wgsl_syntax(&h.body)?;
@@ -476,6 +575,26 @@ impl ShaderPartRegistry {
             false,
         ));
 
+        // renpy.pma_texture (1-tex) — straight-through-alpha RTT sampling twin of
+        // renpy.texture. atomic ⇒ prebaked-only: its fragment foot differs from the
+        // composer default, so a generic merge must never pick a foot for it.
+        self.register_part(
+            ShaderPart::new(
+                PMA_TEXTURE_PART,
+                1,
+                UNIFORM_NONE,
+                vec![],
+                vec![ShaderHook {
+                    priority: 200,
+                    body: "let tex = textureSample(t_color, s_color, v.uv);\ncolor = tex * v.color;"
+                        .into(),
+                }],
+                true,
+                false,
+            )
+            .with_finalize(FINALIZE_PASSTHROUGH),
+        );
+
         // renpy.text_sdf — SDF atlas text (single tex + params16 threshold/aa)
         self.register_part(ShaderPart::new(
             "renpy.text_sdf",
@@ -583,6 +702,7 @@ impl NativeShaderComposer {
 
         let mut tex_count: u8 = 0;
         let mut uniform_layout_id: String = UNIFORM_NONE.to_string();
+        let mut finalize: String = FINALIZE_PREMULTIPLY.to_string();
 
         for part in &collected {
             tex_count = tex_count.max(part.tex_count);
@@ -595,6 +715,17 @@ impl NativeShaderComposer {
                         conflicting: part.uniform_layout_id.clone(),
                     });
                 }
+            }
+            // Finalize must agree across the merge set: one fragment foot cannot
+            // be right for both a premultiplied and a straight-alpha input.
+            let part_finalize = part.finalize();
+            if finalize == FINALIZE_PREMULTIPLY {
+                finalize = part_finalize.to_string();
+            } else if finalize != part_finalize {
+                return Err(ShaderError::FinalizeConflict {
+                    current: finalize,
+                    conflicting: part_finalize.to_string(),
+                });
             }
         }
 
@@ -618,7 +749,7 @@ impl NativeShaderComposer {
         v_hooks.sort_by_key(|h| h.priority);
         f_hooks.sort_by_key(|h| h.priority);
 
-        let wgsl = emit_wgsl(tex_count, &uniform_layout_id, &v_hooks, &f_hooks);
+        let wgsl = emit_wgsl_finalized(tex_count, &uniform_layout_id, &v_hooks, &f_hooks, &finalize);
         validate_wgsl_syntax(&wgsl)?;
         validate_wgsl_with_naga(&wgsl)?;
         let key = self.compute_cache_key(&effect_parts);
@@ -848,6 +979,29 @@ pub fn emit_wgsl(
     vertex_hooks: &[ShaderHook],
     fragment_hooks: &[ShaderHook],
 ) -> String {
+    emit_wgsl_finalized(
+        tex_count,
+        uniform_layout_id,
+        vertex_hooks,
+        fragment_hooks,
+        FINALIZE_PREMULTIPLY,
+    )
+}
+
+/// Emit a complete WGSL module with an explicit fragment finalize strategy.
+///
+/// * [`FINALIZE_PREMULTIPLY`] (default; byte-identical to [`emit_wgsl`]):
+///   `let a = clamp(color.a,0,1); return vec4(color.rgb*a, a);`
+/// * [`FINALIZE_PASSTHROUGH`]: `return color;` — for parts that sample already
+///   premultiplied render-texture content (`renpy.pma_texture`). Blend stays
+///   One/OneMinusSrcAlpha, which is the correct `over` for that input.
+pub fn emit_wgsl_finalized(
+    tex_count: u8,
+    uniform_layout_id: &str,
+    vertex_hooks: &[ShaderHook],
+    fragment_hooks: &[ShaderHook],
+    finalize: &str,
+) -> String {
     let has_uniforms = uniform_layout_id != UNIFORM_NONE;
     let mut chunks: Vec<String> = Vec::new();
 
@@ -935,8 +1089,27 @@ struct VsOut {
             fs_lines.push(indent(body, 4));
         }
     }
-    fs_lines.push("    let a = clamp(color.a, 0.0, 1.0);".to_string());
-    fs_lines.push("    return vec4<f32>(color.rgb * a, a);".to_string());
+    if finalize == FINALIZE_PASSTHROUGH {
+        fs_lines.push(
+            "    // finalize: passthrough — the sampled content is already premultiplied".to_string(),
+        );
+        fs_lines.push(
+            "    // (RTT written under One/OneMinusSrcAlpha), so rgb must not be scaled".to_string(),
+        );
+        fs_lines.push(
+            "    // by alpha a second time. Blend One/OneMinusSrcAlpha stays correct `over`."
+                .to_string(),
+        );
+        fs_lines.push("    return color;".to_string());
+    } else {
+        if finalize != FINALIZE_PREMULTIPLY {
+            log::warn!(
+                "unknown fragment finalize strategy {finalize:?}; falling back to {FINALIZE_PREMULTIPLY:?}"
+            );
+        }
+        fs_lines.push("    let a = clamp(color.a, 0.0, 1.0);".to_string());
+        fs_lines.push("    return vec4<f32>(color.rgb * a, a);".to_string());
+    }
     fs_lines.push("}".to_string());
     chunks.push(fs_lines.join("\n"));
 
@@ -1197,8 +1370,114 @@ mod tests {
     }
 
     #[test]
+    fn test_emit_wgsl_default_is_byte_stable() {
+        // The default path must not change: no part in the builtin registry
+        // declares a non-default finalize except the atomic pma_texture part,
+        // so every composable set still emits the premultiply foot.
+        let composer = NativeShaderComposer::new();
+        for name in composer.registry.list_parts() {
+            if name == PMA_TEXTURE_PART {
+                continue;
+            }
+            let part = composer.registry.get_part(&name).expect("registered");
+            assert_eq!(part.finalize(), FINALIZE_PREMULTIPLY, "part {name}");
+        }
+        let composed = composer
+            .compose(&["renpy.texture".to_string()], true)
+            .expect("texture composes");
+        assert!(composed
+            .wgsl_source
+            .contains("let a = clamp(color.a, 0.0, 1.0);"));
+        assert!(composed
+            .wgsl_source
+            .contains("return vec4<f32>(color.rgb * a, a);"));
+        // emit_wgsl() is exactly emit_wgsl_finalized(.., PREMULTIPLY).
+        let hooks = vec![ShaderHook {
+            priority: 200,
+            body: "color = v.color;".into(),
+        }];
+        assert_eq!(
+            emit_wgsl(0, UNIFORM_NONE, &[], &hooks),
+            emit_wgsl_finalized(0, UNIFORM_NONE, &[], &hooks, FINALIZE_PREMULTIPLY)
+        );
+    }
+
+    #[test]
+    fn test_emit_wgsl_passthrough_finalize() {
+        let hooks = vec![ShaderHook {
+            priority: 200,
+            body: "let tex = textureSample(t_color, s_color, v.uv);\ncolor = tex * v.color;"
+                .into(),
+        }];
+        let wgsl = emit_wgsl_finalized(1, UNIFORM_NONE, &[], &hooks, FINALIZE_PASSTHROUGH);
+        assert!(wgsl.contains("    return color;"));
+        assert!(!wgsl.contains("color.rgb * a"));
+        validate_wgsl_syntax(&wgsl).expect("passthrough syntax");
+        validate_wgsl_with_naga(&wgsl).expect("passthrough naga");
+        // The mirrored standalone module must match the composed source exactly.
+        assert_eq!(wgsl, PMA_TEXTURE_WGSL);
+    }
+
+    #[test]
+    fn test_pma_texture_part_is_prebaked_passthrough() {
+        let composer = NativeShaderComposer::new();
+        let part = composer
+            .registry
+            .get_part(PMA_TEXTURE_PART)
+            .expect("renpy.pma_texture registered");
+        assert_eq!(part.tex_count, 1);
+        assert_eq!(part.uniform_layout_id, UNIFORM_NONE);
+        assert_eq!(part.finalize(), FINALIZE_PASSTHROUGH);
+        // atomic ⇒ prebaked-only: the generic composer refuses to emit it, so a
+        // merge can never pick one foot for both a premultiplied and a
+        // straight-alpha input.
+        assert!(part.atomic);
+        match composer.compose(&[PMA_TEXTURE_PART.to_string()], true) {
+            Err(ShaderError::AtomicPart(name)) => assert_eq!(name, PMA_TEXTURE_PART),
+            other => panic!("expected AtomicPart, got {other:?}"),
+        }
+        validate_wgsl_syntax(PMA_TEXTURE_WGSL).expect("PMA_TEXTURE_WGSL syntax");
+        validate_wgsl_with_naga(PMA_TEXTURE_WGSL).expect("PMA_TEXTURE_WGSL naga");
+    }
+
+    #[test]
+    fn test_finalize_conflict_detected() {
+        let mut composer = NativeShaderComposer::new();
+        composer.registry.register_part(
+            ShaderPart::new(
+                "custom.passthrough",
+                1,
+                UNIFORM_NONE,
+                vec![],
+                vec![ShaderHook {
+                    priority: 300,
+                    body: "color = color;".into(),
+                }],
+                false,
+                false,
+            )
+            .with_finalize(FINALIZE_PASSTHROUGH),
+        );
+        let err = composer
+            .compose(
+                &["renpy.texture".to_string(), "custom.passthrough".to_string()],
+                true,
+            )
+            .unwrap_err();
+        match err {
+            ShaderError::FinalizeConflict {
+                current,
+                conflicting,
+            } => {
+                assert_eq!(current, FINALIZE_PASSTHROUGH);
+                assert_eq!(conflicting, FINALIZE_PREMULTIPLY);
+            }
+            other => panic!("expected FinalizeConflict, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_text_sdf_wgsl_validates() {
-        // TEXT_SDF_WGSL must pass both syntactic and naga validation.
         validate_wgsl_syntax(TEXT_SDF_WGSL).expect("TEXT_SDF_WGSL syntax valid");
         validate_wgsl_with_naga(TEXT_SDF_WGSL).expect("TEXT_SDF_WGSL naga valid");
         assert!(TEXT_SDF_WGSL.contains("t_atlas"));

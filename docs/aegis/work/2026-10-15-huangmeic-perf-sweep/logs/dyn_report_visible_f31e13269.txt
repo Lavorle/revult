@@ -1,0 +1,27 @@
+S0_main_menu_movieband: dur=3.001 renpy_fps_p50=192.98 present_fps_avg=159.8 present_iv_p50=0.00516s present_iv_p95=0.00748s present_iv_max=0.01481s
+S_pref_open_idle: dur=1.209 renpy_fps_p50=202.58 present_fps_avg=185.33 present_iv_p50=0.00491s present_iv_p95=0.00679s present_iv_max=0.01054s
+tab_image_config_hover_only: dur=0.25 renpy_fps_p50=195.12 present_fps_avg=189.19 present_iv_p50=0.00513s present_iv_p95=0.00647s present_iv_max=0.00916s
+tab_image_config_transition: dur=1.501 renpy_fps_p50=187.25 present_fps_avg=174.96 present_iv_p50=0.00527s present_iv_p95=0.0071s present_iv_max=0.00957s
+tab_image_config_idle: dur=2.003 renpy_fps_p50=181.51 present_fps_avg=168.28 present_iv_p50=0.00546s present_iv_p95=0.00743s present_iv_max=0.01108s
+tab_game_config_1_hover_only: dur=0.256 renpy_fps_p50=181.31 present_fps_avg=166.46 present_iv_p50=0.00552s present_iv_p95=0.00801s present_iv_max=0.00903s
+tab_game_config_1_transition: dur=1.5 renpy_fps_p50=179.6 present_fps_avg=169.63 present_iv_p50=0.00552s present_iv_p95=0.00704s present_iv_max=0.01038s
+tab_game_config_1_idle: dur=2.001 renpy_fps_p50=184.71 present_fps_avg=172.39 present_iv_p50=0.00539s present_iv_p95=0.00726s present_iv_max=0.01059s
+tab_text_config_hover_only: dur=0.251 renpy_fps_p50=180.84 present_fps_avg=160.39 present_iv_p50=0.00553s present_iv_p95=0.00704s present_iv_max=0.00799s
+tab_text_config_transition: dur=1.501 renpy_fps_p50=180.68 present_fps_avg=168.74 present_iv_p50=0.00549s present_iv_p95=0.00715s present_iv_max=0.0101s
+tab_text_config_idle: dur=2.002 renpy_fps_p50=180.77 present_fps_avg=169.07 present_iv_p50=0.00551s present_iv_p95=0.00765s present_iv_max=0.01091s
+tab_sound_config_hover_only: dur=0.25 renpy_fps_p50=182.68 present_fps_avg=167.4 present_iv_p50=0.00544s present_iv_p95=0.00776s present_iv_max=0.00783s
+tab_sound_config_transition: dur=1.502 renpy_fps_p50=181.2 present_fps_avg=169.71 present_iv_p50=0.00552s present_iv_p95=0.00734s present_iv_max=0.01084s
+tab_sound_config_idle: dur=2.002 renpy_fps_p50=179.25 present_fps_avg=168.67 present_iv_p50=0.00554s present_iv_p95=0.0073s present_iv_max=0.012s
+tab_dialog_config_1_hover_only: dur=0.251 renpy_fps_p50=188.64 present_fps_avg=173.6 present_iv_p50=0.00528s present_iv_p95=0.00672s present_iv_max=0.00823s
+tab_dialog_config_1_transition: dur=1.502 renpy_fps_p50=175.72 present_fps_avg=164.98 present_iv_p50=0.00562s present_iv_p95=0.00729s present_iv_max=0.01029s
+tab_dialog_config_1_idle: dur=2.002 renpy_fps_p50=172.74 present_fps_avg=160.99 present_iv_p50=0.00573s present_iv_p95=0.00759s present_iv_max=0.01087s
+tab_dialog_config_2_hover_only: dur=0.253 renpy_fps_p50=179.98 present_fps_avg=165.93 present_iv_p50=0.00551s present_iv_p95=0.00707s present_iv_max=0.00845s
+tab_dialog_config_2_transition: dur=1.5 renpy_fps_p50=176.38 present_fps_avg=164.94 present_iv_p50=0.00565s present_iv_p95=0.00749s present_iv_max=0.00954s
+tab_dialog_config_2_idle: dur=2.001 renpy_fps_p50=176.51 present_fps_avg=163.24 present_iv_p50=0.00561s present_iv_p95=0.00777s present_iv_max=0.01064s
+tab_keyboard_config_hover_only: dur=0.252 renpy_fps_p50=177.42 present_fps_avg=164.04 present_iv_p50=0.00561s present_iv_p95=0.00715s present_iv_max=0.00729s
+tab_keyboard_config_transition: dur=1.502 renpy_fps_p50=170.2 present_fps_avg=159.73 present_iv_p50=0.00579s present_iv_p95=0.00787s present_iv_max=0.01034s
+tab_keyboard_config_idle: dur=2.0 renpy_fps_p50=169.44 present_fps_avg=155.12 present_iv_p50=0.00585s present_iv_p95=0.00845s present_iv_max=0.0111s
+typewriter_dwell: dur=5.003 renpy_fps_p50=173.18 present_fps_avg=158.46 present_iv_p50=0.00573s present_iv_p95=0.00805s present_iv_max=0.01586s
+S_sound_hover_thrash: dur=3.038 renpy_fps_p50=174.51 present_fps_avg=164.03 present_iv_p50=0.00568s present_iv_p95=0.00788s present_iv_max=0.01119s
+S_back_main_movieband: dur=2.502 renpy_fps_p50=178.04 present_fps_avg=164.92 present_iv_p50=0.00556s present_iv_p95=0.00775s present_iv_max=0.0114s
+(offline full analysis appended by /tmp/hmc_dyn_analyze.py)

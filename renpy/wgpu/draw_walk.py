@@ -631,6 +631,113 @@ class WalkMixin:
         if has_model_payload:
             self._draw_model_like(node, ctx.ox, ctx.oy)
 
+    def _draw_node_inner_body_rl(self, node, ctx: WalkCtx | None = None):
+        """Render-like specialization of ``_draw_node_inner_body``.
+
+        Identical branches in the identical order, with identical telemetry and
+        identical draw calls; only the per-node probes are replaced by the
+        direct reads that ``render_like_class`` proves equal:
+
+        * ``getattr(node, "cached_model", None)`` → ``node.cached_model`` (the
+          class surface has it; ``_draw_cached`` is only entered when it is
+          not None, which is exactly its own first-branch outcome);
+        * ``getattr(node, "cached_texture", None)`` → ``node.cached_texture``;
+        * ``getattr(node, "mesh", None)`` → ``node.mesh``;
+        * ``getattr(node, "shaders", None)`` → ``node.shaders``;
+        * ``vertices`` / ``texture`` / ``textures`` / ``pipeline`` are verified
+          absent for the class, so their ``getattr`` defaults (None) are folded
+          into ``has_model_payload`` / ``has_own`` as the constants they are;
+        * ``children`` is verified present and ``blits`` absent, so
+          ``list(self._iter_children(node))`` is exactly
+          ``self._children_list(node)``;
+        * ``get_size`` is verified present, so the trailing
+          ``hasattr(get_size) or hasattr(_pixels)`` test is constantly true;
+        * ``_draw_reverse`` is skipped when ``reverse`` is None or when there
+          are no children — both of its own first branches return False there
+          (``_node_needs_axis_scale`` ← ``_reverse_axis_scale`` returns None for
+          a None reverse), so no draw and no telemetry is lost.
+
+        Always reached with the node whose class passed ``render_like_class``.
+        """
+        # T5: WalkCtx explicit — callers should pass ctx; ox/oy kept for compat 1 version.
+        if ctx is None:
+            ctx = WalkCtx(ox=0.0, oy=0.0, budget=120, clip_rect=getattr(self, "_clip_rect", None), clip_poly=getattr(self, "_clip_poly", None))
+        ox = ctx.ox
+        oy = ctx.oy
+        children_preview = self._children_list(node)
+        if node.cached_model is not None:
+            if self._draw_cached(node, children_preview, ctx):
+                return
+        children = children_preview
+        if children and node.reverse is not None:
+            if self._draw_reverse(node, children, ctx):
+                return
+        # Stable subtree model cache (RENPY_HOST_STATIC_MODEL_CACHE, default on):
+        # see the generic body for the contract. Placed AFTER _draw_cached /
+        # _draw_reverse so both existing bake paths keep their semantics.
+        if self._sm_try_draw(node, ctx):
+            return
+        ctex = node.cached_texture
+        if ctex is not None and not children:
+            if _WALKSTAT_ON:
+                try:
+                    _walkstat_skip("ctex_leaf", f"{type(node).__name__}")
+                except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                    pass
+            self._draw_texture_at(ctex, ox, oy, self._node_size(node))
+            return
+        if ctex is not None and len(children) == 1 and isinstance(children[0][0], (HostTexture, int)):
+            if _WALKSTAT_ON:
+                try:
+                    _walkstat_skip("ctex_sub", f"{type(node).__name__}")
+                except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                    pass
+            nw, nh = self._node_size(node, default=(0, 0))
+            child, cx, cy = children[0]
+            self._draw_node(child, ox + cx, oy + cy)
+            return
+        mesh_attr = node.mesh
+        has_model_payload = mesh_attr is not None
+        if has_model_payload and not children:
+            self._draw_model_like(node, ox, oy)
+            return
+        if mesh_attr is not None and children:
+            has_own = (isinstance(mesh_attr, int) and not isinstance(mesh_attr, bool)) or (
+                mesh_attr is not True and mesh_attr != "quad" and hasattr(mesh_attr, "vertices")
+            )
+            if has_own:
+                self._draw_model_like(node, ox, oy)
+                for child, cx, cy in children:
+                    self._draw_node(child, ox + cx, oy + cy)
+                return
+            if mesh_attr is True or mesh_attr == "quad":
+                if self._draw_dissolve_mid(node, children, ctx):
+                    return
+                if self._draw_imagedissolve_fallback(node, children, ctx):
+                    return
+                for child, cx, cy in children:
+                    self._draw_node(child, ox + cx, oy + cy)
+                return
+            baked = self._bake_mesh_children(node, children)
+            if baked is not None:
+                self._draw_model_like(baked, ox, oy)
+                return
+            for child, cx, cy in children:
+                self._draw_node(child, ox + cx, oy + cy)
+            return
+        shaders_attr = node.shaders or ()
+        if children and shaders_attr and mesh_attr is None:
+            if self._draw_effect_container(node, children, ctx, shaders_attr, mesh_attr):
+                return
+        if children:
+            for child, cx, cy in children:
+                self._draw_node(child, ox + cx, oy + cy)
+            return
+        # ``get_size`` is part of the verified surface (and ``_pixels`` verified
+        # absent), so the generic probe is constantly true; the generic tail
+        # ``if has_model_payload`` after it is unreachable there too.
+        self._draw_model_like(node, ox, oy)
+
     def _draw_effect_container(self, node, children, ctx: WalkCtx, shaders_attr, mesh_attr) -> bool:
         effect = False
         try:

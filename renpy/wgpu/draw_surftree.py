@@ -46,6 +46,109 @@ except Exception:
 if TYPE_CHECKING:
     from .host_texture import HostTexture
 
+_HostTextureRT = HostTexture
+
+
+# ---------------------------------------------------------------------------
+# Hot-path node surface policy (walk specialization)
+# ---------------------------------------------------------------------------
+# The per-node walk probes ~30 attributes per node through ``getattr``-with-
+# default / ``hasattr`` / ``isinstance``.  For the engine's cdef ``Render``
+# (the overwhelming majority of nodes) the attribute surface is fixed at class
+# level, so every one of those probes has a knowable constant answer and the
+# hot path can use direct attribute reads instead.  The verdict is computed
+# once per class and memoized in ``_RL_CACHE``.
+#
+# A class qualifies only when each probe is *provably* equal to the class-level
+# one:
+#   * ``__dictoffset__ == 0``    — no instance dict, so no instance can carry
+#     an attribute outside the class surface;
+#   * no ``__getattr__`` and the default ``__getattribute__`` — no name can be
+#     synthesised at read time;
+#   * not a HostTexture / int subclass — those are dispatched before the walk;
+#   * every ``_RL_PRESENT`` name exists (⇒ ``getattr(node, n, d) is node.n``);
+#   * every ``_RL_ABSENT`` name is missing (⇒ ``getattr(node, n, d) is d``).
+# Anything else keeps the generic walk byte-for-byte.
+_RL_PRESENT = (
+    "children",
+    "mesh",
+    "shaders",
+    "uniforms",
+    "xclipping",
+    "yclipping",
+    "reverse",
+    "forward",
+    "cached_model",
+    "cached_texture",
+    "width",
+    "height",
+    "operation",
+    "operation_complete",
+    "get_size",
+)
+_RL_ABSENT = (
+    "blits",
+    "vertices",
+    "texture",
+    "textures",
+    "pipeline",
+    "ndc",
+    "color",
+    "handle",
+    "_pixels",
+    "get_buffer",
+    "get_at",
+    "w",
+    "h",
+    "_dissolve_origin",
+)
+
+_RL_CACHE: dict = {}
+_RL_LAST = None
+# Shared empty child list for the Render-like fast path (read-only use).
+_EMPTY_CHILDREN: tuple = ()
+
+
+def _render_like_probe(cls) -> bool:
+    """One-time (per class) verification of the fixed cdef Render surface."""
+    try:
+        if not isinstance(cls, type):
+            return False
+        if getattr(cls, "__dictoffset__", 0) != 0:
+            return False
+        if getattr(cls, "__getattr__", None) is not None:
+            return False
+        if getattr(cls, "__getattribute__", None) is not object.__getattribute__:
+            return False
+        if issubclass(cls, _HostTextureRT) or issubclass(cls, int):
+            return False
+        for _n in _RL_PRESENT:
+            if not hasattr(cls, _n):
+                return False
+        for _n in _RL_ABSENT:
+            if hasattr(cls, _n):
+                return False
+    except Exception:  # noqa: BLE001 -- unverifiable class → generic walk
+        return False
+    return True
+
+
+def render_like_class(cls) -> bool:
+    """True when ``cls`` instances expose the fixed cdef Render surface."""
+    global _RL_LAST
+    if cls is _RL_LAST:
+        return True
+    v = _RL_CACHE.get(cls)
+    if v is None:
+        v = _render_like_probe(cls)
+        try:
+            _RL_CACHE[cls] = v
+        except Exception:  # noqa: BLE001, S110 -- cache is an optimisation only
+            pass
+        if v:
+            _RL_LAST = cls
+    return v
+
 
 def _collect_handle_ints(x, out) -> None:
     """Collect positive ints (texture handles) from a nested fp bits value."""
@@ -1679,6 +1782,16 @@ class SurftreeMixin:
         list[tuple[float,float]] of 4 points (rotated) rather than an AABB,
         preserving the AABB fast path for identity (zero overhead).
         """
+        if render_like_class(type(node)):
+            # Fixed cdef surface: ``xclipping``/``yclipping`` are provably
+            # present booleans, so these direct reads are exactly the probes
+            # below; the no-clip branch returns the installed clip unchanged.
+            if not node.xclipping and not node.yclipping:
+                cur_poly = self._clip_poly
+                if cur_poly is not None:
+                    return cur_poly, False
+                return self._clip_rect, False
+            return self._clip_push_from_node_clipping(node, ox, oy)
         xclip = bool(getattr(node, "xclipping", False))
         yclip = bool(getattr(node, "yclipping", False))
         if not xclip and not yclip:
@@ -1687,7 +1800,12 @@ class SurftreeMixin:
             if cur_poly is not None:
                 return cur_poly, False
             return self._clip_rect, False
+        return self._clip_push_from_node_clipping(node, ox, oy)
 
+    def _clip_push_from_node_clipping(self, node, ox, oy):
+        """Clipping branch of ``_clip_push_from_node`` (xclipping/yclipping set)."""
+        xclip = bool(getattr(node, "xclipping", False))
+        yclip = bool(getattr(node, "yclipping", False))
         big = self._CLIP_BIG
         try:
             nw = float(getattr(node, "width", 0) or getattr(node, "w", 0) or 0)
@@ -2130,13 +2248,21 @@ class SurftreeMixin:
         """
         if node is None:
             return False
-        shaders = getattr(node, "shaders", None) or ()
+        shaders = getattr(node, "shaders", None)
+        uniforms = getattr(node, "uniforms", None)
+        op = getattr(node, "operation", None)
+        if not shaders and not uniforms and not op:
+            # Cheap negative: the shader scan, the uniform dict scan and both
+            # ``operation`` forms below all require one of these three to be
+            # truthy, so the answer is exactly the trailing False.  ``op`` is
+            # tested for falsiness (not for None) because ``op in (...)`` and
+            # ``int(op)`` both fail for every falsy value.
+            return False
         if any(
             s in ("renpy.imagedissolve", "imagedissolve", "image_dissolve")
-            for s in shaders
+            for s in (shaders or ())
         ):
             return True
-        uniforms = getattr(node, "uniforms", None)
         if isinstance(uniforms, dict) and (  # noqa: SIM102 -- collapsed nested if would obscure product alias comment
             "u_renpy_dissolve_offset" in uniforms
             or "u_renpy_dissolve_multiplier" in uniforms
@@ -2169,17 +2295,25 @@ class SurftreeMixin:
             return False
         if self._is_imagedissolve_node(node):
             return False
-        shaders = getattr(node, "shaders", None) or ()
-        if any(s in ("renpy.dissolve", "dissolve") for s in shaders):
-            return True
+        shaders = getattr(node, "shaders", None)
         uniforms = getattr(node, "uniforms", None)
+        op = getattr(node, "operation", None)
+        op_complete = getattr(node, "operation_complete", None)
+        if not shaders and not uniforms and not op and not op_complete:
+            # Cheap negative: the shader scan needs ``shaders``, the uniform
+            # test needs a dict ``uniforms``, and every remaining ``operation``
+            # form needs a truthy ``op`` (the ``op in ("DISSOLVE", ...)`` /
+            # ``int(op) == 1`` pair) or a truthy ``op_complete`` (the
+            # ``op_complete is None`` guard) — so all four falsy is exactly the
+            # trailing ``False``.
+            return False
+        if any(s in ("renpy.dissolve", "dissolve") for s in (shaders or ())):
+            return True
         if isinstance(uniforms, dict) and "u_renpy_dissolve" in uniforms:
             return True
-        op_complete = getattr(node, "operation_complete", None)
         if op_complete is None:
             return False
         # operation may be an int enum (DISSOLVE=1 in render.pyx historically).
-        op = getattr(node, "operation", None)
         if op is None:
             return False
         if op in ("DISSOLVE", "dissolve"):
@@ -4513,17 +4647,28 @@ class SurftreeMixin:
             if getattr(self, "_sm_in_bake", False):
                 # Never nest our own pinned bake inside an RTT pass.
                 return False
-            if not (hasattr(node, "children") and hasattr(node, "mesh")):
-                return False
-            # Preserve the existing bake/leaf paths byte-for-byte: nodes that
-            # already carry a bake handle are owned by _draw_cached /
-            # _draw_reverse / the ctex leaf paths.
-            if getattr(node, "cached_model", None) is not None:
-                return False
-            if getattr(node, "cached_texture", None) is not None:
-                return False
-            if self._is_dissolve_node(node) or self._is_imagedissolve_node(node):
-                return False
+            if render_like_class(type(node)):
+                # Fixed cdef surface: ``children``/``mesh`` provably exist and
+                # ``cached_model``/``cached_texture`` are readable directly, so
+                # the probes below have constant answers for this class.
+                if node.cached_model is not None:
+                    return False
+                if node.cached_texture is not None:
+                    return False
+                if self._is_dissolve_node(node) or self._is_imagedissolve_node(node):
+                    return False
+            else:
+                if not (hasattr(node, "children") and hasattr(node, "mesh")):
+                    return False
+                # Preserve the existing bake/leaf paths byte-for-byte: nodes that
+                # already carry a bake handle are owned by _draw_cached /
+                # _draw_reverse / the ctex leaf paths.
+                if getattr(node, "cached_model", None) is not None:
+                    return False
+                if getattr(node, "cached_texture", None) is not None:
+                    return False
+                if self._is_dissolve_node(node) or self._is_imagedissolve_node(node):
+                    return False
             st = self._sm_state()
             _smf = getattr(self, "_sm_f", None)
             if _smf is None:
@@ -5002,11 +5147,61 @@ class SurftreeMixin:
                 else:
                     yield entry, 0.0, 0.0
 
+    def _children_list(self, node):
+        """Materialized ``list(self._iter_children(node))`` for the walk body.
+
+        Fast path for the fixed cdef Render surface: such a class has
+        ``children`` but no ``blits`` (``_RL_ABSENT``), so the blits half of
+        ``_iter_children`` can never contribute and the generator can be
+        replaced by one list build.  Entry handling (None skip, tuple/list
+        unpack, ``float()`` offsets, bare-entry fallback) is identical to
+        ``_iter_children``; the empty case returns a shared empty tuple, which
+        is only ever read (truthiness / len / iteration / slicing).
+        """
+        children = node.children
+        if not children:
+            return _EMPTY_CHILDREN
+        out = []
+        ap = out.append
+        for entry in children:
+            if entry is None:
+                continue
+            if type(entry) is tuple:
+                if len(entry) > 2:
+                    ap((entry[0], float(entry[1]), float(entry[2])))
+                elif len(entry) > 1:
+                    ap((entry[0], float(entry[1]), 0.0))
+                else:
+                    ap((entry[0], 0.0, 0.0))
+            elif isinstance(entry, (tuple, list)):
+                child = entry[0]
+                xo = float(entry[1]) if len(entry) > 1 else 0.0
+                yo = float(entry[2]) if len(entry) > 2 else 0.0
+                ap((child, xo, yo))
+            else:
+                ap((entry, 0.0, 0.0))
+        if not out:
+            return _EMPTY_CHILDREN
+        return out
+
     def _node_size(self, node, default=None):
         """Best-effort (w, h) from a Render/Model/Surface-like node."""
         if default is None:
             default = self.virtual_size
-        if isinstance(node, HostTexture):
+        cls = type(node)
+        if cls is _RL_LAST or render_like_class(cls):
+            # Fixed cdef surface: ``w``/``h`` are provably absent, ``width`` /
+            # ``height`` provably present, so the two ``or``-chains reduce to
+            # the direct reads of ``_node_size``'s own first branch.  A
+            # non-positive pair falls through to the generic tail unchanged.
+            try:
+                w = node.width
+                h = node.height
+                if w > 0 and h > 0:
+                    return max(1, int(w)), max(1, int(h))
+            except Exception:  # noqa: BLE001 -- unexpected read → generic tail
+                pass
+        elif isinstance(node, _HostTextureRT):
             try:
                 return max(1, int(node.w)), max(1, int(node.h))
             except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed

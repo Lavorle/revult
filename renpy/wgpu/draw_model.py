@@ -21,7 +21,7 @@ from .draw_debug import (
     _ui_trace_once,
     _walkstat_skip,
 )
-from .draw_surftree import SurftreeMixin  # T5 shim
+from .draw_surftree import SurftreeMixin, render_like_class  # T5 shim
 from .draw_texture import is_premultiplied_handle  # RTT-handle classification
 from .host_texture import HostTexture
 
@@ -627,7 +627,33 @@ class ModelMixin:
         prev_clip = self._clip_rect
         prev_poly = getattr(self, "_clip_poly", None)
         pushed = False
-        if not isinstance(node, HostTexture) and not (
+        rl = render_like_class(type(node))
+        if rl:
+            # Fixed cdef surface: never a HostTexture/int leaf, ``xclipping`` /
+            # ``yclipping`` are provably present booleans, and the no-clip push
+            # returns the installed clip object unchanged (so ``pushed`` stays
+            # False) — the whole push/restore round trip is skipped.
+            if node.xclipping or node.yclipping:
+                new_clip, empty = self._clip_push_from_node(node, ox, oy)
+                if empty:
+                    if _WALKSTAT_ON:
+                        try:
+                            _walkstat_skip("clip_empty", f"d={getattr(self, '_frame_depth', 0)} {type(node).__name__} id={id(node) % 100000}")
+                        except Exception:  # noqa: BLE001, S110 -- instrumentation must never abort frames
+                            pass
+                    return
+                is_poly = isinstance(new_clip, list)
+                if is_poly:
+                    if new_clip is not prev_poly or prev_clip is not None:
+                        self._clip_poly = new_clip
+                        self._clip_rect = None
+                        pushed = True
+                else:
+                    if new_clip is not prev_clip or prev_poly is not None:
+                        self._clip_rect = new_clip
+                        self._clip_poly = None
+                        pushed = True
+        elif not isinstance(node, HostTexture) and not (
             isinstance(node, int) and not isinstance(node, bool)
         ):
             new_clip, empty = self._clip_push_from_node(node, ox, oy)
@@ -654,8 +680,11 @@ class ModelMixin:
             # T5: explicit WalkCtx — ox,oy converted once here, downstream uses ctx.
             if WalkCtx is not None:
                 try:
-                    ctx = WalkCtx(ox=float(ox), oy=float(oy), budget=120, clip_rect=self._clip_rect, clip_poly=getattr(self, "_clip_poly", None))
-                    self._draw_node_inner_body(node, ctx=ctx)
+                    ctx = WalkCtx(float(ox), float(oy), 120, self._clip_rect, self._clip_poly)
+                    if rl:
+                        self._draw_node_inner_body_rl(node, ctx)
+                    else:
+                        self._draw_node_inner_body(node, ctx)
                 except Exception:
                     # Fallback to legacy ox,oy if WalkCtx construction fails
                     self._draw_node_inner_body(node, ox, oy)

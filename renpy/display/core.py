@@ -321,6 +321,24 @@ def _host_max_re_present_hz():
     return cap
 
 
+_HOST_REPRESENT_MOVIE_DUE_CELL: list[int | None] = [None]
+
+
+def _host_represent_movie_due() -> bool:
+    """Whether a due Movie redraw must fall through to the full render path.
+
+    Default ON (content correctness): re-presenting a due movie beat would
+    re-blit the stale product because the new frame is only published inside
+    ``Movie.render``. ``RENPY_HOST_REPRESENT_MOVIE_DUE=0`` restores the
+    historical fast-path behavior for measurement A/B.
+    """
+    cell = _HOST_REPRESENT_MOVIE_DUE_CELL[0]
+    if cell is None:
+        cell = 0 if os.environ.get("RENPY_HOST_REPRESENT_MOVIE_DUE") in ("0", "false", "no") else 1
+        _HOST_REPRESENT_MOVIE_DUE_CELL[0] = cell
+    return bool(cell)
+
+
 class IgnoreEvent(Exception):
     """
     Exception that is raised when we want to ignore an event, but
@@ -1601,6 +1619,27 @@ class Interface:
                         continue
                     if isinstance(d, _Movie):
                         kept.append((when, d))
+                        # Content-correctness guard (WP3 residual A/B traced on
+                        # HuangmeiC): a due Movie beat must NOT be served by the
+                        # re-present fast path — re-presenting re-blits the
+                        # stale swapchain product because movie decode/publish
+                        # happens inside Movie.render (full path only). Keeping
+                        # the entry here made the idle menu publish new frames
+                        # only ~10Hz (whenever some other ui_due sneaks in)
+                        # while the craft advanced at the 0.03s product beat —
+                        # visible as "video still steps janky" with a 200fps
+                        # present counter. A due movie while videos are playing
+                        # therefore falls through to the full render path so
+                        # the new frame is actually published and drawn.
+                        # RENPY_HOST_REPRESENT_MOVIE_DUE=0 restores the old
+                        # fast-path behavior (opt-out for measurement A/B).
+                        if (
+                            when <= now
+                            and movies_playing
+                            and _host_represent_movie_due()
+                        ):
+                            ui_due = True
+                            ui_due_type = "Movie"
                         continue
                     # Sticky pause/say behaviors after transitions: drop when not modal.
                     if isinstance(d, _SayBehavior):

@@ -234,20 +234,29 @@ class FTFont:
         return bounds
 
     def draw(self, pysurf, xo, yo, color, glyphs, underline, strikethrough, black_color):
-        """Rasterize glyphs onto host Surface via Pillow, then blit pixels."""
+        """Rasterize glyphs onto host Surface via Pillow, then blit pixels.
+
+        Perf notes (HuangmeiC settings-page: ~40% of frame python budget):
+        the old path allocated a full-surface RGBA image and alpha-composited
+        it back over every pixel in a pure-Python ``range`` loop. Now:
+        - only a tight crop around the glyphs is rasterized (fractional
+          subpixel offsets are preserved relative to the crop origin, so
+          Pillow's rasterization stays byte-identical);
+        - the alpha composite touches only the crop region and uses the very
+          same integer formula, vectorized with numpy when available (bit
+          same), else the original pure-Python loop on the crop only.
+        """
         if Image is None or not glyphs:
             return
         w, h = pysurf.get_size()
         if w <= 0 or h <= 0:
             return
-        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+        # fill selection identical to the legacy path
         if len(color) == 3:
             fill = (int(color[0]), int(color[1]), int(color[2]), 255)
         else:
             fill = tuple(int(c) for c in color[:4])
         font = self._font
-        # black_color is the outline/shadow color when present (GL2 outline path).
         outline_fill = None
         if self.outline > 0:
             bc = black_color
@@ -261,17 +270,43 @@ class FTFont:
                 outline_fill = None
             if outline_fill is None:
                 outline_fill = (0, 0, 0, 255)
+        r = int(self.outline) if (outline_fill is not None and self.outline > 0) else 0
+        # ---- 1. glyph bounding box (integer surface coords, clamped) ----
+        minx = miny = 1e18
+        maxx = maxy = -1e18
         for g in glyphs:
-            ch = chr(g.character) if g.character < 0x110000 else "?"
             x = float(xo) + float(g.x) + float(getattr(g, "x_offset", 0))
             y = float(yo) + float(g.y) + float(getattr(g, "y_offset", 0)) - float(g.ascent)
+            gw = float(getattr(g, "width", 0.0))
+            gh = float(g.ascent) - float(g.descent)
+            x0 = min(x - r, x)
+            y0 = min(y - r, y)
+            x1 = max(x + gw + r, x + 1.0)
+            y1 = max(y + gh + r, y + 1.0)
+            minx = min(minx, x0); miny = min(miny, y0)
+            maxx = max(maxx, x1); maxy = max(maxy, y1)
+        # strikethrough/underline only tie into the same bbox (per glyph)
+        if (underline or strikethrough) and maxx < 1e17:
+            maxx += 2
+        ix0 = max(0, int(minx) - 1)
+        iy0 = max(0, int(miny) - 1)
+        ix1 = min(w, int(maxx) + 1)
+        iy1 = min(h, int(maxy) + 1)
+        if ix1 <= ix0 or iy1 <= iy0:
+            return
+        cw, chh = ix1 - ix0, iy1 - iy0
+        # ---- 2. crop overlay (same draw.text calls, crop-relative origin) ----
+        img = Image.new("RGBA", (cw, chh), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        ox_ofs = float(ix0)  # crop origin: fractional coords stay intact
+        oy_ofs = float(iy0)
+        for g in glyphs:
+            c = chr(g.character) if g.character < 0x110000 else "?"
+            x = float(xo) + float(g.x) + float(getattr(g, "x_offset", 0)) - ox_ofs
+            y = float(yo) + float(g.y) + float(getattr(g, "y_offset", 0)) - float(g.ascent) - oy_ofs
             try:
                 if font is not None:
-                    # Soft outline without full O(r²) disk of draw.text calls.
-                    # 8-neighbor ring for r=1; for r>1 sample ~12 points on the
-                    # circle plus cardinals (good enough for prefs CJK labels).
-                    if outline_fill is not None and self.outline > 0:
-                        r = int(self.outline)
+                    if outline_fill is not None and r > 0:
                         if r <= 1:
                             offsets = (
                                 (-1, 0),
@@ -284,7 +319,6 @@ class FTFont:
                                 (1, 1),
                             )
                         else:
-                            # Cardinals + diagonals at r, plus mid-angle samples.
                             offsets = [
                                 (-r, 0),
                                 (r, 0),
@@ -295,8 +329,6 @@ class FTFont:
                                 (r, -r),
                                 (r, r),
                             ]
-                            # Approximate circle samples (no math import needed).
-                            # 0.707 ≈ cos(45°) for intermediate radius points.
                             m = max(1, round(r * 0.707))
                             offsets.extend(
                                 [
@@ -312,16 +344,15 @@ class FTFont:
                             )
                         for dx, dy in offsets:
                             draw.text(
-                                (x + dx, y + dy), ch, font=font, fill=outline_fill
+                                (x + dx, y + dy), c, font=font, fill=outline_fill
                             )
-                    draw.text((x, y), ch, font=font, fill=fill)
+                    draw.text((x, y), c, font=font, fill=fill)
                 else:
-                    draw.text((x, y), ch, fill=fill)
+                    draw.text((x, y), c, fill=fill)
             except Exception as e:
-                # Always swallow for product parity; once-log under UI_TRACE.
                 _ui_trace_once(
                     "draw_text_exc",
-                    f"draw.text fail ch={ch!r} fill={fill} err={type(e).__name__}:{e}",
+                    f"draw.text fail ch={c!r} fill={fill} err={type(e).__name__}:{e}",
                 )
             if underline:
                 uy = y + float(g.ascent) + self.underline_offset
@@ -329,29 +360,76 @@ class FTFont:
             if strikethrough:
                 sy = y + float(g.ascent) * 0.5
                 draw.line((x, sy, x + g.width, sy), fill=fill, width=self.underline_thickness)
-        # write into surface pixels
+        # ---- 3. composite the crop back (only crop region) ----
         raw = img.tobytes("raw", "RGBA")
         px = getattr(pysurf, "_pixels", None)
-        if px is not None and len(px) >= len(raw):
-            # alpha composite over existing
+        if px is None:
+            return
+        nbytes = len(px)
+        if nbytes < 4 * w * h:
+            return  # malformed surface: bail like legacy loop would
+        try:
+            import numpy as _np  # type: ignore
+
+            a = _np.frombuffer(px, dtype=_np.uint8)
+            if len(a) < nbytes:
+                raise MemoryError
+            # crop composite (same integer formula as legacy loop)
+            row_off = iy0
+            # stride per pixel-row
+            stride = 4 * w
+            flat_crop = _np.frombuffer(raw, dtype=_np.uint8).reshape(chh, cw, 4)
+            base = a.reshape(h, stride)[row_off : row_off + chh]
+            sub = base.reshape(chh, stride)[
+                :, 4 * ix0 : 4 * ix1
+            ].reshape(chh, cw, 4)  # alias view over pysurf._pixels crop region
+
+            src = flat_crop[...]
+            sa = src[..., 3].astype(_np.uint16)
+            inv = (255 - sa).astype(_np.uint16)
+            # mask of pixels where any work is needed (legacy: sa==0 -> no-op)
+            skip = sa == 0
+            full = sa == 255
+            mix = ~(skip) & ~(full)
+            # full-overwrite pixels
+            sub[full] = src[full]
+            sect = mix
+            aux_r = src[..., 0][sect].astype(_np.uint16)
+            aux_g = src[..., 1][sect].astype(_np.uint16)
+            aux_b = src[..., 2][sect].astype(_np.uint16)
+            aux_a = src[..., 3][sect].astype(_np.uint16)
+            dst = sub[sect].astype(_np.uint16)
+            out_r = (aux_r * sa[sect] + dst[..., 0] * inv[sect]) // 255
+            out_g = (aux_g * sa[sect] + dst[..., 1] * inv[sect]) // 255
+            out_b = (aux_b * sa[sect] + dst[..., 2] * inv[sect]) // 255
+            out_a = _np.minimum(
+                255, aux_a + (dst[..., 3] * inv[sect]) // 255
+            )
+            sub[sect] = _np.stack([out_r, out_g, out_b, out_a], axis=-1).astype(_np.uint8)
+        except Exception:  # numpy unavailable / shape mismatch: pure-Python crop
             sp = memoryview(px)
-            for i in range(0, len(raw), 4):
-                sa = raw[i + 3]
-                if sa == 0:
-                    continue
-                if sa == 255:
-                    sp[i : i + 4] = raw[i : i + 4]
-                else:
-                    inv = 255 - sa
-                    sp[i] = (raw[i] * sa + sp[i] * inv) // 255
-                    sp[i + 1] = (raw[i + 1] * sa + sp[i + 1] * inv) // 255
-                    sp[i + 2] = (raw[i + 2] * sa + sp[i + 2] * inv) // 255
-                    sp[i + 3] = min(255, sa + (sp[i + 3] * inv) // 255)
+            row_stride = 4 * w
+            for yrow in range(chh):
+                row_base = 4 * ((iy0 + yrow) * w + ix0)
+                crop_base = 4 * yrow * cw
+                for xp in range(cw):
+                    i = row_base + 4 * xp
+                    j = crop_base + 4 * xp
+                    sa = raw[j + 3]
+                    if sa == 0:
+                        continue
+                    if sa == 255:
+                        sp[i : i + 4] = raw[j : j + 4]
+                    else:
+                        inv = 255 - sa
+                        sp[i] = (raw[j] * sa + sp[i] * inv) // 255
+                        sp[i + 1] = (raw[j + 1] * sa + sp[i + 1] * inv) // 255
+                        sp[i + 2] = (raw[j + 2] * sa + sp[i + 2] * inv) // 255
+                        sp[i + 3] = min(255, sa + (sp[i + 3] * inv) // 255)
         # Phase 1 probe: full-surface non-zero alpha after glyph write.
         if os.environ.get("RENPY_HOST_UI_TRACE") == "1" and "alpha_zero" not in _UI_TRACE_LOGGED:
             try:
-                # Prefer post-composite surface pixels when available.
-                scan = bytes(px) if px is not None else raw
+                scan = bytes(memoryview(px))
                 nonzero = 0
                 for i in range(3, len(scan), 4):
                     if scan[i]:

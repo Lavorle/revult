@@ -201,3 +201,8 @@
 - 累计三级（表象 31.5ms→19.3→12.0ms/帧，全谱逐段验证）。
 - 验证：pytest 171/1skip；金库 20/20 两向（SKIN=0 与 =1）。
 - 待命：字下划线包内相位键行为、vertical 字体路径已含；下一步若要再压：`draw_screen` 链管束（ct 14.78/635帧＝walk 管径）已是下一刀。
+
+## Round：skin 键阶段网格 /64 精修 + 命中率遥测（commit 0b397c7a7）
+- 依据 Pillow 10.4 `ImageDraw.text`：frac 完整传入 `getmask2 start` → freetype 子像素精度为 26.6 (/64)；/256 键对同一光栅结果制造 4× 无意义应分 key → 键改为 /64。金库 A/B（SKIN=1）**依旧所有 MAE 逐位相等**。
+- 新增 PHASE0 门控 `[GLYPHSKIN] t=.. stamp/hit/miss/live cache=..` 10 秒频闪计数器；hmc_dwell settings-idle 实测：**cache 稳定 254、~26k stamp/10s、hit=100%（miss=0）** —— 无任何 re-raster churn。
+- 表现基线：每帧 Python 预算 12.0ms（skin）/ 19.3ms（仅裁剪）/ 31.5ms（裁剪前）；全谱三级独立验证。

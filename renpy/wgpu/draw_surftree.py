@@ -1043,6 +1043,14 @@ _SM_ACCT_FRAME_MS = 6.0       # per-frame accounting (count+fingerprint) time ce
 _SM_FP_US_PER_NODE = 1.6      # per-node cost estimate used before a frame has samples
 _SM_SMALL = -1                # _sm_count_nodes: subtree is below the eligibility floor
 _SM_CHURN_STREAK = 3          # consecutive key changes before the backoff engages
+# Rollback knobs (each one restores a strictly-superset behaviour — more work,
+# never different pixels, since none of them can make the cache serve a stale
+# pinned RTT):
+#   * _SM_NEG_TTL = 0            → no cross-frame memory of "small"/"uncacheable"
+#                                  verdicts (count + fingerprint run every frame).
+#   * _SM_FP_FRAME_BUDGET = _SM_FP_MAX_NODES and _SM_ACCT_FRAME_MS = 1e9
+#                                → no per-frame ceiling beyond the per-candidate
+#                                  one.
 # Absent-attribute sentinel: distinct from None (a real None attribute value).
 _SM_ABSENT = object()
 

@@ -33,6 +33,51 @@ except Exception:
     _InstanceGroup = None  # type: ignore
 
 
+# ============================================================================
+# renpy_host per-node import hoist (perf micro, zero behavior change).
+#
+# The prepare walk rides hundreds of nodes per frame and called
+# ``import renpy_host`` (machine-level sys.modules fetch + module probe) from
+# up to four per-node sites, plus ``hasattr`` chains around optional FFI
+# surface (``touch_texture`` / ``texture_alive``). This cell resolves the
+# module and the optional attributes **once** at first use and caches them
+# even when ``renpy_host`` turns out to be absent (hermetic gates) so hot
+# loops after that stay short-circuit. Same semantics as per-node import +
+# hasattr; only lookup cost changes.
+# ============================================================================
+_RENPY_HOST_CELL: list[object] = [None]
+
+
+def _prepare_rh():
+    c = _RENPY_HOST_CELL[0]
+    if c is not None:
+        return c
+    try:
+        import renpy_host as _rh  # type: ignore
+        c = _rh
+    except Exception:  # noqa: BLE001 -- host shim absent in hermetic contexts
+        c = False
+    _RENPY_HOST_CELL[0] = c
+    return c
+
+
+def _prepare_touch_texture(handle: int) -> None:
+    """Best-effort per-node LRU touch with the cached module + attr probe."""
+    m = _prepare_rh()
+    if m is False or m is None:
+        return
+    touch = getattr(m, "touch_texture", None)
+    if touch is None:
+        return
+    alive_fn = getattr(m, "texture_alive", None)
+    if alive_fn is not None and not alive_fn(int(handle)):
+        return
+    try:
+        touch(int(handle))
+    except Exception:  # noqa: BLE001 -- residual must not abort frames
+        pass
+
+
 class TraversalMixin:
     # Expected attributes on the concrete WgpuDraw (type hints only)
     virtual_size: tuple[int, int]  # type: ignore
@@ -147,16 +192,8 @@ class TraversalMixin:
             return
         if isinstance(what, int) and not isinstance(what, bool):
             # Bare handle: best-effort LRU touch so thrash does not kill it.
-            try:
-                import renpy_host  # type: ignore
-
-                if what > 0 and hasattr(renpy_host, "touch_texture"):  # noqa: SIM102 -- nested check clarifies touch_texture vs texture_alive existence
-                    if (not hasattr(renpy_host, "texture_alive")) or renpy_host.texture_alive(
-                        int(what)
-                    ):
-                        renpy_host.touch_texture(int(what))
-            except Exception:  # noqa: BLE001, S110 -- wgpu host must not abort frame — residual logged via _host_draw_fail/_phase0_log where needed
-                pass
+            if what > 0:
+                _prepare_touch_texture(int(what))
             return
 
         # --- frame-generation fold (a)+(b) -----------------------------------
@@ -208,13 +245,11 @@ class TraversalMixin:
             if isinstance(ct, HostTexture):
                 self._ensure_host_texture_alive(ct)
             elif isinstance(ct, int) and not isinstance(ct, bool) and ct > 0:
-                import renpy_host  # type: ignore
-
-                if hasattr(renpy_host, "touch_texture"):
-                    if (not hasattr(renpy_host, "texture_alive")) or renpy_host.texture_alive(
-                        int(ct)
-                    ):
-                        renpy_host.touch_texture(int(ct))
+                m = _prepare_rh()
+                if m is not False and m is not None and hasattr(m, "touch_texture"):
+                    alive_fn = getattr(m, "texture_alive", None)
+                    if alive_fn is None or alive_fn(int(ct)):
+                        m.touch_texture(int(ct))
                     else:
                         # Dead bare handle on cached_texture: wrap + revive if stash.
                         ht = HostTexture(int(ct), 1, 1)

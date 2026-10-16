@@ -275,7 +275,7 @@ def probe():
         if ok:
             stt = _sample_fps(kind + "_trans_open", 1.4)
             s2_results.append(stt)
-            lines.append("S2TRANS {kind}={".format(kind=kind) + str(stt) + "}")
+            lines.append(f"S2TRANS_open kind={{{kind}}} detail={stt}")
             _log(f"S2TRANS_open {kind} {stt}")
 
         lines.append(f"prefs_open kind={kind} ok={ok} how={how}")

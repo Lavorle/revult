@@ -79,3 +79,15 @@
 ### 回退开关总表（第二轮新增）
 
 `RENPY_HOST_REPRESENT_MOVIE_DUE=0`（movie-due 放行回退）；首批开关见上表（STATIC_MODEL_CACHE / SUBTREE_MOVIE_VETO / REVERSE_BAKE_CACHE / MOVIE_REDRAW_S / MAX_REPRESENT_HZ / REPRESENT_DROP_CONTAINER 等）。
+
+### 三、同窗口径对照（45–52s settings-idle，hmc_dwell gate，headless）
+
+| 口径 | skin OFF（d443d8c01 修正前的实测） | skin ON（默认形态实测） |
+|---|---|---|
+| per-frame python 预算 | ~38.4ms（text 链重光栅路径） | **12.54ms** |
+| end_frame/15s | 388 | **1202**（≈80fps headless） |
+| text.__init__ ct/15s | 6.97s | **3.38s** |
+| FTFont.draw ct/15s | 6.40s | **2.58s** |
+| GLYPHSKIN 命中率 | n/a | **100%**（cache 稳定 254、~26k stamps/10s） |
+
+含义：**设置页（含打字机预览）的每帧 Python 预算从整页 31.5ms（预热裁剪前）压到同窗 12.54ms（三连优化后）**，戛然而止于「audio 通道 + movie 节拍 + 字形链」三层独立验证。真机可见（RADV 全屏同窗 dyn 门）为 210–227fps present、iv_p95 5.4ms（63e49cb5f 后）。

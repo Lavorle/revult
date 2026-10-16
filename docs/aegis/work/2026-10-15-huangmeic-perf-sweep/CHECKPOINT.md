@@ -211,3 +211,9 @@
 - fresh profile 抓到 text 预算 ~38ms/帧的旧路径在跑 → skin 代码里的 env **默认其实还是 0**（c2892491e 提交信息误写 Default ON）→ 助手已把默认翻 ON（=0 仍可回退 A/B）。pytest 171 / 金库 20/20 且 MAE 逐位一致（此时运行默认即 ON 等价变体）。
 - 教训：**每笔提交的默认行为开关要跟代码实际值对账**；新的 fresh profile（切到 45–52s 窗）显示 settings text 链预算结构为 text.py render/init 聚合 ~18ms + FTFont.draw ~16ms（关 skin 时），与「整页 12ms」的口径按窗不同 —— **后续汇报统一以 45–52s settings-idle 窗为准**。
 - 挂起：等用户 HEAD 复测（当前栈 d443d8c01）。
+
+## Round：skin 缓存正确性实锤 + 单元护栏（commit a86301536）
+- 新增 `tests/test_ftfont_skin.py` 6 例，立刻抓出**skin piepaste 与 PIL `draw_bitmap` 在负相位/贴边处的双向差**：PIL `ImageDraw.text` `start=math.modf(xy)` 对负 xy 给出**带符号 fraction** (modf(-7.3)=-0.3)，正向 pad 表达式（modf(3.7)=0.7）不能复现 → freetype 光栅 ±1px（97 LSB）——金库没炸是因为产品字形恰好都在正相位窗。
+- 修正原则：**不可复现的一律回退 live `draw.text`**（永远与 pre-cache 行为逐位一致）：①相位 key = 精确 fraction（不再任何量化桶）；②fx/fy 任一 <0 → live；③paste 锚点接近/越过表面边界 → live。
+- 新验证：pytest **177**（171 + 6 例，含 ON/OFF 逐位、重复命中纯 hit、上限 2048 边界、无字体回退）；phase9 金库 20/20 与基线 MAE 逐位一致。
+- 性能锚点重审：settings-idle 稳态窗 100% 真 hit、cache 254 条稳定（安全修正后 product 帧不以负相位为主，成本口径 12.5ms/帧不变；负相位为主（拥挤页首帧等）自动退化为 live 老成本，无回归）。

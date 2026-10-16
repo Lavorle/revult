@@ -1364,6 +1364,7 @@ fn register_renpy_host(py: Python<'_>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(reset_present_stats, &module)?)?;
     module.add_function(wrap_pyfunction!(take_inter_present_gaps_ms, &module)?)?;
     module.add_function(wrap_pyfunction!(inter_present_gaps_ms, &module)?)?;
+    module.add_function(wrap_pyfunction!(re_present_last_age_ms, &module)?)?;
     module.add_function(wrap_pyfunction!(get_frame_stats, &module)?)?;
     module.add_function(wrap_pyfunction!(create_render_texture, &module)?)?;
     module.add_function(wrap_pyfunction!(create_render_texture_pinned, &module)?)?;
@@ -2595,6 +2596,23 @@ fn inter_present_gaps_ms() -> Vec<f32> {
         .lock()
         .map(|s| s.inter_present_gaps_ms.clone())
         .unwrap_or_default()
+}
+
+/// Wall-clock age in ms of the last successful swapchain product present
+/// (full draw or fast re-present — both stamp `last_product_present_at`).
+/// Used by renpy/display/core.py `_try_host_re_present_fast` to rate-limit
+/// the repeat fast path (`RENPY_HOST_MAX_REPRESENT_HZ`). Reads only; does
+/// not touch ownership flags or gap accounting. Returns +inf when no
+/// present has been recorded yet (never gate the first re-present).
+#[pyfunction]
+fn re_present_last_age_ms() -> f64 {
+    host_state()
+        .lock()
+        .map(|s| match s.last_product_present_at {
+            Some(t) => t.elapsed().as_secs_f64() * 1000.0,
+            None => f64::INFINITY,
+        })
+        .unwrap_or(f64::INFINITY)
 }
 
 #[pyfunction]

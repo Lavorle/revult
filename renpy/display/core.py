@@ -58,6 +58,11 @@ _HOST_FAST_CELL: list = [None, None]
 # context managers; the cell is filled once and never rebound per frame.
 _RENDER_SCHEDULE_CM_CELL: list = [None]
 
+# Effective RENPY_HOST_MAX_REPRESENT_HZ for the fast re-present cap, resolved
+# exactly once per process by ``_host_max_re_present_hz()``; single-slot same
+# pattern as the cells above.
+_HOST_REPRESENT_CAP_CELL: list = [None]
+
 try:
     import android
 
@@ -265,6 +270,35 @@ def _draw_schedule_cm():
             cm = contextlib.nullcontext()
         _RENDER_SCHEDULE_CM_CELL[0] = cm
     return cm
+
+
+def _host_max_re_present_hz():
+    """Effective cap (hz) for the fast re-present path.
+
+    Parsed once per process from ``RENPY_HOST_MAX_REPRESENT_HZ``:
+    valid range 30..1000 inclusive; unset, non-numeric, out-of-range or
+    below-30 values all fall back to the 240 default. One stderr line
+    (``renpy-host re-present cap=<n>hz``) records the effective value when
+    the cap is first consulted — log-once, never per frame.
+    """
+    cap = _HOST_REPRESENT_CAP_CELL[0]
+    if cap is None:
+        cap = 240
+        raw = os.environ.get("RENPY_HOST_MAX_REPRESENT_HZ")
+        if raw:
+            try:
+                n = int(float(raw))
+            except Exception:  # noqa: BLE001 — malformed env must not abort frames
+                n = 0
+            if n >= 30 and n <= 1000:
+                cap = n
+        _HOST_REPRESENT_CAP_CELL[0] = cap
+        try:
+            sys.stderr.write(f"renpy-host re-present cap={cap}hz\n")
+            sys.stderr.flush()
+        except Exception:  # noqa: BLE001 — logging must never abort frames
+            pass
+    return cap
 
 
 class IgnoreEvent(Exception):
@@ -1584,6 +1618,60 @@ class Interface:
         except Exception:
             return False
 
+        # RENPY_HOST_MAX_REPRESENT_HZ: rate-limit the *repeat* fast path. When
+        # less than 1000/hz ms have passed since the last successful swapchain
+        # product present (full draw or re-present), this attempt does nothing
+        # and reports ``gated``: the previously presented frame stays visible
+        # (no new present), and present-ownership state is neither flipped nor
+        # cleared, no force-redraw is queued. Placement is deliberate: the cap
+        # check sits AFTER the transition / ui_due checks above so pending
+        # work still falls through to the full draw path (gating must never
+        # starve transitions or due interactive redraws), and BEFORE the
+        # movie-texture rewrite + host FFI (those are the actual repeated
+        # labor being throttled).
+        try:
+            _cap_hz = _host_max_re_present_hz()
+            _age_fn = getattr(renpy_host, "re_present_last_age_ms", None)
+            if _age_fn is not None:
+                _rep_age_ms = float(_age_fn())
+                if _rep_age_ms < (1000.0 / _cap_hz):
+                    try:
+                        if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                            self._host_rp_gated_win = int(getattr(self, "_host_rp_gated_win", 0)) + 1
+                            _samples = getattr(self, "_host_rp_gated_samples", None)
+                            if _samples is None:
+                                _samples = self._host_rp_gated_samples = []
+                            if len(_samples) < 256:
+                                _samples.append(_rep_age_ms)
+                    except Exception:
+                        pass
+                    # Caller-visible short-circuit: skip both the re-present
+                    # and the full draw this iteration. Record the remaining
+                    # cap window so the caller can PACE the loop to the next
+                    # re-present slot (pygame.time.wait -> renpy_host.wait_until
+                    # nested pump) instead of hot-spinning the poll loop at
+                    # tens of kilohertz while the gate is closed.
+                    self._host_re_present_gated_flag = True
+                    remaining = (1000.0 / _cap_hz) - _rep_age_ms
+                    self._host_re_present_gated_wait_s = (
+                        remaining / 1000.0 if remaining > 0.0 else 0.0
+                    )
+                    return False
+                else:
+                    try:
+                        if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                            self._host_rp_att_win = int(getattr(self, "_host_rp_att_win", 0)) + 1
+                    except Exception:
+                        pass
+            # FFI unavailable (stale host lib): never gate — identical to the
+            # pre-cap behavior instead of starving the fast path entirely.
+        except Exception:
+            try:
+                if os.environ.get("RENPY_HOST_PHASE0_SIGNALS") == "1":
+                    self._host_rp_att_win = int(getattr(self, "_host_rp_att_win", 0)) + 1
+            except Exception:
+                pass
+
         # Movie texture rewrite in place.
         try:
             for (channel, mask_channel), movies in list(_video.displayable_channels.items()):
@@ -1642,11 +1730,36 @@ class Interface:
                     _rp_now = time.monotonic()
                     if (_rp_now - getattr(self, "_host_rp_ph0_last_t", 0.0)) >= 0.5:
                         self._host_rp_ph0_last_t = _rp_now
+                        # Cap telemetry: post-cap re-present attempt rate and
+                        # the p50 gate age of the attempts it short-circuited
+                        # since the last throttled sample line. Counters live
+                        # on the same 0.5s window as this line.
+                        _win_t0 = getattr(self, "_host_rp_win_t0", 0.0)
+                        _att_win = int(getattr(self, "_host_rp_att_win", 0))
+                        _gated_win = int(getattr(self, "_host_rp_gated_win", 0))
+                        if _win_t0 > 0.0:
+                            _win_dt = _rp_now - _win_t0
+                            _att_per_s = (_att_win / _win_dt) if _win_dt > 0.0 else 0.0
+                        else:
+                            _att_per_s = 0.0
+                        _samples = getattr(self, "_host_rp_gated_samples", []) or []
+                        if _samples:
+                            _sorted = sorted(_samples)
+                            _gated_p50 = _sorted[len(_sorted) // 2]
+                        else:
+                            _gated_p50 = 0.0
                         print(
                             f"PHASE0_SIGNAL t={_rp_now:.3f} "
-                            f"rp_ms={(_rp_now - _rp_t0) * 1000.0:.2f} n={n}",
+                            f"rp_ms={(_rp_now - _rp_t0) * 1000.0:.2f} n={n} "
+                            f"attempts_delta/s={_att_per_s:.0f} "
+                            f"gated_p50={_gated_p50:.2f} gated_n={_gated_win}",
                             flush=True,
                         )
+                        self._host_rp_win_t0 = _rp_now
+                        self._host_rp_att_win = 0
+                        self._host_rp_gated_win = 0
+                        if _samples:
+                            _samples.clear()
             except Exception:
                 pass
             try:
@@ -3292,6 +3405,7 @@ class Interface:
                         # is stable. Avoids full render_screen on dense prefs
                         # while Movie keeps needs_redraw hot for present cadence.
                         _fast = False
+                        _gated = False
                         if (
                             True
                             and (not first_pass)
@@ -3299,10 +3413,56 @@ class Interface:
                         ):
                             try:
                                 _fast = bool(self._try_host_re_present_fast())
+                                if not _fast:
+                                    # RENPY_HOST_MAX_REPRESENT_HZ short-circuit:
+                                    # the attempt was skipped purely by the
+                                    # re-present cadence cap — the previously
+                                    # presented frame is still displayed. Do
+                                    # neither the re-present nor the full draw
+                                    # this iteration (no ownership flips, no
+                                    # force-redraw, movie publish/decode still
+                                    # advances via video.frequent / advance_time
+                                    # later in the loop; pending interactive
+                                    # redraws and transitions re-gate internally
+                                    # and yield before this flag can ever be
+                                    # raised).
+                                    _gated = bool(
+                                        getattr(self, "_host_re_present_gated_flag", False)
+                                    )
                             except Exception:
                                 _fast = False
+                            finally:
+                                # Consume the one-shot flag every attempt.
+                                self._host_re_present_gated_flag = False
 
-                        if not _fast:
+                        if _gated:
+                            # Cap short-circuit: keep the interaction loop's
+                            # heartbeat only; frame bookkeeping (frames counter,
+                            # text_rect, REDRAW timer reset) belongs to frames
+                            # that actually present and runs on the next
+                            # gated-or-full draw.
+                            #
+                            # Pacing: sleep the remaining cap window with
+                            # ``time.sleep`` (GIL released, no nested event
+                            # pump spin). The nested-pump wait
+                            # (pygame.time.wait -> renpy_host.wait_until) was
+                            # measured hotter than the spin it replaces, so the
+                            # gate paces with an OS sleep instead: winit events
+                            # and TimerWheel firings accrue and are processed
+                            # (≤1 cap interval late) when the sleep ends. This
+                            # only ever runs when the gate closed, i.e. nothing
+                            # else needed a present this iteration.
+                            _wp = (
+                                getattr(self, "_host_re_present_gated_wait_s", 0.0)
+                                or 0.0
+                            )
+                            self._host_re_present_gated_wait_s = 0.0
+                            if _wp >= 0.0005:
+                                try:
+                                    time.sleep(_wp)
+                                except Exception:
+                                    pass
+                        elif not _fast:
                             renpy.display.render.process_redraws()
 
                             # If we have a movie, start showing it.

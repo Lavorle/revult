@@ -17,7 +17,7 @@ mod timer;
 mod video;
 
 use std::cell::Cell;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use log::{error, info};
@@ -395,6 +395,34 @@ fn nested_pump_once(timeout: Duration) {
         }
     });
     inject_due_timers();
+    // Cooperative-exit watchdog (user repro 2026-10-16: a 4min --smoke shell
+    // stayed alive 69min because the Python product loop kept presenting
+    // without ever unwinding despite host should_exit). If the flag has been
+    // raised for more than EXIT_GRACE_S and the product is still alive, dump
+    // the input trace and hard-exit — better an orderly process exit than an
+    // indefinite spin burning the GPU/CPU.
+    exit_watchdog();
+}
+
+const EXIT_GRACE_S: u64 = 10;
+
+static EXIT_FLAG_T: OnceLock<Instant> = OnceLock::new();
+
+fn exit_watchdog() {
+    let flagged = host_state().lock().map(|s| s.should_exit).unwrap_or(false);
+    if !flagged {
+        return;
+    }
+    let t0 = EXIT_FLAG_T.get_or_init(|| Instant::now());
+    if t0.elapsed().as_secs() < EXIT_GRACE_S {
+        return;
+    }
+    crate::input_trace::dump_if_enabled();
+    eprintln!(
+        "[renpy-host] exit watchdog fired: should_exit latched {}s ago without product unwind; hard exit",
+        t0.elapsed().as_secs()
+    );
+    std::process::exit(0);
 }
 
 struct ProductApp {

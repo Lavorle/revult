@@ -4113,7 +4113,7 @@ class SurftreeMixin:
                 return ref
         return body
 
-    def _sm_key(self, allowance=None):
+    def _sm_key(self, node, allowance=None):
         """(key, node_count, budget_limited) for ``node``.
 
         ``key is None`` ⇒ the subtree can never be served from a pinned RTT.
@@ -4590,7 +4590,7 @@ class SurftreeMixin:
                 _smf[_SM_F_SMALL] += 1
                 neg[nkey] = (frame + _SM_NEG_TTL, 1)
                 return False
-            key, nodes, limited = self._sm_key(self._sm_fp_allowance(_acct_ms))
+            key, nodes, limited = self._sm_key(node, self._sm_fp_allowance(_acct_ms))
             _t2 = _time.perf_counter()
             _smf[_SM_F_FP_N] += int(nodes)
             _smf[_SM_F_FP_MS] += _t2 - _t1

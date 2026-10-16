@@ -192,3 +192,12 @@
 - 用户把原来那条取证命令跑了 ~69 分钟（应 4 分钟）：content/s 从 101 → 5.8 单调衰减（p50 缺口 7ms→172ms）→ **与音频通道雪崩同源的老栈长驻退化**（该运行发生在 783153c70/8bf89af92/63e49cb5f 之前，`re_present_block ui_due type=Movie` = 0 证实）。可作为修复收益的「自然对照」：修复栈的对照实验速查以本轮 hmc_dwell 台账为准。
 - 顺带挖出 **真 bug：`smoke deadline` 触发 `should_exit` 后从未 unwind**（4 分钟的 smoke 空转 69 分钟烧 CPU/显存；`event loop exit` 与 `QuitException` 记录 0 条）。修法：宿主层看门狗——`should_exit` 锁存后 10s 内产品仍活着 → dump input-trace + `process::exit(0)`（只攻击「概率性卡死退出」的路径；正常 SIGTERM/窗口 X 路径不动）。
 - 验证：cargo test 103 pass；phase9 金库 20/20 + ldd 干净。
+
+## Round：字形皮肤缓存（commit c2892491e）
+- `renpy_text_ftfont_host.draw` 裁剪进窗后剩余 ~6.4ms/帧全在 Pillow `draw.text` 内部 C 光栅（同字体×字×填色×outline×subpixel 相位的三四万次/切片）；与 text_config 打字机/UI hover 逐帧重绘耦合。
+- **字形皮肤缓存**（`RENPY_HOST_TEXT_GLYPH_SKIN`，默认 **ON**；`=0` 回退）：key=(font-face 稳定身份, ch, fill, outline_fill, r, 量化 subpixel 相位 /256) —— 皮肤一次光栅化，ring 在皮肤内部先画（z 序与 live 相同），下划线/删除线仍逐帧现画；`Image.paste` 与 `draw.text` 的 draw_bitmap 同为逐通道线性混合；cap 2048 清空。
+- **位等价门禁**：SKIN=1 vs OFF 基线金库 **所有 MAE 逐位一致**（G02 0.000086 / G02 cjk vertical 0.000630 / G02 arabic 0.000173 / G03 0 / G04 0.000328 / G05 0.000019...）。
+- **收益**（hmc_dwell slice A 15s）：每帧 Python 预算 19.3 → **12.0 ms（再 −38%）**；同窗产品帧数 778→1250（+61%）；`FTFont.draw` ct 6.29→2.67s。
+- 累计三级（表象 31.5ms→19.3→12.0ms/帧，全谱逐段验证）。
+- 验证：pytest 171/1skip；金库 20/20 两向（SKIN=0 与 =1）。
+- 待命：字下划线包内相位键行为、vertical 字体路径已含；下一步若要再压：`draw_screen` 链管束（ct 14.78/635帧＝walk 管径）已是下一刀。

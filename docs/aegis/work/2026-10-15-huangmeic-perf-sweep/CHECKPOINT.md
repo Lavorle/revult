@@ -206,3 +206,8 @@
 - 依据 Pillow 10.4 `ImageDraw.text`：frac 完整传入 `getmask2 start` → freetype 子像素精度为 26.6 (/64)；/256 键对同一光栅结果制造 4× 无意义应分 key → 键改为 /64。金库 A/B（SKIN=1）**依旧所有 MAE 逐位相等**。
 - 新增 PHASE0 门控 `[GLYPHSKIN] t=.. stamp/hit/miss/live cache=..` 10 秒频闪计数器；hmc_dwell settings-idle 实测：**cache 稳定 254、~26k stamp/10s、hit=100%（miss=0）** —— 无任何 re-raster churn。
 - 表现基线：每帧 Python 预算 12.0ms（skin）/ 19.3ms（仅裁剪）/ 31.5ms（裁剪前）；全谱三级独立验证。
+
+## Round：默认值更正（commit d443d8c01）
+- fresh profile 抓到 text 预算 ~38ms/帧的旧路径在跑 → skin 代码里的 env **默认其实还是 0**（c2892491e 提交信息误写 Default ON）→ 助手已把默认翻 ON（=0 仍可回退 A/B）。pytest 171 / 金库 20/20 且 MAE 逐位一致（此时运行默认即 ON 等价变体）。
+- 教训：**每笔提交的默认行为开关要跟代码实际值对账**；新的 fresh profile（切到 45–52s 窗）显示 settings text 链预算结构为 text.py render/init 聚合 ~18ms + FTFont.draw ~16ms（关 skin 时），与「整页 12ms」的口径按窗不同 —— **后续汇报统一以 45–52s settings-idle 窗为准**。
+- 挂起：等用户 HEAD 复测（当前栈 d443d8c01）。

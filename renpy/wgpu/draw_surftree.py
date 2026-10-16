@@ -42,6 +42,76 @@ if TYPE_CHECKING:
     from .host_texture import HostTexture
 
 
+def _collect_handle_ints(x, out) -> None:
+    """Collect positive ints (texture handles) from a nested fp bits value."""
+    if x is None or x is True or x is False:
+        return
+    if isinstance(x, int):
+        if x > 0:
+            out.add(int(x))
+        return
+    if isinstance(x, (tuple, list)):
+        for e in x:
+            _collect_handle_ints(e, out)
+
+
+def _subtree_movie_veto_enabled() -> bool:
+    """RENPY_HOST_SUBTREE_MOVIE_VETO (default on).
+
+    On: only subtrees that actually sample a movie-written texture are
+    uncacheable (per-subtree veto). Off: legacy coarse behavior — the global
+    movie publish nonce invalidates every cached subtree (A/B switch + safety
+    valve).
+    """
+    global _SUBTREE_VETO_CELL
+    v = _SUBTREE_VETO_CELL[0]
+    if v is None:
+        raw = os.environ.get("RENPY_HOST_SUBTREE_MOVIE_VETO", "")
+        v = str(raw).strip().lower() not in ("0", "false", "no", "off")
+        _SUBTREE_VETO_CELL[0] = v
+    return bool(v)
+
+
+def _movie_tex_handles():
+    """Handles currently carrying in-place movie pixels (or None when unknown).
+
+    ``renpy.display.video`` keeps a bounded registry of the texture handles its
+    publish paths rewrite in place. A subtree bake key containing one of those
+    handles is NOT static even if the render tree looks identical, so it must
+    not be cached. When the registry is unavailable (hermetic gates / older
+    module) callers fall back to the coarse global publish nonce.
+    """
+    global _MOVIE_VIDEO_MOD, _MOVIE_SEQ_FAIL
+    mod = _MOVIE_VIDEO_MOD
+    if mod is not None:
+        fn = getattr(mod, "movie_texture_handles", None)
+        if fn is None:
+            return None
+        try:
+            return fn()
+        except Exception:
+            return None
+    if _MOVIE_SEQ_FAIL:
+        return None
+    try:
+        import sys as _sys
+
+        mod = _sys.modules.get("renpy.display.video")
+        if mod is None:
+            from renpy.display import video as mod  # type: ignore
+        _MOVIE_VIDEO_MOD = mod
+    except Exception:
+        _MOVIE_SEQ_FAIL = True
+        return None
+    fn = getattr(mod, "movie_texture_handles", None)
+    if fn is None:
+        return None
+    try:
+        return fn()
+    except Exception:
+        return None
+
+
 # =============================================================================
 # Transition bake cache (dissolve old-slot cross-frame RTT content cache).
 # Evidence: /tmp/hmc_childtrust.txt — a dissolve mid frame bakes BOTH slots at
@@ -58,6 +128,7 @@ if TYPE_CHECKING:
 # (destroyed via destroy_texture on eviction / kill_textures / clear).
 # =============================================================================
 _MOVIE_VIDEO_MOD = None
+_SUBTREE_VETO_CELL = [None]
 _MOVIE_SEQ_FAIL: bool = False
 # Sentinel for the depth>5 unvisited-children probe (never a real child tag).
 _KIDS_END = object()
@@ -1237,13 +1308,28 @@ class SurftreeMixin:
         points never distort each other's telemetry.
         """
         try:
-            cap = [self._TRANS_BAKE_FP_MAX_NODES]
+            _handles = set()
+            cap = [self._TRANS_BAKE_FP_MAX_NODES, _handles]
             body = self._trans_fp_node(child, 0, cap)
             if body is None:
                 return None
             drawable = tuple(int(x) for x in (getattr(self, "drawable_size", None) or (0, 0)))
             layout = tuple(int(x) for x in (getattr(self, "layout_virtual_size", None) or (0, 0)))
-            return ("trb1", _movie_publish_seq(), drawable, layout, body)
+            # Per-subtree movie veto (coarse global nonce refined): a subtree
+            # that samples a handle the movie rewrites in place can never be
+            # cached; every other subtree stays cacheable even while a movie
+            # plays elsewhere on screen. Registry unavailable -> legacy global
+            # publication nonce (conservative, invalidates everything).
+            _vids = _movie_tex_handles() if _subtree_movie_veto_enabled() else None
+            if _vids is None:
+                _nonce = _movie_publish_seq()
+            elif _handles and (_handles & set(_vids)):
+                raise _TransBakeUncacheable(
+                    "trans fp movie texture inside subtree"
+                )
+            else:
+                _nonce = 0
+            return ("trb1", _nonce, drawable, layout, body)
         except _TransBakeUncacheable as e:
             # H2: conservative miss — depth/node budget exhausted or an
             # over-cap mesh; the subtree re-bakes every frame instead of
@@ -1521,7 +1607,16 @@ class SurftreeMixin:
         parts.append(self._trans_mesh_bits(node))
         # Evidence: exclude the slot child's (depth-0) texture set + the
         # self-cycling cached_texture bake handle everywhere.
-        parts.append(self._trans_tex_handles(node, depth > 0))
+        _th = self._trans_tex_handles(node, depth > 0)
+        parts.append(_th)
+        # Per-subtree movie veto input: every live handle this subtree samples.
+        try:
+            _sink = cap[1] if len(cap) > 1 else None
+            if _sink is not None:
+                for _e in _th:
+                    _collect_handle_ints(_e, _sink)
+        except Exception:  # noqa: BLE001, S110 -- veto input is best-effort
+            pass
         kids = []
         for knd, kx, ky in self._iter_children(node):
             cap[0] -= 1

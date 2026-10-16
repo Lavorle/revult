@@ -63,6 +63,26 @@ _RENDER_SCHEDULE_CM_CELL: list = [None]
 # pattern as the cells above.
 _HOST_REPRESENT_CAP_CELL: list = [None]
 
+# Whether the fast re-present path may DROP a due redraw request whose
+# displayable is a container (MultiBox / Window-derived: ImageButton,
+# TextButton, ...) while a movie is playing. Dropping it means the
+# container's animation only advances on a later full frame (e.g. at the
+# movie's cadence), which is visible as choppy hover/press effects on
+# screens that sit on a video background (HuangmeiC prefs/title).
+# Default: KEEP (never drop) — correct animation cadence. Set
+# RENPY_HOST_REPRESENT_DROP_CONTAINER=1 to restore the legacy drop.
+_HOST_DROP_CONTAINER_CELL: list = [None]
+
+
+def _host_drop_container_redraw():
+    """True when the legacy container-redraw drop is enabled (default False)."""
+    v = _HOST_DROP_CONTAINER_CELL[0]
+    if v is None:
+        raw = os.environ.get("RENPY_HOST_REPRESENT_DROP_CONTAINER", "")
+        v = str(raw).strip().lower() in ("1", "true", "yes", "on")
+        _HOST_DROP_CONTAINER_CELL[0] = v
+    return v
+
 try:
     import android
 
@@ -1591,9 +1611,17 @@ class Interface:
                         except Exception:
                             in_cache = True
                         if in_cache:
-                            # Container-only with movies: parent marks after Movie/ATL;
-                            # chrome sample handles are unchanged — re-present is safe.
-                            if movies_playing and isinstance(d, (_MultiBox, _Container)):
+                            # Legacy (opt-in): container-only redraw while a
+                            # movie plays was dropped so a later full frame
+                            # reclaims it — cheap, but it also swallows real
+                            # hover/press ATL animations on video-background
+                            # screens. Default now falls through to ui_due so
+                            # those animations keep their own frame cadence.
+                            if (
+                                movies_playing
+                                and isinstance(d, (_MultiBox, _Container))
+                                and _host_drop_container_redraw()
+                            ):
                                 # Drop so process_redraws on a later full frame can reclaim.
                                 continue
                             ui_due = True

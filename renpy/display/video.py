@@ -65,6 +65,45 @@ def _bump_movie_publish_seq() -> None:
         pass
 
 
+# Texture handles whose pixels are rewritten IN PLACE by the movie upload path.
+# A render-tree key that contains one of these handles cannot be treated as
+# static content, no matter how stable the tree looks. Recording the handles
+# lets the subtree bake cache veto *per subtree* (only subtrees that actually
+# sample a movie texture) instead of invalidating every cached subtree on the
+# machine whenever any movie publishes a frame — the coarse global-nonce veto
+# made every transition bake on a video-background screen (HuangmeiC prefs /
+# title) a guaranteed per-frame miss (2x 1920x1080 bakes => 10-15 fps effect).
+# Bounded: handles are recycled by the arena, so a full reset is safe.
+_MOVIE_TEX_HANDLES: set = set()
+_MOVIE_TEX_HANDLES_CAP = 512
+
+
+def _note_movie_tex(tex) -> None:
+    """Record the handle a movie frame was just written into (best effort)."""
+    try:
+        h = getattr(tex, "handle", tex)
+        h = int(h)
+    except Exception:
+        return
+    if h <= 0:
+        return
+    try:
+        if len(_MOVIE_TEX_HANDLES) >= _MOVIE_TEX_HANDLES_CAP:
+            _MOVIE_TEX_HANDLES.clear()
+        _MOVIE_TEX_HANDLES.add(h)
+    except Exception:
+        pass
+
+
+def movie_texture_handles():
+    """Set of handles currently known to carry in-place movie pixels.
+
+    Returns the live set (read-only use by callers) or None when the caller
+    must fall back to the coarse global publish nonce.
+    """
+    return _MOVIE_TEX_HANDLES
+
+
 # =============================================================================
 # Movie self-redraw beat — RENPY_HOST_MOVIE_REDRAW_S (OnceLock parse).
 #
@@ -296,6 +335,7 @@ def get_movie_texture(channel, mask_channel=None, side_mask=False, mipmap=None):
         # global write sequence so content-cache keys (dissolve transition
         # old-slot bake cache) can never pin movie pixels as static.
         _bump_movie_publish_seq()
+        _note_movie_tex(tex)
         new = True
     else:
         tex = texture.get(channel, None)
@@ -351,6 +391,7 @@ def get_movie_texture_web(channel, mask_channel, side_mask, mipmap):
         new = True
         # Web publish path: same content in place → same nonce contract.
         _bump_movie_publish_seq()
+        _note_movie_tex(tex)
     else:
         tex = texture.get(channel, None)
         new = False
@@ -877,6 +918,7 @@ class Movie(renpy.display.displayable.Displayable):
                         # frame0 hold publishes fresh pixels on a live handle
                         # too — bump the publish nonce for the same reason.
                         _bump_movie_publish_seq()
+                        _note_movie_tex(tex)
                         # Override empty path when channel has not started yet.
                         not_playing = False
                         # Phase 0: once-log hold hit so dual-slot readiness is

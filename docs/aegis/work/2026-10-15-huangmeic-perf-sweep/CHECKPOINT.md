@@ -187,3 +187,8 @@
 - 量化：headless 发布窗 p50 5→16（内容 10fps → **32fps**，产品档 0.03s 节拍兑现）；可见窗 2560x1440 dyn 门同为 15/0.5s → 30fps；全屏可见门 present_fps：S0 band 154→**210**、设置各页 176-190→**222-227**、iv p95 7.5→**5.4ms**（叠加 783153c70 + 8bf89af92 的复合增益）。
 - 验证：pytest 171/1skip；金库 20/20 且 MAE 与基线逐位一致；ldd 干净。/tmp 清理（1.5G/16G）。
 - 待用户最终复测：菜单视频带、设置页切换与长驻、打字机页。如「视频还卡图」再报则用取档（INPUT_TRACE=2 + PHASE0）继续拆。
+
+## Round：81MB 长跑取证（旧栈）+ should_exit 看门狗（commit 23bbe437c）
+- 用户把原来那条取证命令跑了 ~69 分钟（应 4 分钟）：content/s 从 101 → 5.8 单调衰减（p50 缺口 7ms→172ms）→ **与音频通道雪崩同源的老栈长驻退化**（该运行发生在 783153c70/8bf89af92/63e49cb5f 之前，`re_present_block ui_due type=Movie` = 0 证实）。可作为修复收益的「自然对照」：修复栈的对照实验速查以本轮 hmc_dwell 台账为准。
+- 顺带挖出 **真 bug：`smoke deadline` 触发 `should_exit` 后从未 unwind**（4 分钟的 smoke 空转 69 分钟烧 CPU/显存；`event loop exit` 与 `QuitException` 记录 0 条）。修法：宿主层看门狗——`should_exit` 锁存后 10s 内产品仍活着 → dump input-trace + `process::exit(0)`（只攻击「概率性卡死退出」的路径；正常 SIGTERM/窗口 X 路径不动）。
+- 验证：cargo test 103 pass；phase9 金库 20/20 + ldd 干净。

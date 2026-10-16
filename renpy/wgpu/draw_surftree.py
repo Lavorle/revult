@@ -2093,7 +2093,7 @@ class SurftreeMixin:
             return
         self._mesh_deferred_destroy = []
         try:
-            import renpy_host  # type: ignore
+            renpy_host = _rh()  # cell: real module or False (hermetic)
 
             destroy = getattr(renpy_host, "destroy_mesh", None)
             if destroy is None:
@@ -2191,7 +2191,7 @@ class SurftreeMixin:
         ``uv`` is optional (u0, v_bottom, u1, v_top) for HostTexture sub-rects.
         Explicit node.vertices always win (caller-supplied UVs preserved).
         """
-        import renpy_host  # type: ignore
+        renpy_host = _rh()  # cell: real module or False (hermetic)
 
         mesh = getattr(node, "mesh", None) if not isinstance(node, (int, float)) else None
 
@@ -3062,7 +3062,7 @@ class SurftreeMixin:
         if h <= 0:
             return
         try:
-            import renpy_host  # type: ignore
+            renpy_host = _rh()  # cell: real module or False (hermetic)
 
             renpy_host.destroy_texture(h)
         except Exception:  # noqa: BLE001, S110 -- destroy must never abort frames
@@ -3133,7 +3133,7 @@ class SurftreeMixin:
             self._trans_cache_clear()
             return None
         try:
-            import renpy_host  # type: ignore
+            renpy_host = _rh()  # cell: real module or False (hermetic)
 
             alive = int(handle) > 0 and bool(renpy_host.texture_alive(int(handle)))
         except Exception:  # noqa: BLE001, S110 -- probe failure → conservative miss
@@ -3191,7 +3191,7 @@ class SurftreeMixin:
         Lifetime: pinned until eviction / clear. H3: the _grp.push→pop span is
         fully try/finally-wrapped; any exception path pops exactly once.
         """
-        import renpy_host  # type: ignore
+        renpy_host = _rh()  # cell: real module or False (hermetic)
 
         self._ensure_pipes()  # type: ignore[attr-defined]
         if w <= 0 or h <= 0:
@@ -4372,7 +4372,7 @@ class SurftreeMixin:
             self._sm_clear()
             return False
         try:
-            import renpy_host  # type: ignore
+            renpy_host = _rh()  # cell: real module or False (hermetic)
 
             return bool(renpy_host.texture_alive(int(handle)))
         except Exception:  # noqa: BLE001, S110 -- probe failure → conservative miss
@@ -4542,7 +4542,7 @@ class SurftreeMixin:
         """
         global _SM_BAKE_TOTAL
         try:
-            import renpy_host  # type: ignore
+            renpy_host = _rh()  # cell: real module or False (hermetic)
 
             self._ensure_pipes()  # type: ignore[attr-defined]
             bake_attn(self, "sm_pin", node, w, h)
@@ -5260,7 +5260,7 @@ class SurftreeMixin:
             except Exception:  # noqa: BLE001, S110 -- counter is diagnostics-only
                 pass
         try:
-            import renpy_host  # type: ignore
+            renpy_host = _rh()  # cell: real module or False (hermetic)
             self._ensure_pipes()
             w, h = self._node_size(node)
             if w <= 0 or h <= 0:

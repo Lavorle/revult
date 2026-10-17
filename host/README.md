@@ -306,7 +306,7 @@ testcases/wgpu_golden/
 
 ## 11. Non-goals (MVP)
 
-- Multi-platform (macOS Metal / Windows DX12) product path
+- Multi-platform (macOS Metal / Windows DX12) product path. Windows is supported on the Vulkan backend only (see the Windows section below); DX12 stays a non-goal.
 - GL2Draw / SWDraw coexistence on host
 - GLSL auto-translate
 - renpy-build packaging / distributor installers
@@ -408,3 +408,90 @@ bash host/scripts/build_sdist_manifest.sh --check
 
 GLSL `register_shader` / `register_textshader` hard-error on host (`renpy.host_build`).
 See `doc/wgsl_shader_migration.md`. Smoke: `RENPY_HOST_GATE=shader_break cargo run -p renpy-host`.
+
+---
+
+## 14. Windows (Vulkan only)
+
+Toolchain lives in `E:\lyx\toolkits` (no MSVC on this machine, so the GNU
+target + `cargo-zigbuild` provides the linker and `llvm-dlltool`):
+
+```powershell
+. E:\lyx\toolkits\activate.ps1
+powershell -ExecutionPolicy Bypass -File host\scripts\build_windows.ps1 -CheckOnly
+powershell -ExecutionPolicy Bypass -File host\scripts\build_windows.ps1 -Smoke -Test
+```
+
+The script builds `host/target/x86_64-pc-windows-gnu/debug/renpy-host.exe`,
+checks the import table for SDL DLLs (the Windows equivalent of the `ldd`
+gate), and can run the Phase 0 smoke headlessly. Proven on this machine:
+`backend=Vulkan` on AMD Radeon Graphics, embedded CPython 3.12, nested
+`pump_app_events` working, all Rust test harnesses passing, no `SDL*.dll`
+imported.
+
+Gates and packaging:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File host\scripts\phase1_gates_windows.ps1
+powershell -ExecutionPolicy Bypass -File host\scripts\run_golden_tests_windows.ps1
+powershell -ExecutionPolicy Bypass -File host\scripts\build_windows.ps1 -Package
+```
+
+- Phase 1 (smoke/nested/input/periodic 60s) passes on Windows.
+- Golden mandatory gates pass 9/9 against the Linux baselines. The three
+  text gates (`g02*`) fail MAE on Windows fonts (Arial vs NotoSans
+  baseline; same variance class as the llvmpipe G02 note in CI) and are
+  non-blocking unless `-StrictText` is given. Baselines are not resigned.
+- `-Package` writes `host/target/renpy-host-<rev>-windows-x86_64.zip`
+  (exe + `python312.dll` + GNU runtime DLLs + bundled CPython home with
+  Pillow + `renpy/wgpu` + `host/python` + `renpy-host.cmd` launcher) and
+  verifies the staged exe runs with a bare `PATH`.
+- CI has a `windows-tier1` job (MSVC check/test/build + no-SDL import
+  check + pure-Python gate tests). GPU gates are not asserted there:
+  `windows-latest` has no Vulkan ICD.
+
+Cython extensions and full game boot:
+
+```powershell
+# One-time: VS2022 Build Tools (VCTools) in E:\lyx\toolkits\VS2022 and a
+# meson-built static fribidi in E:\lyx\toolkits\fribidi.
+powershell -ExecutionPolicy Bypass -File host\scripts\build_cython_windows.ps1
+powershell -ExecutionPolicy Bypass -File host\scripts\run_the_question_windows.ps1 -Smoke 30
+```
+
+All 30 SDL-free extensions build with MSVC and `the_question` boots and
+runs headlessly for the full smoke window with no tracebacks. Notes:
+
+- `RENPY_HOST_BUILD=1` skips `renpy.ecsign` (OpenSSL): the host installs
+  the pure-Python `renpy_ecsign_host` stand-in before `import_all`. It
+  needs the `cryptography` package, now a declared project dependency.
+- `renpy.text.bidi` links a static fribidi; flags come from the
+  `FRIBIDI_*` / `TFDWIN_*` env fallback in `setuplib.package_flags`
+  (no pkg-config on Windows).
+- Release package: `build_windows.ps1 -Release -Package` (28 MB zip;
+  debug exe is 178 MB, release 11 MB). With `-FullGame` the bundle also
+  carries the Ren'Py tree, the `.pyd` extensions, the runtime
+  third-party deps and `the_question` (49 MB zip); the build verifies
+  it boots standalone with a bare `PATH` from a foreign cwd, and the
+  extracted `renpy-host.cmd` launcher reaches `import_all=full` and
+  `renpy.main.main()`. Windowed (non-headless) present is also proven:
+  `PresentMode selected=fifo_relaxed`, 15s windowed boot, no errors.
+  Windowed `input` gate passes (key/mouse/text all delivered), and a
+  synthetic Win32 SendInput click + Space/Enter against the real game
+  window reaches the host event queue (`INPUT_TRACE` counters move).
+  One environment limit on this machine: the `audio` gate cannot pass
+  (WASAPI has no active output endpoint, so `cpal` finds no default
+  device; the product boot itself runs fine without one). The `text`
+  and `ime` gates were stale on every platform (deleted
+  `draw_text_screen` API, hard-error textshader assertion); both are
+  repaired against the current `render_text_rgba` + soft-stub contract
+  and pass. CI's `windows-tier1` job also builds the Cython extensions
+  (vcpkg static fribidi + vswhere-discovered MSVC; the vswhere branch
+  needs `-products *` for the Build Tools SKU and is proven locally).
+  The full Python suite passes on Windows: 171 passed, 2 skipped
+  (two stale tests fixed on the way: a Unix `grep` subprocess and an
+  `isinstance(..., threading.Lock)` type error).
+- Python 3.12 exposes two gaps that 3.14's deferred annotations hid on
+  Linux: `renpy.pygame` needed a package-attribute bind in the host
+  seed, and `host_pygame.event` needed the `EventType = Event` alias.
+  Both are fixed in tree.

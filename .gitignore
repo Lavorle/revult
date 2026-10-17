@@ -17,6 +17,7 @@ ehthumbs_vista.db
 *.egg-info
 *.cpython-*.so
 *.cpython-*.pyd
+*-win_amd64.pyd
 /build
 
 # Editor/tool files.

@@ -10,6 +10,8 @@ dependencies = [
     "pefile",
     "requests",
     "rsa",
+    "cryptography",
+    "pillow",
     "setuptools",
     "cython",
     "ruff",

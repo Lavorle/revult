@@ -18,6 +18,7 @@ import secrets
 import shutil
 import signal
 import subprocess
+import tempfile
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,7 +51,10 @@ def _ensure_cleanup_handlers() -> None:
     global _CLEANUP_REGISTERED
     if not _CLEANUP_REGISTERED:
         atexit.register(_cleanup_temp_dirs)
-        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        # SIGHUP does not exist on Windows; collect only the signals this platform has.
+        for sig in (getattr(signal, n, None) for n in ("SIGINT", "SIGTERM", "SIGHUP")):
+            if sig is None:
+                continue
             try:
                 signal.signal(sig, _signal_handler)
             except (ValueError, OSError):
@@ -59,12 +63,14 @@ def _ensure_cleanup_handlers() -> None:
         _CLEANUP_REGISTERED = True
 
 
-def create_nonce_temp_dir(prefix: str = "revult_runner_", base_dir: str = "/tmp") -> Path:
+def create_nonce_temp_dir(prefix: str = "revult_runner_", base_dir: str | None = None) -> Path:
     """
     Creates a unique nonce-based temporary directory.
     Example: /tmp/revult_runner_a1b2c3d4e5f60718
     """
     _ensure_cleanup_handlers()
+    if base_dir is None:
+        base_dir = tempfile.gettempdir()
     os.makedirs(base_dir, exist_ok=True)
     nonce = secrets.token_hex(8)
     dir_name = f"{prefix}{nonce}"
@@ -239,7 +245,7 @@ def run_parent_process(
     provisional_metrics_file: Optional[Union[str, Path]] = None,
     cwd: Optional[Union[str, Path]] = None,
     env: Optional[Dict[str, str]] = None,
-    temp_base_dir: str = "/tmp",
+    temp_base_dir: str | None = None,
     repo_root: Optional[Path] = None,
     fail_closed: bool = True,
     stdout: Any = None,
@@ -423,7 +429,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "--temp-dir",
         dest="temp_dir",
-        default="/tmp",
+        default=None,
         help="Base directory for creating nonce temp directory.",
     )
     parser.add_argument(

@@ -70,6 +70,11 @@ class Event:
         return f"<Event({self.type} {self.dict})>"
 
 
+# Stock pygame exposes the event class as pygame.event.EventType as well;
+# renpy.display.displayable annotates with it (evaluated on Python < 3.14).
+EventType = Event
+
+
 def _coerce_xy(v, default=(0, 0)):
     """Normalize pos/rel to a 2-int tuple (host may send 'x,y' strings)."""
     if isinstance(v, (tuple, list)) and len(v) >= 2:

@@ -179,6 +179,16 @@ for name in (
 # pygame_time alias used by some imports
 sys.modules["renpy.pygame.pygame_time"] = host_pygame.time
 
+# Bind as package attribute too: on Python < 3.14 annotations are evaluated
+# eagerly, so `renpy.pygame.event.EventType` in renpy.display.displayable
+# needs the attribute, not just the sys.modules entry (mirrors the
+# renpysound bind below).
+try:
+    import renpy as _renpy_pkg_for_pygame
+    _renpy_pkg_for_pygame.pygame = host_pygame
+except Exception:
+    pass
+
 # Host renpysound adapter (Phase 4) — prefer over SDL-linked extension when present.
 try:
     import renpy.audio.renpysound_host as _rs_host
@@ -704,7 +714,18 @@ renpy_host.request_quit()
             let code = format!(
                 r#"
 import renpy_host
-from renpy.wgpu.text import draw_text_screen, render_text_rgba
+from renpy.wgpu.text import render_text_rgba
+
+def draw_text_screen(text, size=48):
+    w, h, rgba = render_text_rgba(text, size=size)
+    tex = renpy_host.create_texture_rgba(w, h, rgba)
+    verts = [-0.9, -0.5, 0.0, 1.0, 1, 1, 1, 1, 0.9, -0.5, 1.0, 1.0, 1, 1, 1, 1, 0.9, 0.5, 1.0, 0.0, 1, 1, 1, 1, -0.9, 0.5, 0.0, 0.0, 1, 1, 1, 1]
+    mesh = renpy_host.create_mesh(verts, [0, 1, 2, 0, 2, 3])
+    pipe = renpy_host.textured_pipeline()
+    renpy_host.begin_frame()
+    renpy_host.draw_model(pipe, mesh, tex)
+    renpy_host.end_frame_present()
+    return {{"tex": tex, "w": w, "h": h}}
 
 w, h, rgba = render_text_rgba("Hello renpy-host", size=48)
 assert w > 8 and h > 8 and len(rgba) == w * h * 4, (w, h, len(rgba))
@@ -713,18 +734,24 @@ for _ in range(20):
     draw_text_screen("Hello renpy-host", size=48)
     renpy_host.wait_until(renpy_host.get_ticks_ms() + 16)
 
-# GLSL textshader must hard-error on host
-raised = False
+# Host contract (shader.py): register_textshader soft-stubs via HostShaderPart.
+# Gate context has no import_all, so an "exports" harness error is also OK
+# (same acceptance as the shader_break gate).
+stubbed = False
+ts_error = ""
 try:
+    from renpy.gl2.gl2shadercache import register_shader as _rs  # noqa: F401  (loads renpy.exports chain, cf. shader_break gate)
     from renpy.text.shader import register_textshader
     register_textshader("demo", variables="uniform float u_x;")
+    stubbed = True
 except Exception as e:
-    raised = "not supported" in str(e) or "WGSL" in str(e) or "wgpu" in str(e)
+    ts_error = str(e)
 
-msg = f"[text-gate] size=({{w}},{{h}}) tex={{info['tex']}} textshader_raised={{raised}}"
+ok_ts = stubbed or "exports" in ts_error
+msg = f"[text-gate] size=({{w}},{{h}}) tex={{info['tex']}} textshader_stubbed={{stubbed}}"
 open({result_path_str:?}, "w", encoding="utf-8").write(msg + "\n")
-if not raised:
-    raise RuntimeError("register_textshader did not raise on host")
+if not ok_ts:
+    raise RuntimeError("register_textshader raised on host: %s" % (ts_error,))
 renpy_host.request_quit()
 "#
             );
@@ -749,7 +776,18 @@ renpy_host.request_quit()
             let code = format!(
                 r#"
 import renpy_host
-from renpy.wgpu.text import draw_text_screen
+from renpy.wgpu.text import render_text_rgba
+
+def draw_text_screen(text, size=40):
+    w, h, rgba = render_text_rgba(text, size=size)
+    tex = renpy_host.create_texture_rgba(w, h, rgba)
+    verts = [-0.9, -0.5, 0.0, 1.0, 1, 1, 1, 1, 0.9, -0.5, 1.0, 1.0, 1, 1, 1, 1, 0.9, 0.5, 1.0, 0.0, 1, 1, 1, 1, -0.9, 0.5, 0.0, 0.0, 1, 1, 1, 1]
+    mesh = renpy_host.create_mesh(verts, [0, 1, 2, 0, 2, 3])
+    pipe = renpy_host.textured_pipeline()
+    renpy_host.begin_frame()
+    renpy_host.draw_model(pipe, mesh, tex)
+    renpy_host.end_frame_present()
+    return {{"tex": tex, "w": w, "h": h}}
 
 renpy_host.start_text_input()
 buf = []

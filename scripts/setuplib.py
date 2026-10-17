@@ -92,6 +92,29 @@ def package_flags(*packages: str) -> dict[str, Any]:
 
     rv["include_dirs"] = include_dirs
 
+    if windows:
+        # No pkg-config on a plain Windows toolchain: allow the caller to
+        # supply flags via <PACKAGE>_INCLUDE_DIRS / _LIBRARY_DIRS / _LIBRARIES
+        # (semicolon-separated). Used by the host build for fribidi.
+        remaining = []
+        for package in packages:
+            prefix = package.upper().replace("-", "_")
+            inc = os.environ.get(prefix + "_INCLUDE_DIRS")
+            lib = os.environ.get(prefix + "_LIBRARY_DIRS")
+            libs = os.environ.get(prefix + "_LIBRARIES")
+            if inc or lib or libs:
+                if inc:
+                    rv["include_dirs"].extend(inc.split(";"))
+                if lib:
+                    rv["library_dirs"].extend(lib.split(";"))
+                if libs:
+                    rv["libraries"].extend(libs.split(";"))
+            else:
+                remaining.append(package)
+        packages = tuple(remaining)
+        if not packages:
+            return rv
+
     import pkgconfig
 
     for package in packages:
@@ -138,7 +161,9 @@ def cmodule(name, source, language="c", define_macros=[], compile_args=[], packa
     kwargs = package_flags(*packages.split())
 
     if language == "c":
-        kwargs["extra_compile_args"].insert(0, "-std=gnu99")
+        # MSVC does not accept -std=gnu99; its default C mode is used on Windows.
+        if not windows:
+            kwargs["extra_compile_args"].insert(0, "-std=gnu99")
 
     kwargs["include_dirs"] = include_dirs + kwargs["include_dirs"]
     kwargs["extra_compile_args"].extend(compile_args)
@@ -209,7 +234,7 @@ def cython(name, source=[], pyx=None, language="c", compile_args=[], define_macr
 
         return mod_name.replace(".", "/") + ".pxd"
 
-    with open(fn) as f:
+    with open(fn, encoding="utf-8") as f:
         for line in f:
             m = re.search(r"from\s*([\w.]+)\s*cimport", line)
             if m:

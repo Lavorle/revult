@@ -68,7 +68,8 @@ def main():
     generate_styles.generate()
 
     # These control the level of optimization versus debugging.
-    setuplib.extra_compile_args = ["-Wno-unused-function"]
+    # MSVC has no -Wno-* flags; only pass GCC-style args off Windows.
+    setuplib.extra_compile_args = [] if windows else ["-Wno-unused-function"]
     setuplib.extra_link_args = []
 
     cubism = os.environ.get("CUBISM", None)
@@ -85,8 +86,14 @@ def main():
     cython("renpy.pydict")
     cython("renpy.style")
     cython("renpy.encryption")
-    cython("renpy.tfd", ["src/tinyfiledialogs/tinyfiledialogs.c"])
-    cython("renpy.ecsign", ["src/ec_sign_core.c"], packages="openssl")
+    # On Windows tinyfiledialogs calls Win32 dialog APIs; the libraries are
+    # supplied via the TFDWIN_* env fallback in setuplib.package_flags.
+    cython("renpy.tfd", ["src/tinyfiledialogs/tinyfiledialogs.c"], packages="tfdwin" if windows else "")
+    # Host builds install the pure-Python renpy.ecsign stand-in
+    # (host/python/renpy_ecsign_host.py) before import_all, so the OpenSSL
+    # extension is skipped there; classic builds keep it.
+    if os.environ.get("RENPY_HOST_BUILD") != "1":
+        cython("renpy.ecsign", ["src/ec_sign_core.c"], packages="openssl")
 
     # renpy.audio
     # renpysound retired (SDL audio; host uses cpal via renpysound_host).
@@ -122,7 +129,9 @@ def main():
     cython("renpy.text.textsupport")
     cython("renpy.text.texwrap")
     # ftfont/hbfont retired (SDL package; host text via Pillow bitmap upload).
-    cython("renpy.text.bidi", ["src/renpybidicore.c"], packages="fribidi")
+    # FRIBIDI_LIB_STATIC keeps the headers from dllimport-declaring symbols
+    # when linking a static fribidi (Windows host build); harmless elsewhere.
+    cython("renpy.text.bidi", ["src/renpybidicore.c"], packages="fribidi", define_macros=[("FRIBIDI_LIB_STATIC", None)])
 
     generate_all_cython()
     find_unnecessary_gen()

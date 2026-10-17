@@ -31,7 +31,7 @@ def test_standard_6_field_envelope_structure():
         test_file.write_text("hello world\n", encoding="utf-8")
 
         envelope = pr.run_parent_process(
-            command=["echo", "success"],
+            command=[sys.executable, "-c", "print('success')"],
             declared_inputs=[test_file],
             envelope_output_path=env_out,
         )
@@ -43,7 +43,7 @@ def test_standard_6_field_envelope_structure():
         assert "command" in envelope
         assert "provisional_metrics" in envelope
         assert "exit_code" in envelope
-        assert envelope["command"] == ["echo", "success"]
+        assert envelope["command"] == [sys.executable, "-c", "print('success')"]
 
         # Check written file
         assert env_out.exists()
@@ -176,8 +176,9 @@ def test_cli_execution():
                 "-o",
                 str(env_out),
                 "--",
-                "echo",
-                "cli_test",
+                sys.executable,
+                "-c",
+                "print('cli_test')",
             ],
             capture_output=True,
             text=True,
@@ -188,7 +189,7 @@ def test_cli_execution():
         with open(env_out, "r", encoding="utf-8") as f:
             data = json.load(f)
         assert data["exit_code"] == 0
-        assert data["command"] == ["echo", "cli_test"]
+        assert data["command"] == [sys.executable, "-c", "print('cli_test')"]
         assert len(data["declared_inputs_digest"]) == 64
 
 

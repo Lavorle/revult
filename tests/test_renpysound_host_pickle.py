@@ -22,7 +22,7 @@ def test_lazy_path_cache_lock_picklable():
 
     # Context manager and acquisition operations should work seamlessly
     with rsh._PATH_CACHE_LOCK:
-        assert isinstance(rsh._get_path_cache_lock(), threading.Lock)
+        assert isinstance(rsh._get_path_cache_lock(), type(threading.Lock()))
 
     # After acquiring lock, it should still be picklable via __reduce__
     pickled_after = pickle.dumps(rsh._PATH_CACHE_LOCK, protocol=pickle.HIGHEST_PROTOCOL)

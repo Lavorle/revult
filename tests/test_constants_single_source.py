@@ -4,8 +4,7 @@ Verifies that the canonical numbers now live exactly once in
 renpy/wgpu/constants.py and no longer as scattered literals.
 """
 
-import subprocess
-import sys
+
 
 
 def test_handle_pixels_cap():
@@ -59,10 +58,11 @@ def test_no_scattered_magic():
     # Only constants.py should define 2048/4096/7680/4096 as assignment targets;
     # scattered code using them must import from constants, not re-declare.
     # Check that grep for 'HANDLE_PIXELS_CAP = 2048' only hits constants.py
-    hits = subprocess.check_output(
-        ["grep", "-rn", "2048", "renpy/wgpu", "--include=*.py"],
-        text=True,
-    )
-    lines = [ln for ln in hits.splitlines() if "2048" in ln]
-    defining = [ln for ln in lines if "HANDLE_PIXELS_CAP" in ln and "=" in ln]
+    from pathlib import Path
+
+    defining = []
+    for _p in Path("renpy/wgpu").rglob("*.py"):
+        for _ln in _p.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "2048" in _ln and "HANDLE_PIXELS_CAP" in _ln and "=" in _ln:
+                defining.append(f"{_p}:{_ln}")
     assert len(defining) == 1 and "constants.py" in defining[0]

@@ -205,10 +205,32 @@ def play(
             vol = float(relative_volume)
         except Exception:  # noqa: BLE001 -- bad volume must not fail play
             vol = 1.0
+        now = _time.monotonic()
+        # Loop-aware horizon: the shim cannot decode real durations, so a
+        # *long/looped* BGM channel that was told busy-264ms makes renpy's
+        # own queue refill re-trigger play() every ~264ms (measured on the
+        # login BGM: same (channel,name) re-played constantly — a beep a
+        # fourth of a second, plus MusicContext churn on the main thread).
+        # Detect the pump pattern *here*: same channel+name re-played within
+        # 3s of the previous play ⇒ loop/BGM ⇒ give it a smooth 5s horizon
+        # so renpy re-queues at ≤1/5s (one beep per 5s instead of four per
+        # second). Short UI SFX keep the 264ms horizon, which is what fixed
+        # the channel avalanche.
+        last_play_t = ch.get("_last_play_t") or 0.0
+        last_name = ch.get("_last_play_name")
+        horizon_s = d_ms / 1000.0 * max(0.25, min(2.0, vol))
+        if (
+            name is not None
+            and name == last_name
+            and (now - last_play_t) < 3.0
+        ):
+            horizon_s = max(horizon_s, 5.0)
+        ch["_last_play_t"] = now
+        ch["_last_play_name"] = name
         if vol > 0:
-            ch["beep_until"] = _time.monotonic() + d_ms / 1000.0 * max(0.25, min(2.0, vol))
+            ch["beep_until"] = now + horizon_s
         else:
-            ch["beep_until"] = _time.monotonic()
+            ch["beep_until"] = now
 
 
 def _beep_alive(ch) -> bool:

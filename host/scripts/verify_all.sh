@@ -23,6 +23,14 @@ fail(){ printf '\033[31mFAIL\033[0m %s\n' "$1"; EXIT_CODE=1; }
 EXIT_CODE=0
 
 echo "== verify_all: $ROOT"
+BIN="$ROOT/host/target/release/renpy-host"
+if command -v stat >/dev/null 2>&1; then
+  mt="$(stat -c %Y "$BIN" 2>/dev/null || echo 0)"
+  if [ "$mt" -gt 0 ]; then
+    now="$(date +%s)"
+    printf 'binary mtime %s minutes ago (%s)\n' "$(( (now - mt) / 60 ))" "$BIN"
+  fi
+fi
 
 cd "$ROOT/host"
 

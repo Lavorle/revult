@@ -40,6 +40,20 @@ def _run():
         time.sleep(0.4)
     print(f"[FOCUS] main_menu={ok}", flush=True)
     time.sleep(1.4)
+    # 8-button dock variant: when a save slot exists (renpy.can_load), the
+    # "continue" button (FileLoad) appears between start and load and the
+    # row re-centers — record BOTH layouts so real-input drivers stay honest.
+    try:
+        can = renpy.can_load("auto")
+    except Exception as e:  # noqa: BLE001
+        can = False
+    n = 7 + (1 if can else 0)
+    row_w = n * 241 - (n - 1) * 5
+    left = 1920 / 2.0 - row_w / 2.0  # virtual 1920x1080 space
+    # button k center x = left + 120.5 + k * 236
+    for k in range(n):
+        cx = left + 120.5 + k * 236
+        print(f"[FOCUS] dock_button[{k}] center=({cx:.1f},{(969+3+46):.1f}) row={n}", flush=True)
     try:
         renpy.display.focus.take_focuses()
         fl = list(getattr(renpy.display.focus, "focus_list", None) or [])

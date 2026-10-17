@@ -217,3 +217,11 @@
 - 修正原则：**不可复现的一律回退 live `draw.text`**（永远与 pre-cache 行为逐位一致）：①相位 key = 精确 fraction（不再任何量化桶）；②fx/fy 任一 <0 → live；③paste 锚点接近/越过表面边界 → live。
 - 新验证：pytest **177**（171 + 6 例，含 ON/OFF 逐位、重复命中纯 hit、上限 2048 边界、无字体回退）；phase9 金库 20/20 与基线 MAE 逐位一致。
 - 性能锚点重审：settings-idle 稳态窗 100% 真 hit、cache 254 条稳定（安全修正后 product 帧不以负相位为主，成本口径 12.5ms/帧不变；负相位为主（拥挤页首帧等）自动退化为 live 老成本，无回归）。
+
+## Round：自主长昼推进（等你复测的窗口完成）
+- **BGM 重入风暴回归修复**（6a0a19b51）：beep 期使 loop/BGM 通道被引擎每 ~264ms 重入（咔哒声 + MusicContext 风暴）；shim 对「同通道+同名 3s 内重放」判 loop → horizon 平滑至 5s；短 SFX 保持 264ms。
+- **真实鼠标注入器**（dbbc58cb7）：`host/scripts/uinput_mouse.py` 内核级 /dev/uinput（现代 UI_DEV_SETUP ABI），Wayland 下与物理鼠标同路；uid 在 input 组已验证；实测指针真实位移+真实左键。
+- **focus 探针**（ca1c8b69e + 9376c2695）：主菜单 7 按钮虚拟坐标 (131+236k,972,241×92) 实测；含 can_load 的 **8 按钮停靠栏变体**几何。
+- **真实输入 11 分钟全用户操作复现**（logs 1 笔头 dyn 报告入库；大日志未入库）：uinput 真实点击 config（走 ShowMenu 原生转场）→ 7 页签 ×6 周期真实点击 → text_config 60s 真实悬停。结果：190k presents，**boot 后零 ≥100ms 空档**（p50 4.0/p99 7.0ms），walk nodes p50=p95=53，视频 band 32fps 稳定 —— **修复栈上用户症状未在真实输入路径复现**。
+- **防呆**（47dba5d66 + 9376c2695）：引擎与 verify_all 均打印**二进制 mtime 的新鲜度行**——直达「你那边跑的是否是修复后构建」的判据。
+- 遗留：真正待消除的不确定性是**用户侧复测环境**（旧二进制/覆盖层 mangohud/存档布局差异/复合器行为）。待 user_final_retest.log 或口述给到即按帧拆。

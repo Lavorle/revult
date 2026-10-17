@@ -46,6 +46,23 @@ fn main() {
         info!("renpy-host headless=1 (present skipped; game-RT only)");
     }
     info!("renpy-host Phase 2 starting");
+    // Build-freshness cue (misbuilt-binary diagnosis): log the binary's own
+    // mtime so a stale engine (pre-fix tree) is visibly distinguishable from
+    // a fresh one in any tee'd log.
+    match std::fs::metadata(std::env::current_exe().unwrap_or_default()) {
+        Ok(md) => {
+            if let Ok(modified) = md.modified() {
+                if let Ok(elapsed) = modified.elapsed() {
+                    info!(
+                        "renpy-host binary mtime {:.0} minutes ago ({})",
+                        elapsed.as_secs_f64() / 60.0,
+                        std::env::current_exe().unwrap_or_default().display()
+                    );
+                }
+            }
+        }
+        Err(_) => {}
+    }
     {
         let backend =
             std::env::var("RENPY_HOST_VIDEO_BACKEND").unwrap_or_else(|_| "cli".to_string());
